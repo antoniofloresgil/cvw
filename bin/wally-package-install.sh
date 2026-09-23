@@ -97,7 +97,12 @@ case "$FAMILY" in
         GENERAL_PACKAGES+=(curl "$PYTHON_VERSION" python3-pip "$PYTHON_VERSION"-venv pkg-config build-essential g++ ssmtp)
         GNU_PACKAGES+=(autotools-dev libmpc-dev libmpfr-dev libgmp-dev zlib1g-dev libexpat1-dev libglib2.0-dev libslirp-dev)
         QEMU_PACKAGES+=(libglib2.0-dev libfdt-dev libpixman-1-dev zlib1g-dev ninja-build)
-        SPIKE_PACKAGES+=(device-tree-compiler libboost-regex-dev libboost-system-dev)
+        SPIKE_PACKAGES+=(device-tree-compiler libboost-regex-dev)
+        if (( UBUNTU_VERSION >= 26 )); then
+            SPIKE_PACKAGES+=(libboost-dev)
+        else
+            SPIKE_PACKAGES+=(libboost-system-dev)
+        fi
         SAIL_PACKAGES+=(ninja-build libgmp-dev)
         VERILATOR_PACKAGES+=(libfl2 libfl-dev zlib1g-dev libunwind-dev libgoogle-perftools-dev perl-doc)
         BUILDROOT_PACKAGES+=(ncurses-base ncurses-bin libncurses-dev gfortran) # gfortran is only needed for compiling spec benchmarks on buildroot linux
