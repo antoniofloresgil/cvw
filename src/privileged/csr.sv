@@ -11,7 +11,7 @@
 // Documentation: RISC-V System on Chip Design
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
-// https://github.com/openhwgroup/cvw
+// https://github.com/openhwfoundation/cvw
 //
 // Copyright (C) 2021-23 Harvey Mudd College & Oklahoma State University
 //
@@ -141,7 +141,8 @@ module csr import cvw::*;  #(parameter cvw_t P) (
   always_comb
     if (InterruptM)           NextFaultXtvalM = '0;
     else case (CauseM)
-      12, 1, 3:               NextFaultXtvalM = PCSpillM;  // Instruction page/access faults, breakpoint
+      12, 1:                  NextFaultXtvalM = PCSpillM;  // Instruction page/access faults report the faulting half of a spilled fetch
+      3:                      NextFaultXtvalM = PCM;       // Breakpoint reports the address of the ebreak itself, not the second half of a spilled fetch
       2:                      NextFaultXtvalM = {{(P.XLEN-32){1'b0}}, InstrOrigM}; // Illegal instruction fault
       0, 4, 6, 13, 15, 5, 7:  NextFaultXtvalM = IEUAdrxTvalM; // Instruction misaligned, Load/Store Misaligned/page/access faults
       default:                NextFaultXtvalM = '0; // Ecall, interrupts
@@ -278,19 +279,15 @@ module csr import cvw::*;  #(parameter cvw_t P) (
     assign SetOrWriteFFLAGSM = 1'b0;
   end
 
-  if (P.ZICNTR_SUPPORTED) begin : counters
-    csrc #(P) counters(.clk, .reset, .StallE, .StallM, .FlushM,
-      .InstrValidNotFlushedM, .LoadStallD, .StoreStallD, .CSRWriteM, .CSRMWriteM,
-      .BPDirWrongM, .BTAWrongM, .RASPredPCWrongM, .IClassWrongM, .BPWrongM,
-      .IClassM, .DCacheMiss, .DCacheAccess, .ICacheMiss, .ICacheAccess, .sfencevmaM,
-      .InterruptM, .ExceptionM, .InvalidateICacheM, .ICacheStallF, .DCacheStallM, .DivBusyE, .FDivBusyE,
-      .CSRAdrM, .PrivilegeModeW, .CSRWriteValM,
-      .MCOUNTINHIBIT_REGW, .MCOUNTEREN_REGW, .SCOUNTEREN_REGW,
-      .MTIME_CLINT,  .CSRCReadValM, .IllegalCSRCAccessM);
-  end else begin
-    assign CSRCReadValM = '0;
-    assign IllegalCSRCAccessM = 1'b1; // counters aren't enabled
-  end
+  // counters are always instantiated but may read as zero if not supported
+  csrc #(P) counters(.clk, .reset, .StallE, .StallM, .FlushM,
+    .InstrValidNotFlushedM, .LoadStallD, .StoreStallD, .CSRWriteM, .CSRMWriteM,
+    .BPDirWrongM, .BTAWrongM, .RASPredPCWrongM, .IClassWrongM, .BPWrongM,
+    .IClassM, .DCacheMiss, .DCacheAccess, .ICacheMiss, .ICacheAccess, .sfencevmaM,
+    .InterruptM, .ExceptionM, .InvalidateICacheM, .ICacheStallF, .DCacheStallM, .DivBusyE, .FDivBusyE,
+    .CSRAdrM, .PrivilegeModeW, .CSRWriteValM,
+    .MCOUNTINHIBIT_REGW, .MCOUNTEREN_REGW, .SCOUNTEREN_REGW,
+    .MTIME_CLINT,  .CSRCReadValM, .IllegalCSRCAccessM);
 
    // Broadcast appropriate environment configuration based on privilege mode
   assign ENVCFG_STCE =  MENVCFG_REGW[63]; // supervisor timer counter enable
