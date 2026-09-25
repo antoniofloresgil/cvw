@@ -1,0 +1,9 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "verible": {
+      "command": ["/home/aflores/.local/bin/verible-verilog-ls"],
+      "extensions": [".sv", ".svh", ".v", ".vh"]
+    }
+  }
+}

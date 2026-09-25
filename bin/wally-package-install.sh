@@ -192,7 +192,7 @@ else
     if (( UBUNTU_VERSION >= 24 )); then
         lib_dir=$(gcc -dumpmachine)
         ln -vsf /lib/"$lib_dir"/libncurses.so.6 /lib/"$lib_dir"/libncurses.so.5
-        ln -vsf /lib/"$lib_dir"/libtinfo.so.6 /lib/"$lib_dir"/libntinfo.so.5
+        ln -vsf /lib/"$lib_dir"/libtinfo.so.6 /lib/"$lib_dir"/libtinfo.so.5
     fi
 
     echo -e "${SUCCESS_COLOR}Packages successfully installed.${ENDC}"
