@@ -5,6 +5,10 @@ set boardName $::env(XILINX_BOARD)
 set boardSubName [lindex [split ${boardName} :] 1]
 set board $::env(board)
 
+if {[info exists ::env(XILINX_BOARD_REPO)]} {
+    set_param board.repoPaths $::env(XILINX_BOARD_REPO)
+}
+
 #set partNumber xc7a100tcsg324-1
 #set boardName digilentinc.com:arty-a7-100:part0:1.1
 #set boardSubName arty-a7-100
@@ -32,6 +36,9 @@ if {$board=="ArtyA7"} {
     add_files  {../src/fpgaTopGenesys2.sv}
 } elseif {$board=="nexysa7"} {
     add_files  {../src/fpgaTopNexysA7.sv}
+} elseif {$board=="nexysvideo"} {
+    add_files  {../src/fpgaTopNexysA7.sv}
+    set_property verilog_define {NEXYS_VIDEO} [current_fileset]
 } else {
     add_files  {../src/fpgaTop.sv}
 }
@@ -46,6 +53,9 @@ if {$board=="ArtyA7" || $board=="genesys2"} {
     import_ip IP/mmcm.srcs/sources_1/ip/mmcm/mmcm.xci
 } elseif {$board=="nexysa7" } {
     import_ip IP/ddr2.srcs/sources_1/ip/ddr2/ddr2.xci
+    import_ip IP/mmcm.srcs/sources_1/ip/mmcm/mmcm.xci
+} elseif {$board=="nexysvideo" } {
+    import_ip IP/ddr3.srcs/sources_1/ip/ddr3/ddr3.xci
     import_ip IP/mmcm.srcs/sources_1/ip/mmcm/mmcm.xci
 } else {
     import_ip IP/ddr4.srcs/sources_1/ip/ddr4/ddr4.xci
@@ -72,7 +82,7 @@ report_compile_order -constraints > reports/compile_order.rpt
 #synth_design -rtl -name rtl_1  -flatten_hierarchy none
 
 # apply timing constraint after elaboration
-if {$board=="ArtyA7" || $board=="genesys2" || $board=="nexysa7" } {
+if {$board=="ArtyA7" || $board=="genesys2" || $board=="nexysa7" || $board=="nexysvideo" } {
     add_files -fileset constrs_1 -norecurse ../constraints/constraints-$board.xdc
     set_property PROCESSING_ORDER NORMAL [get_files  ../constraints/constraints-$board.xdc]
 } else {
@@ -110,6 +120,8 @@ if {$board=="ArtyA7"} {
     source ../constraints/small-debug.xdc
 } elseif {$board=="nexysa7"} {
     source ../constraints/small-debug.xdc
+} elseif {$board=="nexysvideo"} {
+    source ../constraints/small-debug.xdc
 } else {
     #source ../constraints/vcu-small-debug.xdc
     #source ../constraints/small-debug.xdc
@@ -121,6 +133,9 @@ if {$board=="ArtyA7"} {
 # set for RuntimeOptimized implementation
 #set_property "steps.place_design.args.directive" "RuntimeOptimized" [get_runs impl_1]
 #set_property "steps.route_design.args.directive" "RuntimeOptimized" [get_runs impl_1]
+if {$board=="nexysvideo"} {
+    set_property strategy Performance_Explore [get_runs impl_1]
+}
 
 launch_runs impl_1 -jobs 16
 wait_on_run impl_1

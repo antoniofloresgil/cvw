@@ -3,6 +3,7 @@ Wally supports the following boards
 1. ArtyA7
 2. vcu108
 3. vcu118 (Do not recommend.)
+4. nexysvideo
 
 # Quick Start
 
@@ -16,6 +17,7 @@ make <board name>
 Example:
 ```bash
 make vcu108
+make nexysvideo
 ```
 
 ## Make flash card image

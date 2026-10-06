@@ -67,6 +67,22 @@ module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
     output logic       phy_reset_n,
 `endif
 
+`ifdef NEXYS_VIDEO
+   inout logic [15:0]    ddr3_dq,
+   inout logic [1:0]     ddr3_dqs_n,
+   inout logic [1:0]     ddr3_dqs_p,
+   output logic [14:0]   ddr3_addr,
+   output logic [2:0]    ddr3_ba,
+   output logic          ddr3_ras_n,
+   output logic          ddr3_cas_n,
+   output logic          ddr3_we_n,
+   output logic          ddr3_reset_n,
+   output logic [0:0]    ddr3_ck_p,
+   output logic [0:0]    ddr3_ck_n,
+   output logic [0:0]    ddr3_cke,
+   output logic [1:0]    ddr3_dm,
+   output logic [0:0]    ddr3_odt
+`else
    inout logic [15:0]    ddr2_dq,
    inout logic [1:0]     ddr2_dqs_n,
    inout logic [1:0]     ddr2_dqs_p,
@@ -82,6 +98,7 @@ module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
    output logic [0:0]    ddr2_cs_n,
    output logic [1:0]    ddr2_dm,
    output logic [0:0]    ddr2_odt
+`endif
    );
 
   // MMCM Signals
@@ -221,7 +238,11 @@ module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
 
   logic [3:0] SDCCSin;
   assign SDCCS = SDCCSin[0];
+`ifdef NEXYS_VIDEO
+  assign SD_RESET = 1'b1;
+`else
   assign SD_RESET = 1'b0;
+`endif
 
   logic south_reset;
   assign south_reset = ~resetn;
@@ -344,7 +365,7 @@ module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
      .s_axi_awsize(m_axi_awsize),
      .s_axi_awburst(m_axi_awburst),
      .s_axi_awcache(m_axi_awcache),
-     .s_axi_awaddr(m_axi_awaddr[30:0] ),
+     .s_axi_awaddr(m_axi_awaddr),
      .s_axi_awprot(m_axi_awprot),
      .s_axi_awregion(4'b0), // this could be a bug. bridge does not have these outputs
      .s_axi_awqos(4'b0),    // this could be a bug. bridge does not have these outputs
@@ -369,7 +390,7 @@ module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
      .s_axi_arqos(4'b0),    // this could be a bug. bridge does not have these outputs
      .s_axi_arcache(m_axi_arcache),
      .s_axi_arvalid(m_axi_arvalid),
-     .s_axi_araddr(m_axi_araddr[30:0]),
+     .s_axi_araddr(m_axi_araddr),
      .s_axi_arlock(m_axi_arlock),
      .s_axi_arready(m_axi_arready),
      .s_axi_rid(m_axi_rid),
@@ -421,6 +442,77 @@ module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
      .m_axi_rlast(BUS_axi_rlast),
      .m_axi_rready(BUS_axi_rready));
 
+`ifdef NEXYS_VIDEO
+  // DDR3 Controller
+  ddr3 ddr3
+    (
+     .ddr3_dq,
+     .ddr3_dqs_n,
+     .ddr3_dqs_p,
+     .ddr3_addr,
+     .ddr3_ba,
+     .ddr3_ras_n,
+     .ddr3_cas_n,
+     .ddr3_we_n,
+     .ddr3_reset_n,
+     .ddr3_ck_p,
+     .ddr3_ck_n,
+     .ddr3_cke,
+     .ddr3_dm,
+     .ddr3_odt,
+     .sys_clk_i(clk200),
+     .clk_ref_i(clk200_b),
+     .ui_clk(BUSCLK),
+     .ui_clk_sync_rst(ui_clk_sync_rst),
+     .aresetn(resetn),
+     .sys_rst(resetn),
+     .mmcm_locked(mmcm_locked),
+     .app_sr_req(1'b0),
+     .app_ref_req(1'b0),
+     .app_zq_req(1'b0),
+     .app_sr_active(app_sr_active),
+     .app_ref_ack(app_ref_ack),
+     .app_zq_ack(app_zq_ack),
+     .s_axi_awid(BUS_axi_awid),
+     .s_axi_awaddr(BUS_axi_awaddr[28:0]),
+     .s_axi_awlen(BUS_axi_awlen),
+     .s_axi_awsize(BUS_axi_awsize),
+     .s_axi_awburst(BUS_axi_awburst),
+     .s_axi_awlock(BUS_axi_awlock),
+     .s_axi_awcache(BUS_axi_awcache),
+     .s_axi_awprot(BUS_axi_awprot),
+     .s_axi_awqos(BUS_axi_awqos),
+     .s_axi_awvalid(BUS_axi_awvalid),
+     .s_axi_awready(BUS_axi_awready),
+     .s_axi_wdata(BUS_axi_wdata),
+     .s_axi_wstrb(BUS_axi_wstrb),
+     .s_axi_wlast(BUS_axi_wlast),
+     .s_axi_wvalid(BUS_axi_wvalid),
+     .s_axi_wready(BUS_axi_wready),
+     .s_axi_bready(BUS_axi_bready),
+     .s_axi_bid(BUS_axi_bid),
+     .s_axi_bresp(BUS_axi_bresp),
+     .s_axi_bvalid(BUS_axi_bvalid),
+     .s_axi_arid(BUS_axi_arid),
+     .s_axi_araddr(BUS_axi_araddr[28:0]),
+     .s_axi_arlen(BUS_axi_arlen),
+     .s_axi_arsize(BUS_axi_arsize),
+     .s_axi_arburst(BUS_axi_arburst),
+     .s_axi_arlock(BUS_axi_arlock),
+     .s_axi_arcache(BUS_axi_arcache),
+     .s_axi_arprot(BUS_axi_arprot),
+     .s_axi_arqos(BUS_axi_arqos),
+     .s_axi_arvalid(BUS_axi_arvalid),
+     .s_axi_arready(BUS_axi_arready),
+     .s_axi_rready(BUS_axi_rready),
+     .s_axi_rlast(BUS_axi_rlast),
+     .s_axi_rvalid(BUS_axi_rvalid),
+     .s_axi_rresp(BUS_axi_rresp),
+     .s_axi_rid(BUS_axi_rid),
+     .s_axi_rdata(BUS_axi_rdata),
+     .init_calib_complete(c0_init_calib_complete),
+     .device_temp(device_temp));
+`else
   // DDR2 Controller
   ddr2 ddr2
     (
@@ -497,6 +589,7 @@ module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
 
      .init_calib_complete(c0_init_calib_complete),
      .device_temp_i(device_temp));
+`endif
 
   (* mark_debug = "true" *)  logic IlaTrigger;
 

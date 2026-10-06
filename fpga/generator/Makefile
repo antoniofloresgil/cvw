@@ -2,7 +2,7 @@ dst := IP
 
 all: ArtyA7
 
-.PHONY: ArtyA7 vcu118 vcu108 genesys2 nexysa7
+.PHONY: ArtyA7 vcu118 vcu108 genesys2 nexysa7 nexysvideo
 
 ArtyA7: export XILINX_PART := xc7a100tcsg324-1
 ArtyA7: export XILINX_BOARD := digilentinc.com:arty-a7-100:part0:1.1
@@ -39,6 +39,14 @@ nexysa7: export SYSTEMCLOCK := 20000000
 nexysa7: export MAXSDCCLOCK  :=  10000000
 nexysa7: FPGA_NEXYSA7
 
+nexysvideo: export XILINX_PART := xc7a200tsbg484-1
+nexysvideo: export XILINX_BOARD := digilentinc.com:nexys_video:part0:1.2
+nexysvideo: export XILINX_BOARD_REPO := $(WALLY)/addins/vivado-boards/new/board_files
+nexysvideo: export board := nexysvideo
+nexysvideo: export SYSTEMCLOCK := 20000000
+nexysvideo: export MAXSDCCLOCK := 10000000
+nexysvideo: FPGA_NEXYSVIDEO
+
 # variables computed from config
 EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/fpga$(board)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')
 
@@ -55,6 +63,9 @@ FPGA_GENESYS2: PreProcessFiles IP_GENESYS2 zsbl
 	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
 
 FPGA_NEXYSA7: PreProcessFiles IP_NEXYSA7 zsbl
+	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
+
+FPGA_NEXYSVIDEO: PreProcessFiles IP_NEXYSVIDEO zsbl
 	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
 
 # Generate IP Blocks
@@ -81,6 +92,12 @@ IP_NEXYSA7: $(dst)/sysrst.log \
 	$(dst)/clkconverter.log \
 	$(dst)/ahbaxibridge.log
 
+IP_NEXYSVIDEO: $(dst)/sysrst.log \
+	MEM_NEXYSVIDEO \
+	$(dst)/mmcm-nexysvideo.log \
+	$(dst)/clkconverter.log \
+	$(dst)/ahbaxibridge.log
+
 # Generate Memory IP Blocks
 .PHONY: MEM_VCU MEM_Arty
 MEM_VCU:
@@ -93,6 +110,9 @@ MEM_GENESYS2:
 
 MEM_NEXYSA7:
 	$(MAKE) $(dst)/ddr2-$(board).log
+
+MEM_NEXYSVIDEO:
+	$(MAKE) $(dst)/ddr3-$(board).log
 
 # Copy files and make necessary modifications
 .PHONY: PreProcessFiles
@@ -114,7 +134,7 @@ PreProcessFiles:
 .PHONY: zsbl
 zsbl:
 	$(MAKE) -C ../zsbl clean
-	SYSTEMCLOCK=$(SYSTEMCLOCK) EXT_MEM_BASE=$(EXT_MEM_BASE) EXT_MEM_RANGE=$(EXT_MEM_RANGE) $(MAKE) -C ../zsbl
+	SYSTEMCLOCK=$(SYSTEMCLOCK) MAXSDCCLOCK=$(MAXSDCCLOCK) EXT_MEM_BASE=$(EXT_MEM_BASE) EXT_MEM_RANGE=$(EXT_MEM_RANGE) $(MAKE) -C ../zsbl
 
 # Generate Individual IP Blocks
 $(dst)/%.log: %.tcl
@@ -133,7 +153,8 @@ cleanFPGA:
 cleanAll: cleanIP cleanLogs cleanFPGA
 
 # Aliases
-.PHONY: arty artya7 VCU118 VCU108 nexys nexysa7
+.PHONY: arty artya7 VCU118 VCU108 nexys nexysa7 NexysVideo
 arty artya7: ArtyA7
 VCU118: vcu118
 VCU108: vcu108
+NexysVideo: nexysvideo

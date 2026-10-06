@@ -4,6 +4,10 @@ set boardName $::env(XILINX_BOARD)
 
 set ipName ahbaxibridge
 
+if {[info exists ::env(XILINX_BOARD_REPO)]} {
+    set_param board.repoPaths $::env(XILINX_BOARD_REPO)
+}
+
 create_project $ipName . -force -part $partNumber
 if {$boardName!="ArtyA7"} {
     set_property board_part $boardName [current_project]

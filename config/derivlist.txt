@@ -71,6 +71,9 @@ EXT_MEM_RANGE       64'h7FFFFFFF
 deriv fpganexysa7 fpga
 EXT_MEM_RANGE       64'h07FFFFFF
 
+deriv fpganexysvideo fpga
+EXT_MEM_RANGE       64'h1FFFFFFF
+
 # temporary spitest configuration
 deriv spitest rv64gc
 UNCORE_RAM_RANGE    64'h0FFFFFFF
