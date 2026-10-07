@@ -102,6 +102,26 @@ The toolchain installation script installs the following tools:
 - [uv](https://docs.astral.sh/uv/): Python package manager and virtual environment tool
 - [mise](https://mise.jdx.dev/): development environment setup tool for managing tool versions and environment variables
 - [RISCOF](https://github.com/riscv-software-src/riscof.git): RISC-V compliance test framework
+- [Yosys](https://github.com/YosysHQ/yosys) and [yosys-slang](https://github.com/povik/yosys-slang): Verilog/SystemVerilog synthesis
+- [nextpnr-xilinx](https://github.com/gatecat/nextpnr-xilinx): placement and routing for Xilinx 7-series FPGAs
+- [Project X-Ray](https://github.com/f4pga/prjxray): Xilinx 7-series device database and bitstream tools
+- [openFPGALoader](https://github.com/trabucayre/openFPGALoader): FPGA SRAM and flash programmer
+
+The FPGA installation also generates nextpnr chip databases for the `xc7a100t` used by the Arty A7-100T and Nexys A7-100T and the `xc7a200t` used by the Nexys Video. The open-source flow builds a reduced Wally configuration with internal BRAM, UART, GPIO and CLINT; it does not replace the Vivado-generated DDR and clocking IP in the existing FPGA tops.
+
+After sourcing `$WALLY/setup.sh`, generate a bitstream with either:
+
+```bash
+cd fpga/generator
+make FLOW=vivado ArtyA7
+make FLOW=vivado nexysa7
+make FLOW=vivado nexysvideo
+make FLOW=opensource ArtyA7
+make FLOW=opensource nexysa7
+make FLOW=opensource nexysvideo
+```
+
+The open-source output is written under `fpga/generator/opensource-<board>/`. The open-source flow is experimental: it targets 25 MHz on the Arty A7-100T and Nexys A7-100T and 40 MHz on the Nexys Video. So far only the Nexys Video bitstream has been programmed on hardware (`DONE=1`); DDR3 bring-up is still in progress (see `docs/fpga-opensource-litedram.md`).
 
 Additionally, Buildroot Linux is built for Wally and linux test-vectors are generated for simulation. See the [Linux README](linux/README.md) for more details. This can be skipped using the `--no-buildroot` flag.
 

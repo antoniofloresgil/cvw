@@ -47,6 +47,7 @@ GNU_PACKAGES+=(autoconf automake gawk bison flex texinfo gperf libtool patchutil
 SAIL_PACKAGES+=(cmake)
 VERILATOR_PACKAGES+=(autoconf flex bison help2man perl ccache numactl gtkwave) # gtkwave is not needed for verilator, but useful for viewing waveforms
 BUILDROOT_PACKAGES+=(patchutils perl cpio bc)
+FPGA_PACKAGES+=(cmake)
 
 # Distro specific packages and package manager
 case "$FAMILY" in
@@ -62,6 +63,7 @@ case "$FAMILY" in
         SAIL_PACKAGES+=(ninja-build gmp-devel)
         VERILATOR_PACKAGES+=(zlib-devel gperftools-devel mold)
         BUILDROOT_PACKAGES+=(ncurses ncurses-base ncurses-libs ncurses-devel gcc-gfortran) # gcc-gfortran is only needed for compiling spec benchmarks on buildroot linux
+        FPGA_PACKAGES+=(boost-devel eigen3-devel)
         # Extra packages not available in rhel8, nice for Verilator
         if (( RHEL_VERSION >= 9 )); then
             VERILATOR_PACKAGES+=(perl-doc)
@@ -104,6 +106,7 @@ case "$FAMILY" in
         SAIL_PACKAGES+=(ninja-build libgmp-dev)
         VERILATOR_PACKAGES+=(libfl2 libfl-dev zlib1g-dev libunwind-dev libgoogle-perftools-dev perl-doc)
         BUILDROOT_PACKAGES+=(ncurses-base ncurses-bin libncurses-dev gfortran) # gfortran is only needed for compiling spec benchmarks on buildroot linux
+        FPGA_PACKAGES+=(libboost-filesystem-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev libboost-thread-dev libeigen3-dev)
         VIVADO_PACKAGES+=(libncurses*) # Vivado hangs on the third stage of installation without this
         ;;
     suse)
@@ -124,6 +127,7 @@ case "$FAMILY" in
         SAIL_PACKAGES+=(ninja gmp-devel)
         VERILATOR_PACKAGES+=(libfl2 libfl-devel zlib-devel gperftools-devel perl-doc)
         BUILDROOT_PACKAGES+=(ncurses-utils ncurses-devel gcc-fortran) # gcc-fortran is only needed for compiling spec benchmarks on buildroot linux
+        FPGA_PACKAGES+=(boost-devel eigen3-devel)
 
         if ((SUSE_VERSION >= 160)); then
             SPIKE_PACKAGES+=(libboost_regex1_86_0-devel libboost_system1_86_0-devel)
@@ -141,11 +145,11 @@ esac
 if [ "${1}" == "--check" ]; then
     section_header "Checking Dependencies from Package Manager"
     if [[ "$FAMILY" == rhel || "$FAMILY" == suse ]]; then
-        for pack in "${GENERAL_PACKAGES[@]}" "${GNU_PACKAGES[@]}" "${QEMU_PACKAGES[@]}" "${SPIKE_PACKAGES[@]}" "${WHISPER_PACKAGES[@]}" "${SAIL_PACKAGES[@]}" "${VERILATOR_PACKAGES[@]}" "${BUILDROOT_PACKAGES[@]}"; do
+        for pack in "${GENERAL_PACKAGES[@]}" "${GNU_PACKAGES[@]}" "${QEMU_PACKAGES[@]}" "${SPIKE_PACKAGES[@]}" "${WHISPER_PACKAGES[@]}" "${SAIL_PACKAGES[@]}" "${VERILATOR_PACKAGES[@]}" "${BUILDROOT_PACKAGES[@]}" "${FPGA_PACKAGES[@]}"; do
             rpm -q "$pack" > /dev/null || (echo -e "${FAIL_COLOR}Missing packages detected (${WARNING_COLOR}$pack${FAIL_COLOR}). Run as root to auto-install or run wally-package-install.sh first.${ENDC}" && exit 1)
         done
     elif [[ "$FAMILY" == ubuntu || "$FAMILY" == debian ]]; then
-        for pack in "${GENERAL_PACKAGES[@]}" "${GNU_PACKAGES[@]}" "${QEMU_PACKAGES[@]}" "${SPIKE_PACKAGES[@]}" "${WHISPER_PACKAGES[@]}" "${SAIL_PACKAGES[@]}" "${VERILATOR_PACKAGES[@]}" "${BUILDROOT_PACKAGES[@]}"; do
+        for pack in "${GENERAL_PACKAGES[@]}" "${GNU_PACKAGES[@]}" "${QEMU_PACKAGES[@]}" "${SPIKE_PACKAGES[@]}" "${WHISPER_PACKAGES[@]}" "${SAIL_PACKAGES[@]}" "${VERILATOR_PACKAGES[@]}" "${BUILDROOT_PACKAGES[@]}" "${FPGA_PACKAGES[@]}"; do
             dpkg -l "$pack" | grep "ii" > /dev/null || (echo -e "${FAIL_COLOR}Missing packages detected (${WARNING_COLOR}$pack${FAIL_COLOR}). Run as root to auto-install or run wally-package-install.sh first." && exit 1)
         done
     fi
@@ -182,7 +186,7 @@ else
     fi
 
     # Install packages listed above using appropriate package manager
-    eval $PACKAGE_MANAGER install "${GENERAL_PACKAGES[@]}" "${GNU_PACKAGES[@]}" "${QEMU_PACKAGES[@]}" "${SPIKE_PACKAGES[@]}" "${WHISPER_PACKAGES[@]}" "${SAIL_PACKAGES[@]}" "${VERILATOR_PACKAGES[@]}" "${BUILDROOT_PACKAGES[@]}" "${VIVADO_PACKAGES[@]}"
+    eval $PACKAGE_MANAGER install "${GENERAL_PACKAGES[@]}" "${GNU_PACKAGES[@]}" "${QEMU_PACKAGES[@]}" "${SPIKE_PACKAGES[@]}" "${WHISPER_PACKAGES[@]}" "${SAIL_PACKAGES[@]}" "${VERILATOR_PACKAGES[@]}" "${BUILDROOT_PACKAGES[@]}" "${FPGA_PACKAGES[@]}" "${VIVADO_PACKAGES[@]}"
 
     # Post install steps
     # Vivado looks for ncurses5 libraries, but Ubuntu 24.04 only has ncurses6

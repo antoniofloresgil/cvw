@@ -1,0 +1,25 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -165,7 +165,7 @@
+ find_package(Sanitizers)
+
+ # List of Boost libraries to include
+-set(boost_libs filesystem program_options iostreams system)
++set(boost_libs filesystem program_options iostreams)
+ if (Threads_FOUND)
+     list(APPEND boost_libs thread)
+ endif()
+diff --git a/bba/CMakeLists.txt b/bba/CMakeLists.txt
+--- a/bba/CMakeLists.txt
++++ b/bba/CMakeLists.txt
+@@ -3,8 +3,7 @@
+
+ find_package(Boost REQUIRED COMPONENTS
+     program_options
+-    filesystem
+-    system)
++    filesystem)
+
+ add_executable(bbasm
+     main.cc)

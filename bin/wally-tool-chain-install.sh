@@ -111,6 +111,19 @@ source "$WALLY"/bin/installation/sail-install.sh
 source "$WALLY"/bin/installation/verilator-install.sh
 
 
+# Open-source FPGA toolchain for Xilinx 7-series devices.
+# Installs Yosys with its Slang SystemVerilog frontend, nextpnr-xilinx,
+# Project X-Ray, an Artix-7 xc7a100t chip database, and openFPGALoader.
+source "$WALLY"/bin/installation/fpga-toolchain-install.sh
+
+
+# LiteX (https://github.com/enjoy-digital/litex)
+# LiteX is a Python-based SoC/controller generator. The open-source FPGA flow
+# uses it to generate the LiteDRAM DDR3 controller and PHY, replacing Vivado's
+# MIG for boards with external DRAM.
+source "$WALLY"/bin/installation/litex-install.sh
+
+
 # OSU Skywater 130 cell library (https://foss-eda-tools.googlesource.com/skywater-pdk/libs/sky130_osu_sc_t12)
 # The OSU Skywater 130 cell library is a standard cell library that is used to synthesize Wally.
 source "$WALLY"/bin/installation/skywater-lib-install.sh
