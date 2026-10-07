@@ -211,3 +211,93 @@ the UART sticky bit requires the BIOS to reach `uart_init()`/`printf()`.
 2. Fix or re-integrate the service CPU reset/clock accordingly.
 3. Constrain and verify the DDR PHY `sys4x` domain.
 4. Only then map programs to DDR3 / reorganize the boot path.
+
+## Future design: run DDR3 bring-up without a service CPU (TODO)
+
+> **Do this only after the current blocker is resolved and Wally+DDR3 runs on
+> hardware with the VexRiscv service CPU.** Keeping the service CPU for now
+> minimizes the number of variables during bring-up; this migration removes it
+> afterwards.
+
+The service CPU is not intrinsically required for DDR3: it exists because
+LiteDRAM performs JEDEC initialization and PHY leveling in **software**
+(`sdram_init()` in `liblitedram`) driven through the DFII/PHY CSRs, and the
+standalone generator supplies a small VexRiscv (with its own ROM/SRAM) to run
+that software. Xilinx's MIG does the same calibration in hardware, but it is
+closed and cannot be reused in this flow.
+
+### What LiteDRAM exposes without a CPU
+
+With `cpu_type=None` (`litedram/gen.py`, the `cpu_type is None` path) the core
+instantiates **no CPU, no ROM, no SRAM and no timer**, and exposes a control
+Wishbone master, `wb_ctrl`, to the top level. Because `add_sdram` is called with
+`with_soc_interconnect = (cpu_type is not None)`
+(`litex/soc/integration/soc.py`), the DDR is *not* placed on the SoC bus in this
+mode, so:
+
+- `wb_ctrl` reaches the **CSRs only**: `ddrphy_*`, `sdram_dfii_*` and `ddrctrl`
+  (`init_done`/`init_error`) at `0xF0000000` (64 KiB), per the generated
+  `csr.json`;
+- the **DDR data path** stays on the existing `user_port_wally` crossbar port
+  (mapped at `0x40000000`), which is gated by `init_done`
+  (`block_until_ready`).
+
+### What the bring-up code must do
+
+All of it is 32-bit MMIO; no FPU and no CPU-specific features are needed:
+
+- `init_sequence()` (generated into `sdram_phy.h`): a short JEDEC sequence of
+  CSR writes (reset, CKE, MR2/MR3/MR1/MR0, ZQ calibration) plus `cdelay`;
+- `sdram_leveling()` (`liblitedram/sdram.c`): write leveling, read leveling,
+  command-delay scan and bit-slip. These use the DFII data CSRs
+  (`sdram_dfii_pi*_wrdata`/`rddata`) directly, so they also run purely over
+  `wb_ctrl` and never touch the mapped DDR;
+- `cdelay()` is a `nop` busy loop (`software/include/hw/common.h`);
+- the final `memtest`/`memspeed` is optional (`SDRAM_TEST_DISABLE`) and is the
+  only part that uses the mapped DDR (through the user port).
+
+### Where the bring-up code lives
+
+It cannot run from DDR, since DDR is exactly what it initializes. It must reside
+and execute in Wally's **on-chip memory**:
+
+- the program image in the **IROM** (64 KiB at `0x80000000` in the
+  `fpgaopensource` configuration), and
+- the stack / writable data in the **DTIM** (64 KiB at `0x80000000`).
+
+That is the same role a ZSBL/BootROM plays in the Vivado flow. The only change
+from the current design is that today the ROM/SRAM belong to the VexRiscv inside
+the LiteDRAM core, whereas here they are Wally's own on-chip memories.
+
+### What Wally needs
+
+1. Two paths (or one address-decoded AHB-to-Wishbone bridge) from Wally's
+   external AHB port: the CSRs at `0xF0000000` to `wb_ctrl`, and the DDR at
+   `0x40000000` to `user_port_wally` (which already exists).
+2. The ported `init_sequence` + `sdram_leveling` running in Wally's bare-metal
+   environment, reusing the generated `csr.h`/`sdram_phy.h`, with a `cdelay`
+   implementation.
+3. Wally writes `ddrctrl_init_done` when done; the user port's
+   `block_until_ready` gating then releases the DDR data path.
+4. `gen_litedram.py` generated with `cpu=None` and without `compile_software`
+   (and without the firmware dependencies).
+
+### Benefits
+
+A single CPU: removes the VexRiscv, its ROM/SRAM and the whole firmware
+toolchain (`pythondata-cpu-vexriscv`, `pythondata-software-picolibc`,
+`pythondata-software-compiler-rt`, `meson`, `ninja`), reducing both area and the
+install footprint.
+
+### Costs and risks
+
+- Porting and **validating the PHY calibration** on Wally is the bulk of the
+  work (~600 lines of `liblitedram`), and is where the risk sits.
+- `cdelay` is calibrated to the CPU/clock; it must be re-derived (the values are
+  minimum delays, so erring long is safe).
+- Address maps must be reconciled: the CSRs occupy `0xF0000000` in Wally's
+  external window, Wally keeps the IROM at `0x80000000`, and the DDR stays at
+  `0x40000000` (Wally declares a 128 MiB `EXT_MEM_RANGE`, whereas LiteX's own
+  SoC mapping would only expose 16 MiB).
+- The existing AHB bridge to the user port is reused, but its verification scope
+  changes, and the service-CPU reset/clock bring-up work becomes obsolete.
