@@ -2,11 +2,24 @@
 
 # core-v-wally
 
-Wally is a 5-stage pipelined processor configurable to support all the standard RISC-V options, including RV32/64, A, B, C, D, F, M, Q, and Zk* extensions, virtual memory, PMP, and the various privileged modes and CSRs. It provides optional caches, branch prediction, and standard RISC-V peripherals (CLINT, PLIC, UART, GPIO).   Wally is written in SystemVerilog.  It passes the [RISC-V Arch Tests](https://github.com/riscv-non-isa/riscv-arch-test) and boots Linux on an FPGA.  Configurations range from a minimal RV32E core to a fully featured RV64GC application processor with all of the RVA22S64 profile extensions. Wally is part of the OpenHWGroup family of robust open RISC-V cores.
+Wally is a 5-stage pipelined processor configurable to support up through the RVA22 profile, including virtual memory, PMP, and the various privileged modes and CSRs. The rv64gc configuration supports:
+
+- RV64IMAFDCB with M, S, and U modes
+- Zicsr, Zifencei, Zicntr, Zihpm, Zicond, and Zicclsm
+- Zbc
+- Zkn scalar crypto (Zbkb, Zbkc, Zbkx, Zknd, Zkne, and Zknh)
+- Zcb
+- Zfh and Zfa
+- Zicbom, Zicboz, and Zicbop
+- Sstc
+- Sv39, Sv48, and Sv57 virtual memory with Svpbmt, Svnapot, Svinval, and Svadu
+- 16 PMP entries
+
+Other configurations range down to a minimal RV32E core, and derivative configurations add the Q extension. Wally provides optional caches, branch prediction, and standard RISC-V peripherals (CLINT, PLIC, UART, GPIO).   Wally is written in SystemVerilog.  It passes the [RISC-V Arch Tests](https://github.com/riscv/riscv-arch-test) and boots Linux on an FPGA.  Wally is part of the OpenHW Foundation family of robust open RISC-V cores.
 
 ![Wally block diagram](wallyriscvTopAll.png)
 
-Wally is described in a textbook, [*RISC-V System-on-Chip Design*](https://pages.hmc.edu/harris/ddca/rvsocd.html), by Harris, Stine, Thompson, and Harris.  Users should follow the setup instructions below.  A system administrator must install CAD tools using the directions further down.
+Wally is described in a textbook, [*RISC-V System-on-Chip Design*](https://pages.hmc.edu/harris/ddca/rvsocd.html), by Harris, Stine, Thompson, and Harris.  Users should follow the setup instructions below.
 
 # Verification
 
@@ -43,7 +56,7 @@ Then fork and clone the repo, source setup, make the tests and run regression
   ```
 
 > [!NOTE]
-> If you are installing on a new system without any tools installed, please jump to the next section, [Toolchain Installation](#toolchain-installation-and-configuration-sys-admin), then come back here.
+> If you are installing on a new system without any tools installed, please jump to the next section, [Toolchain Installation](#toolchain-installation-and-configuration), then come back here.
 
 7. Run the setup script to update your `PATH` and activate the python virtual environment.
 
@@ -78,16 +91,15 @@ Then fork and clone the repo, source setup, make the tests and run regression
   $ regression-wally
   ```
 
-# Toolchain Installation and Configuration (Sys Admin)
+# Toolchain Installation and Configuration
 
-> This section describes the open source toolchain installation.
+This section describes the open source toolchain installation.
 
 ### Compatibility
-The current version of the toolchain has been tested on Ubuntu (versions 20.04 LTS, 22.04 LTS, 24.04 LTS, and 26.04 LTS), Debian (versions 12 and 13), Red Hat/Rocky/AlmaLinux (versions 8, 9, and 10), and SUSE versions 15.6 and 16.0. Only the latest minor release of each major version is tested.
+The current version of the toolchain has been tested on Ubuntu (versions 20.04 LTS, 22.04 LTS, 24.04 LTS, and 26.04 LTS), Debian (versions 12 and 13), Red Hat/Rocky/AlmaLinux (versions 8, 9, and 10), SUSE versions 15.6 and 16.0 and Fedora (version 44). Only the latest minor release of each major version is tested.
 
 > [!WARNING]
-> - Ubuntu 22.04LTS is incompatible with Synopsys Design Compiler.
-> - Verilator currently fails to simulate correctly on Ubuntu 20.04 LTS and Red Hat/Rocky/AlmaLinux 8.
+> - Ubuntu 22.04 LTS is incompatible with Synopsys Design Compiler.
 > - Whisper is not installed on Ubuntu 20.04 LTS due to issues compiling the boost libraries.
 
 ### Overview
@@ -101,7 +113,6 @@ The toolchain installation script installs the following tools:
 - [OSU Skywater 130 cell library](https://foss-eda-tools.googlesource.com/skywater-pdk/libs/sky130_osu_sc_t12): standard cell library
 - [uv](https://docs.astral.sh/uv/): Python package manager and virtual environment tool
 - [mise](https://mise.jdx.dev/): development environment setup tool for managing tool versions and environment variables
-- [RISCOF](https://github.com/riscv-software-src/riscof.git): RISC-V compliance test framework
 
 Additionally, Buildroot Linux is built for Wally and linux test-vectors are generated for simulation. See the [Linux README](linux/README.md) for more details. This can be skipped using the `--no-buildroot` flag.
 
@@ -227,20 +238,25 @@ This utility will take up approximately 100 GB on your hard drive. You can also 
 
 # Example wsim commands
 
-wsim runs one of multiple simulators, Questa, VCS, or Verilator using a specific configuration and either a suite of tests or a specific elf file.
+wsim runs one of multiple simulators, Questa, VCS, or Verilator using a specific configuration and one or more ELF files.
 The general syntax is
-`wsim <config> <suite or elf file> [--options]`
+`wsim <config> <elf or directory>... [--options]`
+
+Every ELF named, and every `*.elf` found under every directory named, runs back-to-back in a single simulation session.
+Tests are self-checking, so the simulation ends with a single summary: `SUCCESS! All tests ran without failures.` or `FAIL: N test programs had errors`.
 
 Parameters and options:
 
 ```
 -h, --help                                                   show this help message and exit
 --elf ELF, -e ELF                                            ELF File name; use if name does not end in .elf
+--test {buildroot,fpga,coremark,embench}, -T ...             Special testbench mode
+--name NAME, -n NAME                                         Name used for log and coverage database files
 --sim {questa,verilator,vcs}, -s {questa,verilator,vcs}      Simulator
 --tb {testbench,testbench_fp}, -t {testbench,testbench_fp}   Testbench
 --gui, -g                                                    Simulate with GUI
 --ccov, -c                                                   Code Coverage
---fcov, -f                                                   Functional Coverage with cvw-arch-verif, implies lockstep
+--fcov, -f                                                   Functional Coverage
 --args ARGS, -a ARGS                                         Optional arguments passed to simulator via $value$plusargs
 --params PARAMS, -p PARAMS                                   Optional top-level parameter overrides of the form param=value
 --define DEFINE, -d DEFINE                                   Optional define macros passed to simulator
@@ -250,34 +266,34 @@ Parameters and options:
 --rvvi, -r                                                   Simulate rvvi hardware interface and ethernet.
 ```
 
-Run basic test with Questa
+Run a whole directory of RISC-V Architecture Tests in one session with Questa
 
 ```bash
-wsim rv64gc arch64i
+wsim rv64gc $WALLY/addins/riscv-arch-test/work/cvw-rv64gc/elfs/rv64i/I
 ```
 
-Run Questa with gui
+Run one ELF in the Questa gui
 
 ```bash
-wsim rv64gc wally64priv --gui
+wsim rv64gc $WALLY/addins/riscv-arch-test/work/cvw-rv64gc/elfs/rv64i/I/I-add-01.elf --gui
 ```
 
-Run basic test with Verilator
+Run several ELFs back-to-back with Verilator
 
 ```bash
-wsim rv32i arch32i --sim verilator
+wsim rv32gc $WALLY/tests/periph/rv32/WALLY-gpio-01.elf $WALLY/tests/periph/rv32/WALLY-clint-01.elf --sim verilator
 ```
 
-Run lockstep against ImperasDV with a single elf file in the gui. Lockstep requires single elf.
+Run lockstep against ImperasDV with a single elf file in the gui. Lockstep requires a single elf.
 
 ```bash
-wsim rv64gc $WALLY/tests/riscof/work/riscv-arch-test/rv64i_m/I/src/add-01.S/ref/ref.elf --lockstep --gui
+wsim rv64gc $WALLY/addins/riscv-arch-test/work/cvw-rv64gc/elfs/rv64i/I/I-add-01.elf --lockstep --gui
 ```
 
-Run lockstep against ImperasDV with a single elf file. Collect functional coverage.
+Collect functional coverage over a directory of tests.
 
 ```bash
-wsim rv64gc $WALLY/addins/cvw-arch-verif/tests/rv64/Zicsr/WALLY-COV-ALL.elf --fcov
+wsim rv64gc $WALLY/addins/riscv-arch-test/work/cvw-rv64gc/elfs/priv/Sv --fcov
 ```
 
 Run Linux boot simulation in lock step between Wally and ImperasDV

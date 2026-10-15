@@ -127,10 +127,8 @@ module csrc  import cvw::*;  #(parameter cvw_t P) (
     assign CounterEvent[21] = sfencevmaM & InstrValidNotFlushedM;                        // sfence.vma
     assign CounterEvent[22] = InterruptM;                                                // interrupt, InstrValidNotFlushedM will be low
     assign CounterEvent[23] = ExceptionM;                                                // exceptions, InstrValidNotFlushedM will be low
-    // coverage off
-    // DivBusyE will never be asserted high because the RV64GC configuration uses the FPU to do integer division
+    // DivBusyE is never asserted on rv64gc, which divides integers in the FPU; coverage-exclusions-rv64gc.do excludes that row
     assign CounterEvent[24] = DivBusyE | FDivBusyE;                                      // division cycles
-    // coverage on
     assign CounterEvent[31:25] = '0; // eventually give these sources, including FP instructions, I$/D$ misses, branches and mispredictions
   end else begin : cevent
     assign CounterEvent[31:3] = '0;
@@ -192,7 +190,7 @@ module csrc  import cvw::*;  #(parameter cvw_t P) (
         /* verilator lint_off WIDTH */
         if (P.XLEN==64) begin // 64-bit counter reads
           // Veri lator doesn't realize this only occurs for XLEN=64
-          if      (CSRAdrM == TIME & ~CSRWriteM)  CSRCReadValM = MTIME_CLINT; // TIME register is a shadow of the memory-mapped MTIME from the CLINT
+          if      (CSRAdrM == TIME & ~CSRWriteM & P.ZICNTR_SUPPORTED)  CSRCReadValM = MTIME_CLINT; // TIME register is a shadow of the memory-mapped MTIME from the CLINT
           else if (CSRAdrM >= MHPMCOUNTERBASE & CSRAdrM < MHPMCOUNTERBASE+P.COUNTERS & CSRAdrM != MTIME)
                   CSRCReadValM = HPMCOUNTER_REGW[CounterNumM];
           else if (CSRAdrM >= MHPMCOUNTERBASE+P.COUNTERS & CSRAdrM < MHPMCOUNTERBASE+32)
@@ -206,8 +204,8 @@ module csrc  import cvw::*;  #(parameter cvw_t P) (
           else IllegalCSRCAccessM = 1'b1;  // requested CSR doesn't exist
         end else begin // 32-bit counter reads
           // Veril ator doesn't realize this only occurs for XLEN=32
-          if      (CSRAdrM == TIME & ~CSRWriteM)  CSRCReadValM = MTIME_CLINT[31:0];// TIME register is a shadow of the memory-mapped MTIME from the CLINT
-          else if (CSRAdrM == TIMEH & ~CSRWriteM) CSRCReadValM = MTIME_CLINT[63:32];
+          if      (CSRAdrM == TIME & ~CSRWriteM & P.ZICNTR_SUPPORTED)  CSRCReadValM = MTIME_CLINT[31:0];// TIME register is a shadow of the memory-mapped MTIME from the CLINT
+          else if (CSRAdrM == TIMEH & ~CSRWriteM & P.ZICNTR_SUPPORTED) CSRCReadValM = MTIME_CLINT[63:32];
           else if (CSRAdrM >= MHPMCOUNTERBASE  & CSRAdrM < MHPMCOUNTERBASE+P.COUNTERS & CSRAdrM != MTIME)
                   CSRCReadValM = HPMCOUNTER_REGW[CounterNumM];
           else if (CSRAdrM >= MHPMCOUNTERBASE+P.COUNTERS & CSRAdrM < MHPMCOUNTERBASE+32)
