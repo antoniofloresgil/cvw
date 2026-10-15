@@ -1,0 +1,16 @@
+{
+  "name": "CORE-V-Wally",
+  "image": "wallysoc/toolchains_wally:latest",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/cad/cvw,type=bind,consistency=cached",
+  "workspaceFolder": "/home/cad/cvw",
+  "remoteUser": "cad",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "mshr-h.VerilogHDL",
+        "ms-python.python"
+      ]
+    }
+  },
+  "postCreateCommand": "git submodule update --init --recursive"
+}
