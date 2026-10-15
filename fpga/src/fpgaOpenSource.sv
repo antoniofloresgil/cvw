@@ -41,6 +41,10 @@ module fpgaOpenSource import cvw::*; (
   logic sys_rst, ddr_init_done, ddr_init_error, ddr_ready, ddr_cpu_active;
   logic init_uart_tx, wally_uart_tx;
   logic init_uart_tx_q, uart_start_seen;
+  logic [3:0] ddr_cpu_bus;
+  logic [3:0] ddr_cpu_boot, ddr_cpu_data;
+  logic [3:0] ddr_cpu_copy;
+  logic [31:0] ddr_first_data_addr;
   logic reset;
   logic [P.AHBW-1:0] HRDATAEXT;
   logic HREADYEXT, HRESPEXT;
@@ -77,6 +81,10 @@ module fpgaOpenSource import cvw::*; (
     .clk100, .cpu_reset_n(resetn), .sys_clk, .sys_rst,
     .init_done(ddr_init_done), .init_error(ddr_init_error),
     .debug_cpu_active(ddr_cpu_active),
+    .debug_cpu_bus(ddr_cpu_bus),
+    .debug_cpu_boot(ddr_cpu_boot), .debug_cpu_data(ddr_cpu_data),
+    .debug_cpu_copy(ddr_cpu_copy),
+    .debug_first_data_addr(ddr_first_data_addr),
     .uart_rx(UARTSin), .uart_tx(init_uart_tx),
     .ddram_a, .ddram_ba, .ddram_cas_n, .ddram_cke, .ddram_clk_n, .ddram_clk_p,
     .ddram_dm, .ddram_dq, .ddram_dqs_n, .ddram_dqs_p, .ddram_odt,
@@ -102,6 +110,16 @@ module fpgaOpenSource import cvw::*; (
   //   LD0 = clk100 activity, LD1 = init_done, LD2 = init_error,
   //   LD3 = service CPU wrote SRAM (BIOS executing),
   //   LD4 = service CPU UART started a frame (BIOS printing).
+  // SW0=1: LD0 = clk100, LD1 = actual CPU reset, LD2 = fetch seen,
+  //        LD3 = fetch acknowledged, LD4 = instruction bus error seen.
+  // SW1:SW0=10: LD1 = reset vector ACK, LD2 = correct reset instruction,
+  //            LD3 = crt_init ACK, LD4 = data request seen.
+  // SW1:SW0=11: LD1 = data ACK, LD2 = data ERR, LD3 = trap vector ACK,
+  //            LD4 = incorrect instruction in the boot sequence (0..0x110).
+  // SW2:SW1:SW0=100: LD1 = ROM data load requested at 0x72a0,
+  //                 LD2 = load ACK, LD3 = SRAM store requested, LD4 = store ACK.
+  // SW3=1: LD4..LD1 display a nibble of the first data byte address;
+  //        SW2..SW0 select nibble 0 (least significant) through 7.
   logic [25:0] led_cnt100;
   always_ff @(posedge clk100) led_cnt100 <= led_cnt100 + 1'b1;
 
@@ -115,7 +133,16 @@ module fpgaOpenSource import cvw::*; (
     end
   end
 
-  assign GPO = {uart_start_seen, ddr_cpu_active, ddr_init_error, ddr_init_done, led_cnt100[25]};
+  always_comb
+    if (GPI[3]) GPO = {ddr_first_data_addr[4*GPI[2:0] +: 4], led_cnt100[25]};
+    else case (GPI[2:0])
+      3'b000: GPO = {uart_start_seen, ddr_cpu_active, ddr_init_error, ddr_init_done, led_cnt100[25]};
+      3'b001: GPO = {ddr_cpu_bus, led_cnt100[25]};
+      3'b010: GPO = {ddr_cpu_boot, led_cnt100[25]};
+      3'b011: GPO = {ddr_cpu_data, led_cnt100[25]};
+      3'b100: GPO = {ddr_cpu_copy, led_cnt100[25]};
+      default: GPO = {4'b0, led_cnt100[25]};
+    endcase
 
   // AHB -> Wishbone bridge for the external (DDR3) memory region at 0x40000000.
   ahbwishbonebridge #(.ADDR_WIDTH(29), .DATA_WIDTH(32)) extbridge (
