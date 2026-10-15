@@ -48,6 +48,7 @@ linux/testvector-generation/fixBinMem
 linux/testvector-generation/qemu-serial
 
 # FPGA
+fpga/generator/opensource-*/
 fpga/generator/IP
 fpga/generator/vivado.*
 fpga/generator/.Xil/*
@@ -162,6 +163,7 @@ examples/C/mcmodel/mcmodel_medlow
 examples/C/sum/sum
 examples/C/sum_mixed/sum_mixed
 examples/C/hello/hello
+examples/C/hello/hello.bin
 examples/C/gpio/gpio
 examples/asm/sumtest/sumtest
 examples/asm/example/example
