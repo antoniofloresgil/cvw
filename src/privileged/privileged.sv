@@ -28,7 +28,7 @@
 // SOFTWARE.
 ///////////////////////////////////////////
 
-module privileged import cvw::*;  #(parameter cvw_t P) (
+module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID = 0) (
   input  logic              clk, reset,
   input  logic              StallD, StallE, StallM, StallW,
   input  logic              FlushD, FlushE, FlushM, FlushW,
@@ -134,7 +134,7 @@ module privileged import cvw::*;  #(parameter cvw_t P) (
     .EcallFaultM, .BreakpointFaultM, .sretM, .mretM, .RetM, .wfiM, .wfiW, .sfencevmaM, .sfencevmaAllM);
 
   // Control and Status Registers
-  csr #(P) csr(.clk, .reset, .FlushM, .FlushW, .StallE, .StallM, .StallW,
+  csr #(.P(P), .HART_ID(HART_ID)) csr(.clk, .reset, .FlushM, .FlushW, .StallE, .StallM, .StallW,
     .InstrM, .InstrOrigM, .PCM, .PCSpillM, .SrcAM, .IEUAdrxTvalM,
     .CSRReadM, .CSRWriteM, .TrapM, .mretM, .sretM, .InterruptM,
     .MTimerInt, .MExtInt, .SExtInt, .MSwInt,

@@ -30,7 +30,7 @@
 // and limitations under the License.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-module lsu import cvw::*;  #(parameter cvw_t P) (
+module lsu import cvw::*;  #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0) (
   input  logic                    clk, reset,
   input  logic                    StallM, FlushM, StallW, FlushW,
   output logic                    LSUStallM,                            // LSU stalls pipeline during a multicycle operation
@@ -71,6 +71,9 @@ module lsu import cvw::*;  #(parameter cvw_t P) (
   // cpu hazard unit (trap)
   output logic                    StoreAmoMisalignedFaultM,             // Store or AMO address misaligned fault
   output logic                    StoreAmoAccessFaultM,                 // Store or AMO access fault
+  // Internal atomic metadata follows the LSU request through IFU/LSU arbitration.
+  input  logic                    SCFail,
+  output logic [1:0]              LSUAtomicOp,
   // connect to ahb
   output logic [P.PA_BITS-1:0]    LSUHADDR,                             // Bus address from LSU to EBU
   input  logic [P.XLEN-1:0]       HRDATA,                               // Bus read data from LSU to EBU
@@ -400,7 +403,7 @@ module lsu import cvw::*;  #(parameter cvw_t P) (
 
       ahbinterface #(P.XLEN, 1'b1) ahbinterface(.HCLK(clk), .HRESETn(~reset), .Flush(LSUFlushW), .HREADY(LSUHREADY),
         .HRDATA(HRDATA), .HTRANS(LSUHTRANS), .HWRITE(LSUHWRITE), .HWDATA(LSUHWDATA),
-        .HWSTRB(LSUHWSTRB), .BusRW, .BusAtomic(AtomicM[1]), .ByteMask(ByteMaskM[P.XLEN/8-1:0]), .WriteData(LSUWriteDataM[P.XLEN-1:0]),
+        .HWSTRB(LSUHWSTRB), .BusRW, .BusAtomic(LSUAtomicM[1]), .ByteMask(ByteMaskM[P.XLEN/8-1:0]), .WriteData(LSUWriteDataM[P.XLEN-1:0]),
         .Stall(GatedStallW), .BusStall(LSUBusStallM), .BusCommitted(BusCommittedM), .FetchBuffer(FetchBuffer));
 
     // Mux between the 2 sources of read data, 0: Bus, 1: DTIM
@@ -422,8 +425,12 @@ module lsu import cvw::*;  #(parameter cvw_t P) (
   // Atomic operations
   /////////////////////////////////////////////////////////////////////////////////////////////
 
+  assign LSUAtomicOp = !SHARED_ATOMICS ? 2'b00 :
+                       LSUAtomicM[1] ? 2'b11 :
+                       LSUAtomicM[0] ? (PreLSURWM[0] ? 2'b10 : 2'b01) : 2'b00;
+
   if (P.ZAAMO_SUPPORTED | P.ZALRSC_SUPPORTED) begin : atomic
-    atomic #(P) atomic(.clk, .reset, .StallW, .ReadDataM(ReadDataM[P.XLEN-1:0]), .IHWriteDataM, .PAdrM,
+    atomic #(.P(P), .SHARED_ATOMICS(SHARED_ATOMICS)) atomic(.clk, .reset, .StallW, .SCFail, .ReadDataM(ReadDataM[P.XLEN-1:0]), .IHWriteDataM, .PAdrM,
       .LSUFunct7M, .LSUFunct3M, .LSUAtomicM, .PreLSURWM, .LSUFlushW,
       .IMAWriteDataM, .SquashSCW, .LSURWM);
   end else begin : lrsc

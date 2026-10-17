@@ -1652,3 +1652,18 @@ ICACHE_LINELENINBITS   32'd256
 derive rv32gc_novm_cache_4way_64KB_512Bline  rv32gc_novm_cache_4way_64KB_256Bline
 DCACHE_LINELENINBITS   32'd512
 ICACHE_LINELENINBITS   32'd512
+
+# Uncached shared-memory prototype; NCORES is a SoC parameter, not an ISA field.
+deriv multicore rv64gc
+DCACHE_SUPPORTED 0
+ICACHE_SUPPORTED 0
+BURST_EN 0
+ZAAMO_SUPPORTED 0
+ZALRSC_SUPPORTED 0
+UNCORE_RAM_RANGE 64'h0000FFFF
+BOOTROM_SUPPORTED 0
+
+# Stage two: central LR/SC reservations and serialized uncached AMOs.
+deriv multicore_atomic multicore
+ZAAMO_SUPPORTED 1
+ZALRSC_SUPPORTED 1

@@ -28,7 +28,7 @@
 
 
 
-module wallywrapper import cvw::*;(
+module wallywrapper import cvw::*; #(parameter int unsigned NCORES = 1) (
   input logic clk,
   input logic reset_ext,
   input logic SPIIn,
@@ -78,7 +78,7 @@ module wallywrapper import cvw::*;(
 
   assign ExternalStall = '0;
 
-  wallypipelinedsoc  #(P) dut(.clk, .reset_ext, .reset, .ExternalStall, .HRDATAEXT,.HREADYEXT, .HRESPEXT,.HSELEXT,
+  wallypipelinedsoc #(.P(P), .NCORES(NCORES)) dut(.clk, .reset_ext, .reset, .ExternalStall, .HRDATAEXT,.HREADYEXT, .HRESPEXT,.HSELEXT,
                         .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
                         .HTRANS, .HMASTLOCK, .HREADY, .TIMECLK(1'b0), .GPIOIN, .GPIOOUT, .GPIOEN,
                         .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO);

@@ -28,7 +28,7 @@
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module uncore import cvw::*;  #(parameter cvw_t P)(
+module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES = 1)(
   // AHB Bus Interface
   input  logic                 HCLK, HRESETn,
   input  logic                 TIMECLK,
@@ -47,8 +47,8 @@ module uncore import cvw::*;  #(parameter cvw_t P)(
   output logic                 HREADY, HRESP,
   output logic                 HSELEXT,
   // peripheral pins
-  output logic                 MTimerInt, MSwInt,         // Timer and software interrupts from CLINT
-  output logic                 MExtInt, SExtInt,          // External interrupts from PLIC
+  output logic [NCORES-1:0]    MTimerInt, MSwInt,         // Timer and software interrupts from CLINT
+  output logic [NCORES-1:0]    MExtInt, SExtInt,          // External interrupts from PLIC
   output logic [63:0]          MTIME_CLINT,               // MTIME, from CLINT
   input  logic [31:0]          GPIOIN,                    // GPIO pin input value
   output logic [31:0]          GPIOOUT, GPIOEN,           // GPIO pin output value and enable
@@ -124,19 +124,19 @@ module uncore import cvw::*;  #(parameter cvw_t P)(
 
   // memory-mapped I/O peripherals
   if (P.CLINT_SUPPORTED == 1) begin : clint
-    clint_apb #(P) clint(.PCLK, .PRESETn, .PSEL(PSEL[1]), .PADDR(PADDR[15:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+    clint_apb #(.P(P), .NCORES(NCORES)) clint(.PCLK, .PRESETn, .PSEL(PSEL[1]), .PADDR(PADDR[15:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[1]), .PREADY(PREADY[1]), .MTIME(MTIME_CLINT), .MTimerInt, .MSwInt);
   end else begin : clint
     assign MTIME_CLINT = '0;
-    assign MTimerInt = 1'b0; assign MSwInt = 1'b0;
+    assign MTimerInt = '0; assign MSwInt = '0;
   end
 
   if (P.PLIC_SUPPORTED == 1) begin : plic
-    plic_apb #(P) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+    plic_apb #(.P(P), .NCORES(NCORES)) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MExtInt, .SExtInt);
   end else begin : plic
-    assign MExtInt = 1'b0;
-    assign SExtInt = 1'b0;
+    assign MExtInt = '0;
+    assign SExtInt = '0;
   end
 
   if (P.GPIO_SUPPORTED == 1) begin : gpio

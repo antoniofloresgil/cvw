@@ -32,7 +32,7 @@
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module csrm  import cvw::*;  #(parameter cvw_t P) (
+module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID = 0) (
   input  logic                     clk, reset,
   input  logic                     UngatedCSRMWriteM, CSRMWriteM, MTrapM,
   input  logic [11:0]              CSRAdrM,
@@ -154,7 +154,7 @@ module csrm  import cvw::*;  #(parameter cvw_t P) (
   assign MISA_REGW = {(P.XLEN == 32 ? 2'b01 : 2'b10), {(P.XLEN-28){1'b0}}, MISA_26[25:0]};
 
   // MHARTID is hardwired. It only exists as a signal so that the testbench can easily see it.
-  assign MHARTID_REGW = '0;
+  assign MHARTID_REGW = P.XLEN'(HART_ID);
 
   // Write machine Mode CSRs
   assign WriteMSTATUSM       = CSRMWriteM & (CSRAdrM == MSTATUS);
@@ -259,7 +259,7 @@ module csrm  import cvw::*;  #(parameter cvw_t P) (
       MVENDORID:     CSRMReadValM = {{(P.XLEN-32){1'b0}}, 32'h0000_0602}; // OpenHW JEDEC
       MARCHID:       CSRMReadValM = {{(P.XLEN-32){1'b0}}, 32'h24}; // 36 for CV-Wally
       MIMPID:        CSRMReadValM = {{P.XLEN-12{1'b0}}, 12'h100}; // pipelined implementation
-      MHARTID:       CSRMReadValM = MHARTID_REGW; // hardwired to 0
+      MHARTID:       CSRMReadValM = MHARTID_REGW; // elaboration-time hart ID
       MCONFIGPTR:    CSRMReadValM = '0; // hardwired to 0
       MSTATUS:       CSRMReadValM = MSTATUS_REGW;
       MSTATUSH:      if (P.XLEN==32) CSRMReadValM = MSTATUSH_REGW;

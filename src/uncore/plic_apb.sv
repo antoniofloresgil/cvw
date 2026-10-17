@@ -7,7 +7,7 @@
 // Purpose: Platform-Level Interrupt Controller
 //   Based on RISC-V spec (https://github.com/riscv/riscv-plic-spec/blob/master/riscv-plic.adoc)
 //   With clarifications from ROA's existing implementation (https://roalogic.github.io/plic/docs/AHB-Lite_PLIC_Datasheet.pdf)
-//   Supports only 1 target core and only a global threshold.
+//   Supports NCORES target harts with independent M/S contexts and thresholds.
 //   This PLIC implementation serves as both the PLIC Gateways and PLIC Core.
 //   It assumes interrupt sources are level-triggered wires.
 //
@@ -36,11 +36,7 @@
 // does not include source 0, which does not connect to anything according to spec
 // up to 63 sources supported; in the future, allow up to 1023 sources
 
-`define C 2
-// number of contexts
-// hardcoded to 2 contexts for now; later upgrade to arbitrary (up to 15872) contexts
-
-module plic_apb import cvw::*;  #(parameter cvw_t P) (
+module plic_apb import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES = 1) (
   input  logic                PCLK, PRESETn,
   input  logic                PSEL,
   input  logic [27:0]         PADDR,
@@ -52,24 +48,13 @@ module plic_apb import cvw::*;  #(parameter cvw_t P) (
   output logic                PREADY,
   input  logic                UARTIntr,GPIOIntr, SPIIntr, SDCIntr,
   input  logic [3:0]          PWMIntr,                        // one source per PWM comparator
-  output logic                MExtInt, SExtInt
+  output logic [NCORES-1:0]   MExtInt, SExtInt
 );
 
-  // register map
-  localparam PLIC_INTPRIORITY0   = 24'h000000;
-  localparam PLIC_INTPENDING0    = 24'h001000;
-  localparam PLIC_INTPENDING1    = 24'h001004;
-  localparam PLIC_INTEN00        = 24'h002000;
-  localparam PLIC_INTEN01        = 24'h002004;
-  localparam PLIC_INTEN10        = 24'h002080;
-  localparam PLIC_INTEN11        = 24'h002084;
-  localparam PLIC_THRESHOLD0     = 24'h200000;
-  localparam PLIC_CLAIMCOMPLETE0 = 24'h200004;
-  localparam PLIC_THRESHOLD1     = 24'h201000;
-  localparam PLIC_CLAIMCOMPLETE1 = 24'h201004;
-
+  // Context 2*h is machine mode; context 2*h+1 is supervisor mode.
+  localparam CONTEXTS = 2*NCORES;
   logic                       memwrite, memread;
-  logic [23:0]                entry;
+  logic [27:0]                entry;
   logic [31:0]                Din, Dout;
 
   // context-independent signals
@@ -78,14 +63,14 @@ module plic_apb import cvw::*;  #(parameter cvw_t P) (
   logic [P.PLIC_NUM_SRC:1]               intInProgress, intPending, nextIntPending;
 
   // context-dependent signals
-  logic [`C-1:0][2:0]        intThreshold;
-  logic [`C-1:0][P.PLIC_NUM_SRC:1]       intEn;
-  logic [`C-1:0][5:0]        intClaim; // ID's are 6 bits if we stay within 63 sources
-  logic [`C-1:0][7:1][P.PLIC_NUM_SRC:1]  irqMatrix;
-  logic [`C-1:0][7:1]        priorities_with_irqs;
-  logic [`C-1:0][7:1]        max_priority_with_irqs;
-  logic [`C-1:0][P.PLIC_NUM_SRC:1]       irqs_at_max_priority;
-  logic [`C-1:0][7:1]        threshMask;
+  logic [CONTEXTS-1:0][2:0]        intThreshold;
+  logic [CONTEXTS-1:0][P.PLIC_NUM_SRC:1]       intEn;
+  logic [CONTEXTS-1:0][5:0]        intClaim; // ID's are 6 bits if we stay within 63 sources
+  logic [CONTEXTS-1:0][7:1][P.PLIC_NUM_SRC:1]  irqMatrix;
+  logic [CONTEXTS-1:0][7:1]        priorities_with_irqs;
+  logic [CONTEXTS-1:0][7:1]        max_priority_with_irqs;
+  logic [CONTEXTS-1:0][P.PLIC_NUM_SRC:1]       irqs_at_max_priority;
+  logic [CONTEXTS-1:0][7:1]        threshMask;
   logic [P.PLIC_NUM_SRC-1:0] One;
 
   // hacks to handle gracefully PLIC_NUM_SRC being smaller than 32
@@ -104,7 +89,7 @@ module plic_apb import cvw::*;  #(parameter cvw_t P) (
   assign memwrite = PWRITE & PENABLE & PSEL;  // only write in access phase
   assign memread  = ~PWRITE & PSEL & ~PENABLE; // read once, in APB setup phase
   assign PREADY   = 1'b1;                     // PLIC never takes >1 cycle to respond
-  assign entry    = {PADDR[23:2],2'b0};
+  assign entry    = {PADDR[27:2],2'b0};
   assign One[P.PLIC_NUM_SRC-1:1] = '0; assign One[0] = 1'b1; // Vivado does not like this as a single assignment.
 
   // account for subword read/write circuitry
@@ -119,58 +104,46 @@ module plic_apb import cvw::*;  #(parameter cvw_t P) (
   localparam PLIC_NUM_SRC_MIN_32 = P.PLIC_NUM_SRC < 32 ? P.PLIC_NUM_SRC : 31;
 
   always_ff @(posedge PCLK) begin
-    // resetting
     if (~PRESETn) begin
-      intPriority   <= '0;
-      intEn         <= '0;
-      intThreshold  <= '0;
+      intPriority <= '0;
+      intEn <= '0;
+      intThreshold <= '0;
       intInProgress <= '0;
-    // writing
+      Dout <= '0;
     end else begin
-      if (memwrite)
-        casez(entry)
-          24'h0000??:          intPriority[entry[7:2]] <= Din[2:0];
-          PLIC_INTEN00:        intEn[0][PLIC_NUM_SRC_MIN_32:1] <= Din[PLIC_NUM_SRC_MIN_32:1];
-          PLIC_INTEN10:        intEn[1][PLIC_NUM_SRC_MIN_32:1] <= Din[PLIC_NUM_SRC_MIN_32:1];
-          PLIC_INTEN01:        if (P.PLIC_NUM_SRC >= 32) intEn[0][PLIC_SRC_TOP:PLIC_SRC_BOT]         <= Din[PLIC_SRC_DINTOP:0];
-          PLIC_INTEN11:        if (P.PLIC_NUM_SRC >= 32) intEn[1][PLIC_SRC_TOP:PLIC_SRC_BOT]         <= Din[PLIC_SRC_DINTOP:0];
-          PLIC_THRESHOLD0:     intThreshold[0]         <= Din[2:0];
-          PLIC_CLAIMCOMPLETE0:
-            if (Din[5:0] != 6'd0)
-              intInProgress <= intInProgress & ~(One << (Din[5:0]-1)); // lower "InProgress" to signify completion
-          PLIC_THRESHOLD1:     intThreshold[1]         <= Din[2:0];
-          PLIC_CLAIMCOMPLETE1:
-            if (Din[5:0] != 6'd0)
-              intInProgress <= intInProgress & ~(One << (Din[5:0]-1)); // lower "InProgress" to signify completion
-        endcase
-
-      // Read synchronously because a read can have side effect of changing intInProgress
-      if (memread) begin
-        casez(entry)
-          PLIC_INTPRIORITY0: Dout <= 32'b0;  // there is no intPriority[0]
-          24'h0000??:        Dout <= {29'b0,intPriority[entry[7:2]]};
-          PLIC_INTPENDING0:  Dout <= {{(31-PLIC_NUM_SRC_MIN_32){1'b0}},intPending[PLIC_NUM_SRC_MIN_32:1],1'b0};
-          PLIC_INTEN00:      Dout <= {{(31-PLIC_NUM_SRC_MIN_32){1'b0}},intEn[0][PLIC_NUM_SRC_MIN_32:1],1'b0};
-          PLIC_INTPENDING1:  if (P.PLIC_NUM_SRC >= 32) Dout <= {{(PLIC_SRC_EXT){1'b0}},intPending[PLIC_SRC_TOP:PLIC_SRC_BOT]};
-          PLIC_INTEN01:      if (P.PLIC_NUM_SRC >= 32) Dout <= {{(PLIC_SRC_EXT){1'b0}},intEn[0][PLIC_SRC_TOP:PLIC_SRC_BOT]};
-          PLIC_INTEN10:      Dout <= {{(31-PLIC_NUM_SRC_MIN_32){1'b0}},intEn[1][PLIC_NUM_SRC_MIN_32:1],1'b0};
-          PLIC_INTEN11:      if (P.PLIC_NUM_SRC >= 32) Dout <= {{(PLIC_SRC_EXT){1'b0}},intEn[1][PLIC_SRC_TOP:PLIC_SRC_BOT]};
-          PLIC_THRESHOLD0:   Dout <= {29'b0,intThreshold[0]};
-          PLIC_CLAIMCOMPLETE0: begin
-            Dout <= {26'b0,intClaim[0]};
-            if (intClaim[0] != 6'd0) // not an invalid request
-              intInProgress <= intInProgress | (One << (intClaim[0]-1)); // claimed requests are currently in progress of being serviced until they are completed
+      Dout <= '0;
+      if (memwrite && entry > 0 && int'(entry) <= 4*P.PLIC_NUM_SRC)
+        intPriority[entry[7:2]] <= Din[2:0];
+      if (memread && entry > 0 && int'(entry) <= 4*P.PLIC_NUM_SRC)
+        Dout <= {29'b0, intPriority[entry[7:2]]};
+      if (memread && entry == 28'h001000)
+        Dout <= {{(31-PLIC_NUM_SRC_MIN_32){1'b0}}, intPending[PLIC_NUM_SRC_MIN_32:1], 1'b0};
+      if (memread && entry == 28'h001004 && P.PLIC_NUM_SRC >= 32)
+        Dout <= {{PLIC_SRC_EXT{1'b0}}, intPending[PLIC_SRC_TOP:PLIC_SRC_BOT]};
+      for (int c = 0; c < CONTEXTS; c++) begin
+        if (int'(entry) == 'h2000 + 'h80*c) begin
+          if (memwrite) intEn[c][PLIC_NUM_SRC_MIN_32:1] <= Din[PLIC_NUM_SRC_MIN_32:1];
+          if (memread) Dout <= {{(31-PLIC_NUM_SRC_MIN_32){1'b0}}, intEn[c][PLIC_NUM_SRC_MIN_32:1], 1'b0};
+        end
+        if (int'(entry) == 'h2004 + 'h80*c && P.PLIC_NUM_SRC >= 32) begin
+          if (memwrite) intEn[c][PLIC_SRC_TOP:PLIC_SRC_BOT] <= Din[PLIC_SRC_DINTOP:0];
+          if (memread) Dout <= {{PLIC_SRC_EXT{1'b0}}, intEn[c][PLIC_SRC_TOP:PLIC_SRC_BOT]};
+        end
+        if (int'(entry) == 'h200000 + 'h1000*c) begin
+          if (memwrite) intThreshold[c] <= Din[2:0];
+          if (memread) Dout <= {29'b0, intThreshold[c]};
+        end
+        if (int'(entry) == 'h200004 + 'h1000*c) begin
+          if (memwrite && Din[5:0] != 0 && int'(Din[5:0]) <= P.PLIC_NUM_SRC)
+            intInProgress <= intInProgress & ~(One << (Din[5:0]-1));
+          if (memread) begin
+            Dout <= {26'b0, intClaim[c]};
+            if (intClaim[c] != 0)
+              intInProgress <= intInProgress | (One << (intClaim[c]-1));
           end
-          PLIC_THRESHOLD1:   Dout <= {29'b0,intThreshold[1]};
-          PLIC_CLAIMCOMPLETE1: begin
-            Dout <= {26'b0,intClaim[1]};
-            if (intClaim[1] != 6'd0) // not an invalid request
-              intInProgress <= intInProgress | (One << (intClaim[1]-1));  // claimed requests are currently in progress of being serviced until they are completed
-          end
-          default:           Dout <= 32'h0; // invalid access
-        endcase
-      end else               Dout <= 32'h0;
-   end
+        end
+      end
+    end
   end
 
   // connect sources to requests
@@ -191,7 +164,7 @@ module plic_apb import cvw::*;  #(parameter cvw_t P) (
 
   // context-dependent signals
   genvar ctx;
-  for (ctx=0; ctx<`C; ctx++) begin
+  for (ctx=0; ctx<CONTEXTS; ctx++) begin
     // request matrix
     //   priority level (rows) X source ID (columns)
     //
@@ -262,6 +235,8 @@ module plic_apb import cvw::*;  #(parameter cvw_t P) (
   end
   // is the max priority > threshold?
   // would it be any better to first priority encode maxPriority into binary and then ">" with threshold?
-  assign MExtInt = |(threshMask[0] & priorities_with_irqs[0]);
-  assign SExtInt = |(threshMask[1] & priorities_with_irqs[1]);
+  for (genvar h = 0; h < NCORES; h++) begin : targets
+    assign MExtInt[h] = |(threshMask[2*h] & priorities_with_irqs[2*h]);
+    assign SExtInt[h] = |(threshMask[2*h+1] & priorities_with_irqs[2*h+1]);
+  end
 endmodule

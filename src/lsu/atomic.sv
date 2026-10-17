@@ -28,10 +28,11 @@
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module atomic import cvw::*;  #(parameter cvw_t P) (
+module atomic import cvw::*;  #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0) (
   input logic                 clk,
   input logic                 reset,
   input logic                 StallW,
+  input logic                 SCFail,         // Sticky result from the shared reservation monitor
   input logic [P.XLEN-1:0]    ReadDataM,      // LSU ReadData XLEN because FPU does not issue atomic memory operation from FPU registers
   input logic [P.XLEN-1:0]    IHWriteDataM,   // LSU WriteData XLEN because FPU does not issue atomic memory operation from FPU registers
   input logic [P.PA_BITS-1:0] PAdrM,          // Physical memory address
@@ -56,7 +57,13 @@ module atomic import cvw::*;  #(parameter cvw_t P) (
     assign IMAWriteDataM = IHWriteDataM;
 
   // LRSC unit
-  if (P.ZALRSC_SUPPORTED) begin
+  if (P.ZALRSC_SUPPORTED && SHARED_ATOMICS) begin : sharedlrsc
+    // Send every SC to the serialization point. A local speculative test must
+    // neither suppress a potentially valid SC nor authorize a stale reservation.
+    assign LSURWM = PreLSURWM;
+    flopenr #(1) squashreg(clk, reset, ~StallW,
+      LSUAtomicM[0] & PreLSURWM[0] & SCFail & ~LSUFlushW, SquashSCW);
+  end else if (P.ZALRSC_SUPPORTED) begin
     assign MemReadM = PreLSURWM[1] & ~LSUFlushW;
     lrsc #(P) lrsc(.clk, .reset, .StallW, .MemReadM, .PreLSURWM, .LSUAtomicM, .PAdrM, .SquashSCW, .LSURWM);
   end else begin

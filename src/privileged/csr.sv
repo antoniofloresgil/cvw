@@ -29,7 +29,7 @@
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module csr import cvw::*;  #(parameter cvw_t P) (
+module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID = 0) (
   input  logic                     clk, reset,
   input  logic                     FlushM, FlushW,
   input  logic                     StallE, StallM, StallW,
@@ -230,7 +230,7 @@ module csr import cvw::*;  #(parameter cvw_t P) (
     .STATUS_MIE, .STATUS_SIE, .STATUS_MXR, .STATUS_SUM, .STATUS_MPRV, .STATUS_TVM,
     .STATUS_FS, .BigEndianM);
 
-  csrm #(P) csrm(.clk, .reset,
+  csrm #(.P(P), .HART_ID(HART_ID)) csrm(.clk, .reset,
     .UngatedCSRMWriteM, .CSRMWriteM, .MTrapM, .CSRAdrM,
     .NextEPCM, .NextCauseM, .NextXtvalM, .MSTATUS_REGW, .MSTATUSH_REGW,
     .CSRWriteValM, .CSRMReadValM, .MTVEC_REGW,

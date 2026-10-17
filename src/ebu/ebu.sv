@@ -50,6 +50,9 @@ module ebu import cvw::*;  #(parameter cvw_t P) (
   input  logic [P.XLEN/8-1:0]   LSUHWSTRB, // AHB byte mask
   output logic                LSUHREADY, // AHB peripheral. Never gated as LSU always has priority
 
+  input  logic [1:0]          LSUAtomicOp,
+  output logic [1:0]          HATOMIC,
+
   // AHB-Lite external signals
   output logic                HCLK, HRESETn,
   input  logic                HREADY,    // AHB peripheral ready
@@ -62,7 +65,7 @@ module ebu import cvw::*;  #(parameter cvw_t P) (
   output logic [2:0]          HBURST,    // AHB burst length after arbitration
   output logic [3:0]          HPROT,     // AHB protection.  Wally does not use
   output logic [1:0]          HTRANS,    // AHB transaction request after arbitration
-  output logic                HMASTLOCK  // AHB master lock.  Wally does not use
+  output logic                HMASTLOCK  // Core lock; multicore bridge derives AMO locks from HATOMIC
 );
 
   logic                       LSUDisable;
@@ -117,7 +120,8 @@ module ebu import cvw::*;  #(parameter cvw_t P) (
   assign HTRANS = LSUSelect ? LSUHTRANSOut : IFUSelect ? IFUHTRANSOut: '0; // SEQ if not first read or write, NONSEQ if first read or write, IDLE otherwise
   assign HWRITE = LSUSelect ? LSUHWRITEOut : '0;
   assign HPROT = {3'b001, LSUSelect}; // treat as privileged access of either Opcode fetch or Data access
-  assign HMASTLOCK = 1'b0; // no locking supported
+  assign HATOMIC = LSUSelect ? LSUAtomicOp : 2'b00;
+  assign HMASTLOCK = 1'b0; // multicore AMO locking is handled downstream
 
   // data phase muxing.  This would be a mux if IFU wrote data.
   assign HWDATA = LSUHWDATA;

@@ -27,8 +27,12 @@
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
+module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsigned HART_ID = 0,
+                                        parameter bit SHARED_ATOMICS = 0) (
    input  logic                  clk, reset,
+   // Internal shared-memory atomic sideband (unused by legacy single-core SoCs).
+   input  logic                  SCFail,
+   output logic [1:0]            HATOMIC, // 00 normal, 01 LR, 10 SC, 11 AMO
    // Privileged
    input  logic                  MTimerInt, MExtInt, SExtInt, MSwInt,
    input  logic [63:0]           MTIME_CLINT,
@@ -81,6 +85,7 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
   logic                          LoadStallD;
   logic                          StoreStallD;
   logic                          SquashSCW;
+  logic [1:0]                    LSUAtomicOp;
   logic                          MDUActiveE;                      // Mul/Div instruction being executed
   logic                          ENVCFG_ADUE;                     // HPTW A/D Update enable
   logic                          ENVCFG_PBMTE;                    // Page-based memory type enable
@@ -221,9 +226,10 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
      .StructuralStallD, .LoadStallD, .StoreStallD, .PCSrcE,
      .CSRReadM, .CSRWriteM, .PrivilegedM, .CSRWriteFenceM, .InvalidateICacheM);
 
-  lsu #(P) lsu(
+  lsu #(.P(P), .SHARED_ATOMICS(SHARED_ATOMICS)) lsu(
     .clk, .reset, .StallM, .FlushM, .StallW, .FlushW,
     // CPU interface
+    .SCFail, .LSUAtomicOp,
     .MemRWE, .MemRWM, .Funct3M, .Funct7M(InstrM[31:25]), .AtomicM,
     .CommittedM, .DCacheMiss, .DCacheAccess, .SquashSCW,
     .FpLoadStoreM, .FWriteDataM, .IEUAdrE, .IEUAdrM, .WriteDataM,
@@ -264,14 +270,14 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
       .IFUHADDR, .IFUHBURST, .IFUHTRANS, .IFUHREADY, .IFUHSIZE,
       // LSU interface
       .LSUHADDR, .LSUHWDATA, .LSUHWSTRB, .LSUHSIZE, .LSUHBURST,
-      .LSUHTRANS, .LSUHWRITE, .LSUHREADY,
+      .LSUHTRANS, .LSUHWRITE, .LSUHREADY, .LSUAtomicOp, .HATOMIC,
       // BUS interface
       .HREADY, .HRESP, .HCLK, .HRESETn,
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST,
       .HPROT, .HTRANS, .HMASTLOCK);
   end else begin
     assign {IFUHREADY, LSUHREADY, HCLK, HRESETn, HADDR, HWDATA,
-            HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK} = '0;
+            HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK, HATOMIC} = '0;
   end
 
   // global stall and flush control
@@ -288,7 +294,7 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
 
   // privileged unit
   if (P.ZICSR_SUPPORTED) begin : priv
-    privileged #(P) priv(
+    privileged #(.P(P), .HART_ID(HART_ID)) priv(
       .clk, .reset,
       .FlushD, .FlushE, .FlushM, .FlushW, .StallD, .StallE, .StallM, .StallW,
       .CSRReadM, .CSRWriteM, .SrcAM, .PCM, .PCSpillM,
