@@ -36,7 +36,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cores", type=int, nargs="+", default=[1, 2, 3])
     parser.add_argument("--latency", type=int, nargs="+", default=[0, 3])
-    parser.add_argument("--suite", choices=["smoke", "atomic"], default="smoke")
+    parser.add_argument("--suite", choices=["smoke", "atomic", "uart"], default="smoke")
+    parser.add_argument("--shared-cache", action="store_true", help="Use the shared coherent physical cache")
     args = parser.parse_args()
     if any(not 1 <= n <= 4 for n in args.cores):
         parser.error("The smoke program reserves stacks for 1..4 harts")
@@ -63,15 +64,24 @@ def main():
     run([executable])
     executable = build_test("atomic_bus_tb", "rv64gc", [tests / "atomic_bus_tb.sv", root / "src/ebu/ahbmulticore.sv"], "atomic-bus")
     run([executable])
+    if args.shared_cache:
+        executable = build_test("cache_tb", "rv64gc", [tests / "cache_tb.sv", root / "src/ebu/ahbsharedcache.sv"], "cache")
+        run([executable])
     config = "multicore_atomic" if args.suite == "atomic" else "multicore"
-    assembly = tests / ("atomics.S" if args.suite == "atomic" else "smoke.S")
-    march = "rv64ia_zicsr" if args.suite == "atomic" else "rv64i_zicsr"
+    if args.shared_cache:
+        config = "multicore_coherent"
+    assembly = tests / ("atomics.S" if args.suite == "atomic" else "uart.S" if args.suite == "uart" else "smoke.S")
+    march = "rv64ia_zicsr_zifencei" if args.suite == "atomic" else "rv64i_zicsr"
     for cores in args.cores:
         image = build_image(assembly, work / f"{args.suite}-{cores}.elf", march, cores, tests / "link.ld")
         smoke_image = build_image(tests / "smoke.S", work / f"smoke-{cores}.elf", "rv64i_zicsr", cores, tests / "link.ld") if args.suite == "atomic" else None
         for latency in args.latency:
             executable = build_test(
-                "soc_tb", f"deriv/{config}", [tests / "soc_tb.sv", tests / "dpi.cpp", *sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")], f"{args.suite}-soc-{cores}-{latency}", [f"-GNCORES={cores}", f"-GLATENCY={latency}"]
+                "soc_tb",
+                f"deriv/{config}",
+                [tests / "soc_tb.sv", tests / "dpi.cpp", *sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")],
+                f"{args.suite}-soc-{cores}-{latency}" + ("-shared" if args.shared_cache else ""),
+                [f"-GNCORES={cores}", f"-GLATENCY={latency}", "-GSHARED_CACHE=1'b1" if args.shared_cache else "-GSHARED_CACHE=1'b0"],
             )
             run([executable, f"+image={image}", f"+suite={args.suite}"])
             if smoke_image is not None:

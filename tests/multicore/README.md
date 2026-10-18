@@ -196,3 +196,54 @@ externo necesitaría integrarse con el monitor. El EBU de Wally aún ignora
 `HRESP` para generar excepciones; las pruebas de errores verifican la
 recuperación del puente, no excepciones de acceso del procesador. La validación
 física en FPGA sigue pendiente.
+
+## Etapa 3: caché física compartida y plataforma Linux SMP
+
+```bash
+source ./setup.sh
+python3 tests/multicore/run.py --suite atomic --shared-cache
+```
+
+El SoC añade los parámetros `SHARED_CACHE` (predeterminado 0) y
+`SHARED_CACHE_WORDS` (predeterminado 256). Para activarla, usar la
+configuración derivada `multicore_coherent` y `.SHARED_CACHE(1)` con
+`.NCORES(N)`. Cada línea guarda una palabra AHB completa; el tamaño por
+defecto es 2 KiB en RV64. `WORDS` debe ser una potencia de dos mayor o igual
+que dos. RAM interna y memoria externa son las únicas regiones asignables;
+ROM y MMIO conservan dirección, tamaño y ordenación originales.
+
+La caché unificada se sitúa **después** del árbitro de reservas y AMO. Un hit
+sigue pasando por la serialización común. Una escritura siempre llega a
+memoria y, si encuentra una línea válida, la invalida antes de responder.
+No hay líneas sucias ni buffers de escritura. Una lectura fallida no asigna
+línea; una lectura parcial que falla en caché obtiene una palabra completa
+alineada para no guardar bytes indefinidos. Los errores conservan la
+respuesta AHB de dos ciclos. Reset invalida todas las líneas.
+
+Existe una sola copia física: instrucciones y datos de todos los harts usan
+la misma caché. Esta primera implementación evita un protocolo de snooping
+entre cachés privadas; no implementa MESI. Los accesos externos que no pasan
+por el árbitro no son coherentes. Se siguen rechazando configuraciones con
+cachés privadas, memorias privadas o bursts. Con `SHARED_CACHE=0` se conserva
+el comportamiento de las etapas anteriores, incluida la ruta directa de
+un solo hart. Con caché y un hart se usa el árbitro central de atómicos.
+
+`cache_tb.sv` comprueba hits mediante el número de transferencias externas,
+conflictos de índice, lecturas parciales con llenado completo, escrituras
+por bytes, write-around, MMIO sin asignación, lock AMO, errores y reset.
+La suite de procesadores añade código escrito por hart 0, ejecutado por
+todos, modificado por hart 1 y ejecutado de nuevo tras `fence.i`; comprueba
+la visibilidad entre el camino de datos y el de instrucciones. AMO, LR/SC,
+locks, barreras, IPI y temporizadores se ejecutan con y sin esperas de RAM.
+
+La plataforma Linux, sus imágenes reproducibles y la prueba de procesos con
+afinidad se describen en [linux/smp](../../linux/smp/README.md). La derivada
+`multicore_linux` añade ROM de arranque, 128 MiB de RAM y Sv39. La derivada
+`multicore_coherent` desactiva Svadu, Svpbmt y las extensiones de mantenimiento de
+caché que no se implementan en este prototipo.
+
+La suite `--suite uart --shared-cache --cores 2 --latency 3` verifica que
+cuatro instrucciones de escritura a THR produzcan exactamente cuatro
+accesos APB; la configuración del divisor no cuenta como transmisión. El
+modelo UART ya imprime los caracteres y el observador de Linux se limita
+a reconocer el resultado, evitando un segundo eco en C++.

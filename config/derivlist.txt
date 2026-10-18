@@ -1667,3 +1667,18 @@ BOOTROM_SUPPORTED 0
 deriv multicore_atomic multicore
 ZAAMO_SUPPORTED 1
 ZALRSC_SUPPORTED 1
+
+# Stage three: one coherent physical cache; no non-atomic hardware PTE updates.
+deriv multicore_coherent multicore_atomic
+SVADU_SUPPORTED 0
+SVPBMT_SUPPORTED 0
+ZICBOM_SUPPORTED 0
+ZICBOZ_SUPPORTED 0
+ZICBOP_SUPPORTED 0
+
+deriv multicore_linux multicore_coherent
+UNCORE_RAM_RANGE 64'h07FFFFFF
+BOOTROM_SUPPORTED 1
+SV48_SUPPORTED 0
+SV57_SUPPORTED 0
+RESET_VECTOR 64'h00001000

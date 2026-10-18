@@ -212,6 +212,37 @@ conflict_done:
     sc.d t2, t1, (a3)
     beqz t2, fail
     call barrier
+    # Populate the unified cache with executable code, then patch it from a
+    # different hart. Both instruction fetch and data must see the same bytes.
+    li t0, 7
+    sd t0, 8(s1)
+    bnez s0, code_ready
+    li t0, 0x0000806700100513  # addi a0,zero,1; ret
+    li t1, 0x8000b000
+    sd t0, 0(t1)
+code_ready:
+    call barrier
+    fence.i
+    li t0, 0x8000b000
+    jalr ra, t0, 0
+    CHECK a0, 1
+    call barrier
+#if NCORES > 1
+    li t0, 1
+    bne s0, t0, code_patched
+#else
+    bnez s0, code_patched
+#endif
+    li t0, 0x00200513       # addi a0,zero,2; preserve the adjacent ret
+    li t1, 0x8000b000
+    sw t0, 0(t1)
+code_patched:
+    call barrier
+    fence.i
+    li t0, 0x8000b000
+    jalr ra, t0, 0
+    CHECK a0, 2
+    call barrier
     li t0, 1
     sd t0, 24(s1)
 park:

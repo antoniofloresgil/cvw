@@ -27,7 +27,8 @@
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsigned NCORES = 1)  (
+module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsigned NCORES = 1,
+  parameter bit SHARED_CACHE = 0, parameter int unsigned SHARED_CACHE_WORDS = 256)  (
   input  logic                clk,
   input  logic                reset_ext,        // external asynchronous reset pin
   output logic                reset,            // reset synchronized to clk to prevent races on release
@@ -86,10 +87,18 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   logic [NCORES-1:0][3:0] CoreHPROT;
   logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC;
 
+  logic [P.PA_BITS-1:0] BusHADDR;
+  logic [P.AHBW-1:0] BusHWDATA, BusHRDATA;
+  logic [P.XLEN/8-1:0] BusHWSTRB;
+  logic BusHWRITE, BusHMASTLOCK, BusHREADY, BusHRESP;
+  logic [2:0] BusHSIZE, BusHBURST;
+  logic [3:0] BusHPROT;
+  logic [1:0] BusHTRANS;
+
   // All harts and the uncore use the same clock and synchronized reset.
   assign HCLK = clk;
   assign HRESETn = ~reset;
-  wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1)) core(.clk, .reset,
+  wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset,
     .SCFail(CoreSCFail[0]), .HATOMIC(CoreHATOMIC[0]),
     .MTimerInt(MTimerInt[0]), .MExtInt(MExtInt[0]), .SExtInt(SExtInt[0]), .MSwInt(MSwInt[0]), .MTIME_CLINT,
     .HRDATA(CoreHRDATA[0]), .HREADY(CoreHREADY[0]), .HRESP(CoreHRESP[0]), .HCLK(), .HRESETn(),
@@ -107,30 +116,50 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
       .HTRANS(CoreHTRANS[h]), .HMASTLOCK(CoreHMASTLOCK[h]), .ExternalStall);
   end
 
-  if (NCORES == 1) begin : singlecore
+  if (NCORES == 1 && !SHARED_CACHE) begin : singlecore
     // Preserve the original bus latency and allow all existing configurations.
-    assign {HADDR, HWDATA, HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK} =
+    assign {BusHADDR, BusHWDATA, BusHWSTRB, BusHWRITE, BusHSIZE, BusHBURST, BusHPROT, BusHTRANS, BusHMASTLOCK} =
       {CoreHADDR[0], CoreHWDATA[0], CoreHWSTRB[0], CoreHWRITE[0], CoreHSIZE[0],
        CoreHBURST[0], CoreHPROT[0], CoreHTRANS[0], CoreHMASTLOCK[0]};
-    assign CoreHRDATA[0] = HRDATA;
-    assign CoreHREADY[0] = HREADY;
-    assign CoreHRESP[0] = HRESP;
+    assign CoreHRDATA[0] = BusHRDATA;
+    assign CoreHREADY[0] = BusHREADY;
+    assign CoreHRESP[0] = BusHRESP;
     assign CoreSCFail[0] = 1'b0;
   end else begin : multicore
     ahbmulticore #(.P(P), .NCORES(NCORES)) bus(
       .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHSIZE,
       .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHMASTLOCK, .CoreHATOMIC, .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
+      .HADDR(BusHADDR), .HWDATA(BusHWDATA), .HWSTRB(BusHWSTRB), .HWRITE(BusHWRITE), .HSIZE(BusHSIZE), .HBURST(BusHBURST), .HPROT(BusHPROT), .HTRANS(BusHTRANS), .HMASTLOCK(BusHMASTLOCK),
+      .HRDATA(BusHRDATA), .HREADY(BusHREADY), .HRESP(BusHRESP));
+  end
+
+  if (SHARED_CACHE) begin : sharedcache
+    ahbsharedcache #(.P(P), .WORDS(SHARED_CACHE_WORDS)) cache(
+      .HCLK, .HRESETn, .UpHADDR(BusHADDR), .UpHWDATA(BusHWDATA), .UpHWSTRB(BusHWSTRB),
+      .UpHWRITE(BusHWRITE), .UpHSIZE(BusHSIZE), .UpHBURST(BusHBURST), .UpHPROT(BusHPROT),
+      .UpHTRANS(BusHTRANS), .UpHMASTLOCK(BusHMASTLOCK),
+      .UpHRDATA(BusHRDATA), .UpHREADY(BusHREADY), .UpHRESP(BusHRESP),
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK,
       .HRDATA, .HREADY, .HRESP);
+  end else begin : nocache
+    assign {HADDR, HWDATA, HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK} =
+      {BusHADDR, BusHWDATA, BusHWSTRB, BusHWRITE, BusHSIZE, BusHBURST, BusHPROT, BusHTRANS, BusHMASTLOCK};
+    assign {BusHRDATA, BusHREADY, BusHRESP} = {HRDATA, HREADY, HRESP};
   end
 
   initial begin
     assert (NCORES >= 1 && NCORES <= 4095)
       else $fatal(1, "NCORES outside the supported CLINT register range");
-    if (NCORES > 1) begin
+    if (NCORES > 1 || SHARED_CACHE) begin
       assert (P.BUS_SUPPORTED && !P.DTIM_SUPPORTED && !P.IROM_SUPPORTED &&
               !P.DCACHE_SUPPORTED && !P.ICACHE_SUPPORTED && !P.BURST_EN)
         else $fatal(1, "Multicore requires a shared bus with no private memories/caches or bursts");
+    end
+    if (SHARED_CACHE) begin
+      assert (!P.SVADU_SUPPORTED)
+        else $fatal(1, "Shared-cache SMP uses software PTE A/D updates (Svade)");
+      assert (!P.SVPBMT_SUPPORTED)
+        else $fatal(1, "Shared cache uses physical RAM attributes; Svpbmt must be disabled");
     end
   end
 
