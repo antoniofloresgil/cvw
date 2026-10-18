@@ -1,5 +1,9 @@
 # Verificación de la etapa 3
 
+Este informe conserva los resultados anteriores al merge de `main`. La
+verificación de las fuentes combinadas está en el
+[registro de integración del 19 de octubre](../../docs/engineering/experiments/2026-10-19-multicore-main-integration.md).
+
 Verificación realizada el 17 y 18 de octubre de 2026 sobre la rama `multicore-support`, a
 partir del commit `17fcce818`. Simulador Verilator 5.022 y compilador RISC-V
 bare metal GCC 13.2.0. Linux 6.19.14, OpenSBI 1.7 y toolchain Linux GCC 15.2.0

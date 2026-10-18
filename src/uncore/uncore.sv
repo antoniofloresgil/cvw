@@ -194,7 +194,7 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
 
   assign HRESP = HSELRamD & HRESPRam |
                  HSELEXTD & HRESPEXT |
-                 HSELBRIDGE & HRESPBRIDGE |
+                 HSELBRIDGED & HRESPBRIDGE |
                  HSELBootRomD & HRESPBootRom;
 
   assign HREADY = HSELRamD & HREADYRam |
