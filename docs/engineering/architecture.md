@@ -1,6 +1,8 @@
 # Architecture pointers and checked constraints
 
-Checked against `main` at `3585ff04e` on 2026-10-18. The overview already lives
+Initially checked against `main` at `3585ff04e` on 2026-10-18; the subsequent
+[upstream integration](experiments/2026-10-18-upstream-integration.md) retains
+the ownership mechanisms below. The overview already lives
 in [CLAUDE.md](../../CLAUDE.md) and [README.md](../../README.md); this document
 records source boundaries and interactions that should guide future changes.
 
@@ -35,6 +37,13 @@ Changes here must preserve ownership of the LSU datapath, completed accesses
 and fault delivery together. Consult the original design's directed overlap
 matrix; changing only a stall expression can affect all three interfaces.
 No HPTW regression was run as part of establishing these notes.
+
+The subsequent integration adds walker ownership of `LSUFpLoadStoreM` in
+`hptw.sv`, passed through `lsu.sv`: the walker clears the FP-data selection
+while accessing PTEs. The LSU uses this selection for memory size, store data
+and endian handling. This keeps an overlapping FP store from substituting
+its data for a PTE update. The integration's `fpADUpdate` test passed on
+`rv64gc`; that is not complete verification of every FLEN/XLEN combination.
 
 ## Branch-specific architecture
 

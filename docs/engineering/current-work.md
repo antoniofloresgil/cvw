@@ -1,26 +1,29 @@
 # Current work
 
-Checkpoint: 2026-10-18. Engineering code baseline: `main` at
-`3585ff04e36a095188dfd5fbed39893cdc99114c`, before this documentation bootstrap.
+Checkpoint: 2026-10-18. Integration inputs: fork `main` at `50ad3a44a`
+and official upstream `main` at `712ee9719467e9e9987cebd55926ae8e01b08770`.
 Use `git rev-parse HEAD` for the current checkout revision.
 This is a branch-scoped checkpoint, not an automatic branch-selection policy.
 
 ## Objective and local work
 
-Establish persistent engineering knowledge while preserving existing workflow
-documentation. Only the appended AGENTS section and `docs/engineering/` are
-in scope. The documentation bootstrap is complete: the original AGENTS bytes
-are preserved; local links, pinned source objects and preserved SMP evidence
-were checked; pre-commit and `git diff --check` passed. No new RTL simulation
-or hardware test was run for this task. The user has requested committing and
-pushing this documentation on main. Use `git log -- AGENTS.md docs/engineering`
-to identify the documentation commit; it does not merge the feature branches.
+Integrate the 88 upstream-exclusive commits into main and publish to origin,
+preserving fork changes. The merge applied without conflicts; the Ubuntu
+package/derivative recipe combinations were inspected. Two explicit RAM/ROM
+casts were adjusted for installed-Verilator width checking. Seven lint
+configurations and 18 directed RTL tests passed; see the
+[integration record](experiments/2026-10-18-upstream-integration.md) for exact
+scope, environment adaptations and evidence. No FPGA or ASIC run was done.
+
+The knowledge bootstrap was published as `50ad3a44a`; original AGENTS content
+remains preserved. Use `git log --merges` for the integration commit and
+`git rev-parse HEAD` for the actual current revision.
 
 ## Confirmed completed development
 
 | Branch / revision | Confirmed state | Evidence |
 | --- | --- | --- |
-| `main:3585ff04e` | Development container; LF/CRLF rules (`c8b61c68a`); Nexys Video boot preparation (`4985b3c6a`) | Git history, `.devcontainer/`, `.gitattributes`, FPGA/Linux docs; no recovered board-boot verdict |
+| `main`, upstream integration | Official `712ee9719` integrated over `50ad3a44a`; fork container, line endings, Nexys Video and knowledge documentation retained | [Integration validation](experiments/2026-10-18-upstream-integration.md); no board-boot verdict |
 | `multicore-support:f655debae` | Stages 1/2 (`17fcce818`) and stage 3 committed and pushed to origin; shared-cache Linux SMP test PASS on two Wally RTL harts | [ADR 0002](decisions/0002-shared-multicore-cache.md), [run record](experiments/2026-10-18-linux-smp.md) |
 | `opensource-fpga-bitstream:23ba9c2a7` | LiteDRAM/VexRiscv diagnostics committed; DDR bring-up still reported failing | [Unresolved DDR record](experiments/open-ddr3-bringup.md) |
 
@@ -50,9 +53,9 @@ even though its source files are absent from the main checkout.
 
 ## Next actions, conditional on the user's engineering objective
 
-1. For multicore work, inspect `f655debae` and its existing test documentation;
-   preserve evidence before cleanup. Revalidate the affected scope after any
-   merge or architecture change; do not transfer its PASS to main automatically.
+1. For multicore work, inspect `f655debae` and account for main's updated
+   MMU/hazard interfaces before integrating branches. Preserve evidence and
+   revalidate the affected scope; do not transfer its older PASS automatically.
 2. With Nexys Video access, resume the diagnostic matrix in the DDR record and
    record bitstream/tool hashes, observations and timing before claiming a fix.
    Moving initialization onto Wally remains a proposal, not completed work.

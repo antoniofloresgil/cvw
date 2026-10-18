@@ -2,8 +2,10 @@
 
 Start with [AGENTS.md](../../AGENTS.md), then this index and
 [current-work.md](current-work.md). Read the remaining documents only when
-relevant to the task. Snapshot: 2026-10-18; engineering code baseline `main`
-at `3585ff04e`, before this documentation bootstrap.
+relevant to the task. Snapshot: 2026-10-18; `main` integrates official upstream
+`712ee9719` onto fork `50ad3a44a`. See the
+[integration record](experiments/2026-10-18-upstream-integration.md) for scope
+and validation; earlier source audits retain their original revision labels.
 
 ## Find the authoritative information
 
@@ -14,7 +16,7 @@ at `3585ff04e`, before this documentation bootstrap.
 | Verification scope | [Existing test plan](../testplans/testplan.md), [revision-specific verification notes](verification.md) |
 | FPGA, Linux, ASIC flows | [Implementation notes](implementation.md), linking the existing flow documentation |
 | Significant decisions | [ADR 0001: knowledge organization](decisions/0001-knowledge-organization.md), [ADR 0002: multicore cache](decisions/0002-shared-multicore-cache.md) |
-| Recovered results | [Linux SMP](experiments/2026-10-18-linux-smp.md), [open DDR3 bring-up](experiments/open-ddr3-bringup.md) |
+| Results | [Upstream integration](experiments/2026-10-18-upstream-integration.md), [Linux SMP](experiments/2026-10-18-linux-smp.md), [open DDR3 bring-up](experiments/open-ddr3-bringup.md) |
 | Active work, branch boundaries, unresolved questions | [Current work](current-work.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 

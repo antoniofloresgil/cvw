@@ -5,6 +5,11 @@ scope. Its PASS/TBD entries are project records, not results of this
 documentation task. [AGENTS.md](../../AGENTS.md) supplies the normal workflow;
 always check commands against the checkout's scripts.
 
+The [2026-10-18 integration record](experiments/2026-10-18-upstream-integration.md)
+contains newly executed lint and directed RTL results, plus compatibility
+adaptations required by this host. Earlier historical results stay scoped to
+their original branches and configurations.
+
 ## Revision-specific command compatibility
 
 At `main:3585ff04e`, inspection of [bin/wsim](../../bin/wsim),
