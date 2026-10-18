@@ -2,6 +2,8 @@
 
 Checkpoint: 2026-10-18. Integration inputs: fork `main` at `50ad3a44a`
 and official upstream `main` at `712ee9719467e9e9987cebd55926ae8e01b08770`.
+Completed code integration: merge `e21d2a9e2`, published to `origin/main`;
+all commits reachable from that upstream revision are included.
 Use `git rev-parse HEAD` for the current checkout revision.
 This is a branch-scoped checkpoint, not an automatic branch-selection policy.
 

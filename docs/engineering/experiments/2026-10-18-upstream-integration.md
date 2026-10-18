@@ -4,7 +4,9 @@ Date: 2026-10-18. Result: **PASS for the focused checks below**.
 Inputs: fork `50ad3a44a60bf939f8575a0538b847861dccd39b` and official
 `https://github.com/openhwfoundation/cvw.git` main
 `712ee9719467e9e9987cebd55926ae8e01b08770` (88 upstream-exclusive commits,
-including merges). Identify the resulting merge with `git log --merges`.
+including merges). Resulting merge: `e21d2a9e2`, published to `origin/main`;
+the official upstream commit is an ancestor and none of its commits remain
+missing from origin at this checkpoint.
 
 ## Integration and local adjustment
 
@@ -30,7 +32,7 @@ Tools: GCC 13.2.0; Verilator reports 5.022, development revision
 
 | Check | Observed result |
 | --- | --- |
-| Lint, same source/flags as `bin/lint-wally` except unsupported `--quiet` omitted | PASS: rv32e, rv64gc, rv32gc, rv32imc, rv32i, rv64i, fdqh_rv64gc; no warnings suppressed |
+| Lint, same source/flags as `bin/lint-wally` except unsupported `--quiet` omitted | PASS: rv32e, rv64gc, rv32gc, rv32imc, rv32i, rv64i, fdqh_rv64gc; no additional warning classes disabled |
 | rv64gc, 15 ELFs | PASS: ramtop, noncanonical, paUpperBits, tlbADdup, tlbOverlap, spillfaultdefer, spillbothhalvesfault, fpADUpdate, wfiStallWake, wfiTW, wfiBackToBack, svinvalfence, uartLSRerr, WALLY-uart-01, WALLY-uart-timeout-01 |
 | rv32gc, 3 ELFs | PASS: ramtop32, WALLY-uart-01, WALLY-uart-timeout-01 |
 
