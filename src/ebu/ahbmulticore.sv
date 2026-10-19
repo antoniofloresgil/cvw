@@ -19,6 +19,7 @@ module ahbmulticore import cvw::*; #(
   output logic [NCORES-1:0] CoreSCFail,
   output logic [NCORES-1:0][P.AHBW-1:0] CoreHRDATA,
   output logic [NCORES-1:0] CoreHREADY, CoreHRESP,
+  output logic [(NCORES > 1 ? $clog2(NCORES) : 1)-1:0] HOWNER,
   output logic [P.PA_BITS-1:0] HADDR,
   output logic [P.AHBW-1:0] HWDATA,
   output logic [P.XLEN/8-1:0] HWSTRB,
@@ -71,6 +72,7 @@ module ahbmulticore import cvw::*; #(
   assign FailedSC = Op[NextOwner] == SC && !SCValid;
   assign BadAMOWrite = Op[NextOwner] == AMO && Write[NextOwner] && !LockActive;
   assign AddressOwner = DataPhase ? Owner : NextOwner;
+  assign HOWNER = AddressOwner;
 
   always_comb begin
     HADDR = Addr[AddressOwner];

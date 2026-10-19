@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 #include "Vlinux_tb.h"
 #include "verilated.h"
+#include "verilated_save.h"
+#include <csignal>
+static volatile std::sig_atomic_t interrupted = 0;
+static void requestStop(int) { interrupted = 1; }
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -22,7 +26,39 @@ int main(int argc, char **argv) {
         if (std::string(argv[i]).rfind("+cycles=", 0) == 0) limit = std::strtoull(argv[i]+8, nullptr, 0);
     std::string line;
     uint64_t nextHeartbeat = 1000000;
-    for (uint64_t cycle = 0; cycle < limit && !context->gotFinish(); ++cycle) {
+    uint64_t cycle = 0, interval = 5000000;
+    std::string checkpoint, restore;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg(argv[i]);
+        if (arg.rfind("+checkpoint=", 0) == 0) checkpoint = arg.substr(12);
+        if (arg.rfind("+restore=", 0) == 0) restore = arg.substr(9);
+        if (arg.rfind("+interval=", 0) == 0) interval = std::strtoull(argv[i]+10, nullptr, 0);
+    }
+    if (interval == 0) return 2;
+    if (!restore.empty()) {
+        VerilatedRestore stream;
+        stream.open(restore);
+        if (!stream.isOpen()) return 2;
+        stream >> cycle >> nextHeartbeat >> line;
+        stream >> context.get() >> *top;
+        stream.close();
+        std::fprintf(stderr, "CHECKPOINT: restored at cycle %llu\n", (unsigned long long)cycle);
+    }
+    auto save = [&](uint64_t nextCycle) {
+        if (checkpoint.empty()) return;
+        const std::string temporary = checkpoint + ".partial";
+        VerilatedSave stream;
+        stream.open(temporary);
+        if (!stream.isOpen()) { std::perror("checkpoint open"); std::exit(2); }
+        stream << nextCycle << nextHeartbeat << line;
+        stream << context.get() << *top;
+        stream.close();
+        if (std::rename(temporary.c_str(), checkpoint.c_str())) { std::perror("checkpoint rename"); std::exit(2); }
+        std::fprintf(stderr, "CHECKPOINT: saved at cycle %llu\n", (unsigned long long)nextCycle);
+    };
+    std::signal(SIGTERM, requestStop);
+    std::signal(SIGINT, requestStop);
+    for (; cycle < limit && !context->gotFinish(); ++cycle) {
         top->reset_ext = cycle < 10;
         top->clk = 0;
         top->eval();
@@ -30,13 +66,14 @@ int main(int argc, char **argv) {
         const char c = top->ConsoleData;
         top->clk = 1;
         top->eval();
-        std::fflush(stdout);
         context->timeInc(1);
         if (consoleValid) {
+            std::fflush(stdout);
             // uartPC16550D already prints each THR write with $write.
             // Observe the same transfer here only to recognize the verdict.
             if (c == '\n') {
-                if (line.find("WALLY_SMP_FAIL") != std::string::npos) {
+                if (line.find("WALLY_SMP_FAIL") != std::string::npos ||
+                    line.find("Kernel panic - not syncing") != std::string::npos) {
                     top->final();
                     return 1;
                 }
@@ -56,8 +93,15 @@ int main(int argc, char **argv) {
             dump(top->Causes);
             std::fprintf(stderr, "]\n");
         }
+        if ((cycle + 1) % interval == 0 || interrupted) save(cycle + 1);
+        if (interrupted) {
+            std::fprintf(stderr, "CHECKPOINT: interrupted after %llu cycles\n", (unsigned long long)(cycle+1));
+            top->final();
+            return 75;
+        }
     }
-    std::fprintf(stderr, "FAIL: Linux RTL timeout\n");
+    std::fprintf(stderr, "INCOMPLETE: Linux RTL cycle limit reached\n");
+    save(cycle);
     top->final();
-    return 1;
+    return 75;
 }

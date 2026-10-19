@@ -1714,3 +1714,7 @@ BOOTROM_SUPPORTED 1
 SV48_SUPPORTED 0
 SV57_SUPPORTED 0
 RESET_VECTOR 64'h00001000
+
+# Private per-hart physical data caches with serialized MSI bus snooping.
+# Legacy IFU/LSU caches stay off; enable the SoC PRIVATE_DCACHE parameter.
+deriv multicore_msi multicore_coherent

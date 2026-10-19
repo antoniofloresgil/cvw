@@ -5,7 +5,13 @@ Start with [AGENTS.md](../../AGENTS.md), then this index and
 relevant to the task. Snapshot: 2026-10-19; this checkout is `multicore-support`,
 integrating `main:82d0b80f7` (including official upstream `712ee9719`) into
 `f655debae`. See the [multicore integration record](experiments/2026-10-19-multicore-main-integration.md)
-for validation of the combined sources. The earlier
+for validation of the combined sources. The optional private MSI data-cache
+implementation now follows [ADR 0003](decisions/0003-private-msi-data-caches.md);
+see its [working-tree validation](experiments/2026-10-19-private-msi.md).
+The [Linux MSI integration](experiments/2026-10-19-linux-msi.md) is a separate
+completed two-hart RTL PASS at 629,148,416 cycles with both shared counters
+equal to 128.
+The earlier
 [main integration record](experiments/2026-10-18-upstream-integration.md) and
 source audits retain their original revision labels.
 
@@ -17,7 +23,7 @@ source audits retain their original revision labels.
 | Architecture overview and source layout | [CLAUDE.md](../../CLAUDE.md), [architecture pointers](architecture.md) |
 | Verification scope | [Existing test plan](../testplans/testplan.md), [revision-specific verification notes](verification.md) |
 | FPGA, Linux, ASIC flows | [Implementation notes](implementation.md), linking the existing flow documentation |
-| Significant decisions | [ADR 0001: knowledge organization](decisions/0001-knowledge-organization.md), [ADR 0002: multicore cache](decisions/0002-shared-multicore-cache.md) |
+| Significant decisions | [ADR 0001: knowledge organization](decisions/0001-knowledge-organization.md), [ADR 0002: multicore cache](decisions/0002-shared-multicore-cache.md), [ADR 0003: private MSI](decisions/0003-private-msi-data-caches.md) |
 | Results | [Multicore/main integration](experiments/2026-10-19-multicore-main-integration.md), [upstream integration](experiments/2026-10-18-upstream-integration.md), [Linux SMP](experiments/2026-10-18-linux-smp.md), [open DDR3 bring-up](experiments/open-ddr3-bringup.md) |
 | Active work, branch boundaries, unresolved questions | [Current work](current-work.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |

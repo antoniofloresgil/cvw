@@ -15,6 +15,12 @@ records revalidation after merging `main:82d0b80f7` into `f655debae`.
 Use that record for the combined checkout; the original stage-3 PASS alone
 does not validate the newer upstream interfaces.
 
+The [private MSI record](experiments/2026-10-19-private-msi.md) covers the
+optional private data-cache working tree based on `35cb2093b`. Its results
+are separate from the earlier shared-cache Linux boot. Reproduction commands
+and the write-back-aware full-core observer are documented in
+[tests/multicore/README.md](../../tests/multicore/README.md).
+
 ## Revision-specific command compatibility
 
 At `main:3585ff04e`, inspection of [bin/wsim](../../bin/wsim),

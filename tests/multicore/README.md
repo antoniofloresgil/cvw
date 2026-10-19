@@ -247,3 +247,66 @@ cuatro instrucciones de escritura a THR produzcan exactamente cuatro
 accesos APB; la configuración del divisor no cuenta como transmisión. El
 modelo UART ya imprime los caracteres y el observador de Linux se limita
 a reconocer el resultado, evitando un segundo eco en C++.
+
+## Cachés privadas de datos y MSI (primer paso)
+
+El modo opcional MSI añade un banco privado de datos por hart, con estados
+Invalid/Shared/Modified y escritura diferida (*write-back*). Se activa así:
+
+```systemverilog
+// Usar config/deriv/multicore_msi/config.vh para construir P.
+wallypipelinedsoc #(
+  .P(P), .NCORES(2),
+  .PRIVATE_DCACHE(1), .PRIVATE_DCACHE_WORDS(256)
+) soc(/* puertos habituales */);
+```
+
+`PRIVATE_DCACHE` vale 0 por defecto. `PRIVATE_DCACHE_WORDS` es el número de
+palabras AHB por hart, potencia de dos >= 2: 256 palabras son 2 KiB/hart en
+RV64 y 1 KiB/hart en RV32. Cada línea contiene una palabra completa.
+`NCORES=1` elimina la lógica MSI y conserva el camino mononúcleo original,
+aunque se deje `PRIVATE_DCACHE=1`. No combinar MSI efectivo y SHARED_CACHE.
+No se activan las cachés antiguas mediante P.DCACHE_SUPPORTED: siguen
+inhabilitadas porque no participan en el snooping.
+
+Este primer diseño mantiene **una sola transacción de coherencia en curso**.
+El árbitro central ordena todos los accesos, incluidos los aciertos, y entrega
+HOWNER al controlador MSI. Los bancos son privados por hart, pero todavía
+no permiten aciertos locales concurrentes. Las lecturas BusRd comparten la
+línea; BusRdX/BusUpgr invalidan las otras copias antes de conceder M. Un dueño
+M devuelve el dato actualizado a memoria antes de compartirlo; un reemplazo
+M también debe completar su escritura. Las confirmaciones de snoop son
+internas al controlador síncrono; no hay colas independientes.
+
+Las instrucciones siguen sin caché privada, pero sus lecturas buscan copias
+M en todos los bancos de datos, incluido el propio. Las reservas LR/SC y la
+exclusión AMO siguen en el árbitro: incluso una escritura con acierto en M
+pasa por él. ROM/MMIO no se almacenan en caché. No se admite coherencia con
+DMA externo que evite este camino. Svadu, Svpbmt y las extensiones de
+mantenimiento de caché están desactivadas en esta configuración.
+
+Los errores de writeback conservan la línea M; los de relleno no asignan
+línea. Se comprueba la respuesta ERROR del bus, pero el EBU existente no
+convierte HRESP en una excepción precisa del núcleo. Reset invalida las
+cachés; no preserva datos sucios a través del reinicio.
+
+Después de `source ./setup.sh`:
+
+```bash
+python3 tests/multicore/run.py --private-dcache --unit-only --latency 0 3
+python3 tests/multicore/run.py --private-dcache --suite atomic --cores 1 2 3 --latency 0 3 --cache-words 8
+python3 tests/multicore/run.py --private-dcache --suite uart --cores 2 --latency 3
+```
+
+`--work-dir /tmp/wally-msi` permite construir en almacenamiento Linux nativo
+cuando el workspace no distingue mayúsculas/minúsculas. `msi_tb.sv` integra
+el árbitro y las cachés con una memoria que introduce esperas y errores;
+comprueba transiciones dirigidas, exclusividad M y 2.000 operaciones con un
+modelo de referencia. Las pruebas con núcleos reales observan el valor de
+los bancos M además de la RAM para detectar PASS/FAIL: con write-back la
+RAM sola puede estar desactualizada. Esa observación no vacía las cachés ni
+participa en las transacciones.
+
+La [decisión de diseño](../../docs/engineering/decisions/0003-private-msi-data-caches.md)
+y el [registro de validación](../../docs/engineering/experiments/2026-10-19-private-msi.md)
+distinguen estos resultados de la validación anterior con caché compartida.

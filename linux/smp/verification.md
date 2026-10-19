@@ -1,5 +1,9 @@
 # Verificación de la etapa 3
 
+La integración posterior con cachés privadas MSI tiene su propio
+[registro](../../docs/engineering/experiments/2026-10-19-linux-msi.md); este
+informe conserva el resultado de la caché compartida.
+
 Este informe conserva los resultados anteriores al merge de `main`. La
 verificación de las fuentes combinadas está en el
 [registro de integración del 19 de octubre](../../docs/engineering/experiments/2026-10-19-multicore-main-integration.md).

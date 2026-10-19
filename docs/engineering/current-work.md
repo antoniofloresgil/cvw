@@ -1,62 +1,59 @@
 # Current work
 
-Checkpoint: 2026-10-19. Checkout: `multicore-support`. Integration inputs:
-`f655debaed2bda8dfa7635d1a78a8f32f66bffa7` and
-`main:82d0b80f7d1471f224fc5a8fc307d75f5eb26f53`. Main already contains
-official upstream `712ee9719467e9e9987cebd55926ae8e01b08770`.
-Use `git rev-parse HEAD` for the current checkout revision.
-This is a branch-scoped checkpoint, not an automatic branch-selection policy.
+Checkpoint: 2026-10-19, `multicore-support`, working tree based on
+`35cb2093bc4af2b0549fc529879b6748006fee9b` (published to origin).
+That revision integrates `main:82d0b80f7` and official upstream `712ee9719`.
+Use `git status` and `git rev-parse HEAD` for the actual checkout state.
+This checkpoint does not select branches automatically.
 
-## Objective and local work
+## Objective and implementation
 
-Merge main into the published multicore branch without rewriting its history,
-then revalidate the combined RTL before continuing development. The merge
-applied without text conflicts; shared atomics, hart IDs, derivative recipes,
-walker-owned FP controls and per-hart WFI/hazard wiring were inspected.
-Local merge commit: `d4378148d` (not pushed). Combined-source validation
-**PASS**: 11 lint configurations, direct peripheral/bus/cache tests, the
-cached/uncached multicore matrices, 18 directed RV64/RV32 tests, and Linux SMP
-on two RTL harts (261,982,868 cycles, both counters 128, process exit 0).
-No simulation is left running. See the
-[integration record](experiments/2026-10-19-multicore-main-integration.md).
+Implement the user's first private-cache step: two harts initially, MSI
+bus snooping, one coherence transaction in flight, with parameterized hart
+count/capacity and automatic removal of coherence when NCORES=1.
+The working tree adds separate per-hart write-back data-cache banks and the
+blocking MSI controller described in [ADR 0003](decisions/0003-private-msi-data-caches.md).
+All accesses, including private hits, still cross the central arbiter so
+LR/SC and AMO keep their existing ordering point. Instructions remain uncached
+but snoop modified data. The older uncached/shared-cache modes remain.
 
-## Confirmed development boundaries
+Executed checks passed: 16 lint cases, two single-core structural checks,
+10 directed/random MSI runs, the full RV64 1/2/3-hart atomic/smoke matrix,
+legacy modes and default-capacity UART. Source and result scope are in the
+[MSI experiment](experiments/2026-10-19-private-msi.md). The earlier
+[combined-source integration](experiments/2026-10-19-multicore-main-integration.md)
+is a separate completed result, including two-hart Linux SMP with the shared
+cache. That Linux result does not validate Linux with the new private caches.
 
-| Branch / revision | State | Evidence |
-| --- | --- | --- |
-| `main:82d0b80f7` | Official `712ee9719` integrated and published; fork container, line endings, Nexys Video and knowledge documentation retained | [Main integration](experiments/2026-10-18-upstream-integration.md) |
-| `multicore-support:f655debae` | Original stages 1/2 and shared-cache Linux SMP implementation, previously published | [ADR 0002](decisions/0002-shared-multicore-cache.md), [original SMP run](experiments/2026-10-18-linux-smp.md) |
-| `multicore-support`, combined sources | Main merged into the feature branch; short checks and dual-hart Linux SMP PASS, recorded separately from the original result | [Current integration](experiments/2026-10-19-multicore-main-integration.md) |
-| `opensource-fpga-bitstream:23ba9c2a7` | LiteDRAM/VexRiscv diagnostics committed; DDR bring-up still reported failing | [DDR record](experiments/open-ddr3-bringup.md) |
+Completed task: Linux SMP with private MSI **PASS** on two RTL harts at
+**629,148,416 cycles**, exit 0, with 256 words per private bank. Linux reports
+two online CPUs and both shared counters equal to 128. The QEMU software
+reference, RTL build/lint, bit-exact checkpoint restoration, signal-driven
+save/restore and runner identity/locking checks also pass. No simulation is
+running. See the [Linux MSI record](experiments/2026-10-19-linux-msi.md) for
+identities, reproduction and the preserved evidence.
+The implementation and validation records are included in the commit containing
+this checkpoint; use Git history and remote refs for publication status.
 
-This integration updates the feature branch; it does not merge multicore back
-into main or integrate the open FPGA branch. The existing untracked directories
-`addins/riscv-arch-test-cvw/` and `addins/riscv-dv/` predate this work and must
-remain untouched.
+## Boundaries and remaining work
 
-## Unresolved issues and knowledge gaps
+- Private-hit concurrency, nonblocking cache requests, larger multiword lines,
+  MESI/directory protocols and external-DMA coherence are not implemented.
+- Existing CPU HRESP handling does not provide precise cache/writeback
+  exceptions. Cache/bus error tests establish dirty-data retention and retries,
+  not architectural fault delivery. Reset discards dirty cache contents.
+- No FPGA synthesis/route/resource/timing result or board test is claimed for
+  MSI. Two/three-hart tests do not establish arbitrary-N behavior.
+- Multicore remains separate from main. `opensource-fpga-bitstream:f950a7753`
+  now separately contains main; open DDR3 bring-up still needs hardware access
+  and has no new calibration or Wally-boot verdict.
+- The pre-existing untracked `addins/riscv-arch-test-cvw/` and
+  `addins/riscv-dv/` directories remain untouched. Logs/models are local ignored
+  or external evidence, not remote archives.
 
-- **DDR retest needs board access:** distinguish service-CPU startup,
-  ROM/SRAM/register-file inference and actual DDR calibration. The remembered
-  improvement without BRAM remains an unverified hypothesis.
-- **Multicore hardware not verified:** no synthesis/route/resource result,
-  FPGA Linux SMP verdict, private-cache MESI or external-DMA coherence result.
-  A two-hart Linux result cannot establish arbitrary-N Linux support.
-- **Evidence portability:** logs/manifests remain in local ignored or external
-  directories, not a remote archive. Preserve them before cleaning the host.
-- **Documentation drift:** preserved AGENTS suite/`--fcov` advice differs from
-  current scripts; see [verification notes](verification.md). Historical HPTW
-  plans and synthesis defaults must be checked against executable sources.
-- No exact historical SD image hash, complete earlier DDR observation log or
-  revision-specific ASIC physical results were recovered.
+## Future work conditional on the user's objective
 
-## Next actions
-
-1. Continue multicore development from this updated feature branch, preserving
-   the shared-cache/atomic contract and parameter-specific verification.
-2. Revalidate affected scope after future RTL/configuration changes. The local
-   checkpoint procedure is in the integration record; reuse saved state only
-   with the verified source/model hashes. Main still lacks the multicore
-   implementation until the feature branch is merged back.
-3. With Nexys Video access, resume the diagnostic matrix in the DDR record.
-   Moving initialization onto Wally remains a proposal.
+1. With tools/board access, measure FPGA resources/timing and validate hardware.
+2. Add private instruction caches with explicit instruction synchronization tests.
+3. Add independent local-hit completion only with revised reservation/snoop
+   coordination and verification; do not silently hide stores from the arbiter.

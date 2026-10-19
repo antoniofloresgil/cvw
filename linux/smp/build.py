@@ -30,10 +30,14 @@ def main():
     parser.add_argument("--buildroot", type=Path, required=True)
     parser.add_argument("--work", type=Path, default=Path.home() / "wally-smp-work")
     parser.add_argument("--cores", type=int, default=2)
+    parser.add_argument("--cache-mode", choices=["shared", "msi"], default="shared")
+    parser.add_argument("--cache-words", type=int, default=256)
     parser.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args()
     if not 1 <= args.cores <= 8:
         parser.error("Expected 1..8 cores")
+    if args.cache_words < 2 or args.cache_words & (args.cache_words - 1):
+        parser.error("--cache-words must be a power of two >= 2")
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
     br = args.buildroot.resolve()
@@ -70,7 +74,7 @@ def main():
         run([*sbi_command, "clean"], env=env)
     run([*sbi_command, f"-j{args.jobs}"], env=env)
     marker.write_text(recipe)
-    run(["python3", HERE / "devicetree.py", "--cores", args.cores, "--output", work / "wally-smp.dts"])
+    run(["python3", HERE / "devicetree.py", "--cores", args.cores, "--cache-mode", args.cache_mode, "--cache-words", args.cache_words, "--output", work / "wally-smp.dts"])
     run(["dtc", "-I", "dts", "-O", "dtb", "-o", work / "wally-smp.dtb", work / "wally-smp.dts"])
     run([cross + "gcc", "-nostdlib", "-nostartfiles", "-march=rv64i_zicsr", "-mabi=lp64", "-Wl,-Ttext=0x1000", "-Wl,--build-id=none", "-Wl,--no-relax", HERE / "boot.S", "-o", work / "boot.elf"])
     run([cross + "objcopy", "-O", "binary", work / "boot.elf", work / "boot.bin"])
@@ -91,6 +95,8 @@ def main():
     artifacts = [rom, ram, work / "wally-smp.dtb", kout / "arch/riscv/boot/Image", sout / "platform/generic/firmware/fw_jump.bin", kout / ".config", work / "init"]
     manifest = {
         "cores": args.cores,
+        "cache_mode": args.cache_mode,
+        "cache_words": args.cache_words,
         "linux": "6.19.14",
         "opensbi": "1.7",
         "ram_mb": 128,

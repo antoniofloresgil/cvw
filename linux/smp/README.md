@@ -1,7 +1,7 @@
 # Linux SMP sobre Wally
 
 Este banco arranca OpenSBI y Linux en los núcleos RTL de Wally con una caché
-física compartida. Es independiente de la imagen SD y del flujo FPGA de
+física compartida o cachés privadas de datos MSI. Es independiente de la imagen SD y del flujo FPGA de
 Nexys Video: no cambia ni flashea ninguna tarjeta.
 
 ## Preparación
@@ -38,6 +38,46 @@ del UART en RTL; para depurar el arranque se puede cambiar a 7 en el generador
 y regenerar las imágenes. `--reuse` evita recompilar un modelo RTL ya construido; usarlo
 solo si no han cambiado RTL, configuración ni número de harts.
 
+## Modo MSI y puntos de control
+
+Para probar la integración con cachés privadas de datos:
+
+```bash
+python3 linux/smp/build.py --buildroot /ruta/a/buildroot --work ~/wally-smp-msi --cores 2 --cache-mode msi --cache-words 256
+python3 linux/smp/run.py --work ~/wally-smp-msi --sim qemu
+python3 linux/smp/run.py --work ~/wally-smp-msi --cache-mode msi
+```
+
+El manifiesto registra modo y capacidad, y el DTB describe una D-cache privada
+por CPU, sin caché compartida ni I-cache. El modo original sigue siendo
+`shared`. El runner exige que cualquier selección explícita coincida con el
+manifiesto y verifica los hashes de las imágenes. `NCORES=1` con MSI solicitado
+elimina la coherencia y no anuncia cachés en el DTB.
+
+El modelo RTL permite guardar/restaurar su estado completo. Se guarda cada
+5 millones de ciclos por defecto y al recibir SIGTERM/SIGINT. Para continuar:
+
+```bash
+python3 linux/smp/run.py --work ~/wally-smp-msi --cache-mode msi --reuse --resume
+```
+
+`--build-only` compila sin ejecutar; `--checkpoint` permite elegir la ruta y
+`--checkpoint-interval` el intervalo. `--cycles` limita el total absoluto,
+incluidos los ciclos anteriores a una restauración. Una interrupción o límite
+devuelve 75 y registra INCOMPLETE; un fallo devuelve 1 y PASS devuelve 0.
+`rtl-result.json` describe la última ejecución terminada. No confundir el
+INCOMPLETE de una prueba limitada anterior con el proceso que sigue ejecutando.
+
+La reutilización comprueba las fuentes, parámetros y hash del ejecutable.
+La restauración también comprueba la identidad del modelo y las imágenes.
+Un bloqueo impide dos ejecuciones RTL simultáneas en el mismo directorio.
+No reutilizar un snapshot tras modificar el RTL, el harness o las imágenes;
+conservarlo como evidencia y usar otro directorio/checkpoint para el nuevo
+modelo. Los resultados MSI se registran por separado en el
+[experimento Linux MSI](../../docs/engineering/experiments/2026-10-19-linux-msi.md).
+La ejecución de dos harts con 256 palabras por caché privada terminó con PASS
+en 629.148.416 ciclos: dos CPU online y ambos contadores compartidos a 128.
+
 ## Plataforma y arranque
 
 | Dirección física | Contenido |
@@ -62,7 +102,7 @@ actual no realiza una actualización A/D atómica entre harts. También se
 desactiva Svpbmt: esta caché selecciona RAM por dirección física y no recibe
 los atributos de memoria de las PTE.
 
-El árbol anuncia una caché unificada compartida de 2 KiB, con líneas de
+En el modo `shared`, el árbol anuncia una caché unificada compartida de 2 KiB, con líneas de
 8 bytes. Las cachés privadas están desactivadas. Las escrituras atraviesan
 la caché e invalidan su línea; las lecturas asignan una palabra completa.
 El árbitro común conserva las reservas LR/SC y serializa las dos mitades de
@@ -93,7 +133,8 @@ valida el RTL de Wally. En Verilator se ejecutan los procesadores, MMU,
 árbitro, caché y periféricos reales. La consola observa las escrituras THR
 del UART sin eliminar sus esperas ni sus interrupciones. Esta prueba no
 constituye validación en FPGA, cobertura completa de Linux ni soporte de
-coherencia con DMA externo o cachés privadas.
+coherencia con DMA externo. El PASS anterior con caché compartida no valida
+las cachés privadas MSI; consultar el registro de cada modo.
 
 Referencias: [entrada de Linux RISC-V](https://docs.kernel.org/arch/riscv/boot.html),
 [plataforma generic de OpenSBI](https://github.com/riscv-software-src/opensbi/blob/master/docs/platform/generic.md)

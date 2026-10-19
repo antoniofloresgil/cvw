@@ -63,3 +63,27 @@ multicore implementation until this feature branch is merged back.
 The open LiteDRAM integration is separately scoped to
 `opensource-fpga-bitstream:23ba9c2a7`; its reset/clock/service-CPU contract is
 linked in the [DDR3 record](experiments/open-ddr3-bringup.md).
+
+## Optional private MSI data-cache mode
+
+The working tree based on `35cb2093b` adds PRIVATE_DCACHE and
+PRIVATE_DCACHE_WORDS SoC parameters; NCORES still defaults to 1. Effective
+MSI is `NCORES > 1 && PRIVATE_DCACHE`. With one hart, generate removes MSI
+and retains the original core, bus latency and local atomic monitor.
+
+`ahbmulticore` now exports HOWNER, using the granted address owner before
+acceptance and the held owner during the data phase. `ahbmsicache` latches
+that owner with the accepted address and samples write data/strobes in the
+following data phase. Every access still passes the existing ordering point,
+including hits in the separate private banks. Thus all stores remain visible
+to reservation invalidation and AMO exclusion; local hits are not concurrent.
+
+Only data requests allocate; HPROT[0]=0 instruction reads snoop even the
+requesting hart's modified D-cache bank before fetching from memory. Dirty
+replacement/intervention writes back a full word and changes ownership only
+after success. Cache fills and byte merges preserve the rest of the word.
+MMIO/ROM bypass allocation. Existing legacy IFU/LSU caches remain disabled in
+the multicore_msi derivative. Shared-cache and effective MSI modes cannot be
+combined. See [ADR 0003](decisions/0003-private-msi-data-caches.md) for the
+blocking MSI transitions, restrictions and error/reset contract, and the
+[MSI result record](experiments/2026-10-19-private-msi.md) for executed checks.

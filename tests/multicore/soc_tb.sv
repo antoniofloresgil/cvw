@@ -3,7 +3,9 @@
 module soc_tb import cvw::*; #(
     parameter int NCORES = 2,
     parameter int LATENCY = 0,
-    parameter bit SHARED_CACHE = 0
+    parameter bit SHARED_CACHE = 0,
+    parameter bit PRIVATE_DCACHE = 0,
+    parameter int PRIVATE_DCACHE_WORDS = 256
 );
     `include "parameter-defs.vh"
     function automatic cvw_t testconfig();
@@ -17,13 +19,35 @@ module soc_tb import cvw::*; #(
     logic reset;
     string image, suite;
     always #5 clk = ~clk;
-    wallypipelinedsoc #(.P(TEST_P), .NCORES(NCORES), .SHARED_CACHE(SHARED_CACHE)) dut(
+    wallypipelinedsoc #(.P(TEST_P), .NCORES(NCORES), .SHARED_CACHE(SHARED_CACHE),
+        .PRIVATE_DCACHE(PRIVATE_DCACHE), .PRIVATE_DCACHE_WORDS(PRIVATE_DCACHE_WORDS)) dut(
         .clk, .reset_ext, .reset, .ExternalStall(1'b0),
         .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(),
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),
         .HBURST(), .HPROT(), .HTRANS(), .HMASTLOCK(), .HREADY(),
         .TIMECLK(1'b0), .GPIOIN('0), .GPIOOUT(), .GPIOEN(), .UARTSin(1'b1), .UARTSout(),
         .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
+    // White-box architectural observer: write-back data may be newer than RAM.
+    // This does not flush caches or participate in the coherence protocol.
+    if (PRIVATE_DCACHE && NCORES > 1) begin : observer
+        function automatic logic [63:0] word(input int unsigned index);
+            localparam OFFSET = $clog2(P.XLEN/8);
+            localparam CACHE_INDEX = $clog2(PRIVATE_DCACHE_WORDS);
+            logic [P.PA_BITS-1:0] address;
+            logic [CACHE_INDEX-1:0] cache_index;
+            address = P.PA_BITS'(P.UNCORE_RAM_BASE) + (P.PA_BITS'(index) << OFFSET);
+            cache_index = address[OFFSET +: CACHE_INDEX];
+            word = dut.uncoregen.uncore.ram.ram.memory.ram.RAM[index];
+            for (int h = 0; h < NCORES; h++)
+                if (dut.msicache.cache.States[h][cache_index] == 2 &&
+                    dut.msicache.cache.Tags[h][cache_index] == address[P.PA_BITS-1:OFFSET+CACHE_INDEX])
+                    word = dut.msicache.cache.Lines[h][cache_index];
+        endfunction
+    end else begin : observer
+        function automatic logic [63:0] word(input int unsigned index);
+            word = dut.uncoregen.uncore.ram.ram.memory.ram.RAM[index];
+        endfunction
+    end
     integer UARTWrites = 0;
     always @(posedge clk) begin
         if (!reset && dut.uncoregen.uncore.PSEL[3] && dut.uncoregen.uncore.PWRITE &&
@@ -44,11 +68,11 @@ module soc_tb import cvw::*; #(
             @(negedge clk);
             complete = 1;
             for (int h = 0; h < NCORES; h++) begin
-                if (dut.uncoregen.uncore.ram.ram.memory.ram.RAM['h1003+8*h] == 'hdead)
+                if (observer.word('h1003+8*h) == 'hdead)
                     $fatal(1, "Hart %0d failed: phase=%0d mcause=%h", h,
-                        dut.uncoregen.uncore.ram.ram.memory.ram.RAM['h1001+8*h],
-                        dut.uncoregen.uncore.ram.ram.memory.ram.RAM['h1005+8*h]);
-                if (dut.uncoregen.uncore.ram.ram.memory.ram.RAM['h1003+8*h] != 1) complete = 0;
+                        observer.word('h1001+8*h),
+                        observer.word('h1005+8*h));
+                if (observer.word('h1003+8*h) != 1) complete = 0;
             end
             if (complete) begin
                 if (suite == "uart") assert (UARTWrites == 4) else $fatal(1, "Expected four UART writes, got %0d", UARTWrites);

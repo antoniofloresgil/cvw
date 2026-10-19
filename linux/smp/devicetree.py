@@ -1,11 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-"""Generate a Wally shared-cache SMP device tree; hart IDs are contiguous."""
+"""Generate a Wally shared-cache or private-MSI SMP device tree; hart IDs are contiguous."""
 
 import argparse
 from pathlib import Path
 
 
-def generate(cores, memory_mb=128, frequency=20000000, cache_words=256):
+def generate(cores, memory_mb=128, frequency=20000000, cache_words=256, cache_mode="shared"):
+    if cache_mode not in ("shared", "msi") or cache_words < 2 or cache_words & (cache_words - 1):
+        raise ValueError("Expected shared/msi and a power-of-two cache capacity >= 2 words")
+    private = cache_mode == "msi" and cores > 1
+    cpu_cache = (f"d-cache-size = <{cache_words * 8}>; d-cache-block-size = <8>; d-cache-sets = <{cache_words}>;"
+                 if private else "next-level-cache = <&shared_cache>;" if cache_mode == "shared" else "")
+    cache_node = f"""shared_cache: cache {{
+        compatible = "cache"; cache-level = <1>; cache-unified;
+        cache-size = <{cache_words * 8}>; cache-line-size = <8>; cache-sets = <{cache_words}>;
+    }};""" if cache_mode == "shared" else ""
+    model = "a shared physical cache" if cache_mode == "shared" else "private MSI data caches" if private else "uncached single-core execution"
     cpus = []
     for hart in range(cores):
         cpus.append(f"""
@@ -16,7 +26,7 @@ def generate(cores, memory_mb=128, frequency=20000000, cache_words=256):
             riscv,isa-base = "rv64i";
             riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "zicsr", "zifencei", "sstc", "svade";
             mmu-type = "riscv,sv39"; clock-frequency = <{frequency}>;
-            next-level-cache = <&shared_cache>;
+            {cpu_cache}
             cpu{hart}_intc: interrupt-controller {{
                 compatible = "riscv,cpu-intc"; interrupt-controller;
                 #interrupt-cells = <1>; #address-cells = <0>;
@@ -28,7 +38,7 @@ def generate(cores, memory_mb=128, frequency=20000000, cache_words=256):
 / {{
     #address-cells = <2>; #size-cells = <2>;
     compatible = "openhwgroup,wally-smp", "riscv-virtio";
-    model = "CORE-V Wally SMP with a shared physical cache";
+    model = "CORE-V Wally SMP with {model}";
     chosen {{
         stdout-path = "/soc/serial@10000000";
         bootargs = "earlycon=uart8250,mmio,0x10000000 console=ttyS0,115200 loglevel=4 rdinit=/init";
@@ -38,10 +48,7 @@ def generate(cores, memory_mb=128, frequency=20000000, cache_words=256):
         #address-cells = <1>; #size-cells = <0>; timebase-frequency = <{frequency}>;
         {"".join(cpus)}
     }};
-    shared_cache: cache {{
-        compatible = "cache"; cache-level = <1>; cache-unified;
-        cache-size = <{cache_words * 8}>; cache-line-size = <8>; cache-sets = <{cache_words}>;
-    }};
+    {cache_node}
     soc {{
         #address-cells = <2>; #size-cells = <2>; compatible = "simple-bus"; ranges;
         serial@10000000 {{
@@ -67,11 +74,15 @@ def generate(cores, memory_mb=128, frequency=20000000, cache_words=256):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cores", type=int, default=2)
+    parser.add_argument("--cache-mode", choices=["shared", "msi"], default="shared")
+    parser.add_argument("--cache-words", type=int, default=256)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if not 1 <= args.cores <= 8:
         parser.error("This Linux configuration supports 1..8 harts")
-    args.output.write_text(generate(args.cores))
+    if args.cache_words < 2 or args.cache_words & (args.cache_words - 1):
+        parser.error("--cache-words must be a power of two >= 2")
+    args.output.write_text(generate(args.cores, cache_words=args.cache_words, cache_mode=args.cache_mode))
 
 
 if __name__ == "__main__":

@@ -28,7 +28,8 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsigned NCORES = 1,
-  parameter bit SHARED_CACHE = 0, parameter int unsigned SHARED_CACHE_WORDS = 256)  (
+  parameter bit SHARED_CACHE = 0, parameter int unsigned SHARED_CACHE_WORDS = 256,
+  parameter bit PRIVATE_DCACHE = 0, parameter int unsigned PRIVATE_DCACHE_WORDS = 256)  (
   input  logic                clk,
   input  logic                reset_ext,        // external asynchronous reset pin
   output logic                reset,            // reset synchronized to clk to prevent races on release
@@ -68,6 +69,8 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   output logic [3:0]          PWMGPIO           // PWM GPIO output
 );
 
+  localparam bit MSI_ENABLED = NCORES > 1 && PRIVATE_DCACHE;
+
   // Uncore signals
   logic [P.AHBW-1:0]          HRDATA;           // from AHB mux in uncore
   logic                       HRESP;            // response from AHB
@@ -87,6 +90,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   logic [NCORES-1:0][3:0] CoreHPROT;
   logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC;
 
+  logic [(NCORES > 1 ? $clog2(NCORES) : 1)-1:0] BusHOWNER;
   logic [P.PA_BITS-1:0] BusHADDR;
   logic [P.AHBW-1:0] BusHWDATA, BusHRDATA;
   logic [P.XLEN/8-1:0] BusHWSTRB;
@@ -125,15 +129,25 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
     assign CoreHREADY[0] = BusHREADY;
     assign CoreHRESP[0] = BusHRESP;
     assign CoreSCFail[0] = 1'b0;
+    assign BusHOWNER = '0;
   end else begin : multicore
     ahbmulticore #(.P(P), .NCORES(NCORES)) bus(
       .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHSIZE,
       .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHMASTLOCK, .CoreHATOMIC, .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
-      .HADDR(BusHADDR), .HWDATA(BusHWDATA), .HWSTRB(BusHWSTRB), .HWRITE(BusHWRITE), .HSIZE(BusHSIZE), .HBURST(BusHBURST), .HPROT(BusHPROT), .HTRANS(BusHTRANS), .HMASTLOCK(BusHMASTLOCK),
+      .HOWNER(BusHOWNER), .HADDR(BusHADDR), .HWDATA(BusHWDATA), .HWSTRB(BusHWSTRB), .HWRITE(BusHWRITE), .HSIZE(BusHSIZE), .HBURST(BusHBURST), .HPROT(BusHPROT), .HTRANS(BusHTRANS), .HMASTLOCK(BusHMASTLOCK),
       .HRDATA(BusHRDATA), .HREADY(BusHREADY), .HRESP(BusHRESP));
   end
 
-  if (SHARED_CACHE) begin : sharedcache
+  if (MSI_ENABLED) begin : msicache
+    ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(PRIVATE_DCACHE_WORDS)) cache(
+      .HCLK, .HRESETn, .UpHOWNER(BusHOWNER),
+      .UpHADDR(BusHADDR), .UpHWDATA(BusHWDATA), .UpHWSTRB(BusHWSTRB),
+      .UpHWRITE(BusHWRITE), .UpHSIZE(BusHSIZE), .UpHBURST(BusHBURST),
+      .UpHPROT(BusHPROT), .UpHTRANS(BusHTRANS), .UpHMASTLOCK(BusHMASTLOCK),
+      .UpHRDATA(BusHRDATA), .UpHREADY(BusHREADY), .UpHRESP(BusHRESP),
+      .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK,
+      .HRDATA, .HREADY, .HRESP);
+  end else if (SHARED_CACHE) begin : sharedcache
     ahbsharedcache #(.P(P), .WORDS(SHARED_CACHE_WORDS)) cache(
       .HCLK, .HRESETn, .UpHADDR(BusHADDR), .UpHWDATA(BusHWDATA), .UpHWSTRB(BusHWSTRB),
       .UpHWRITE(BusHWRITE), .UpHSIZE(BusHSIZE), .UpHBURST(BusHBURST), .UpHPROT(BusHPROT),
@@ -155,11 +169,17 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
               !P.DCACHE_SUPPORTED && !P.ICACHE_SUPPORTED && !P.BURST_EN)
         else $fatal(1, "Multicore requires a shared bus with no private memories/caches or bursts");
     end
-    if (SHARED_CACHE) begin
+    assert (!(MSI_ENABLED && SHARED_CACHE))
+      else $fatal(1, "Select private MSI data caches or the shared cache, not both");
+    if (MSI_ENABLED) begin
+      assert (!P.ZICBOM_SUPPORTED && !P.ZICBOZ_SUPPORTED && !P.ZICBOP_SUPPORTED)
+        else $fatal(1, "MSI baseline does not implement cache-maintenance operations");
+    end
+    if (MSI_ENABLED || SHARED_CACHE) begin
       assert (!P.SVADU_SUPPORTED)
-        else $fatal(1, "Shared-cache SMP uses software PTE A/D updates (Svade)");
+        else $fatal(1, "Cached SMP uses software PTE A/D updates (Svade)");
       assert (!P.SVPBMT_SUPPORTED)
-        else $fatal(1, "Shared cache uses physical RAM attributes; Svpbmt must be disabled");
+        else $fatal(1, "Multicore caches use physical RAM attributes; Svpbmt must be disabled");
     end
   end
 
