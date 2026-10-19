@@ -11,6 +11,13 @@ see its [working-tree validation](experiments/2026-10-19-private-msi.md).
 The [Linux MSI integration](experiments/2026-10-19-linux-msi.md) is a separate
 completed two-hart RTL PASS at 629,148,416 cycles with both shared counters
 equal to 128.
+The optional stage-5 [private instruction/read-hit design](decisions/0004-private-instruction-caches.md)
+and its [verification record](experiments/2026-10-19-private-l1.md) extend that baseline.
+The later [independent read/write overlap](decisions/0005-independent-read-write-overlap.md)
+has a [separate verification record](experiments/2026-10-19-independent-read-write.md).
+The [local M-store extension](decisions/0006-local-modified-stores.md) and
+[its validation](experiments/2026-10-19-local-modified-stores.md) add explicit
+commit notifications and a separate Linux test for items 2 and 3.
 The earlier
 [main integration record](experiments/2026-10-18-upstream-integration.md) and
 source audits retain their original revision labels.

@@ -310,3 +310,74 @@ participa en las transacciones.
 La [decisión de diseño](../../docs/engineering/decisions/0003-private-msi-data-caches.md)
 y el [registro de validación](../../docs/engineering/experiments/2026-10-19-private-msi.md)
 distinguen estos resultados de la validación anterior con caché compartida.
+
+## Etapa 5: instrucciones privadas y aciertos de lectura concurrentes
+
+Sobre MSI se pueden activar dos mejoras independientes, ambas desactivadas
+por defecto:
+
+```systemverilog
+wallypipelinedsoc #(
+  .P(P), .NCORES(2), .PRIVATE_DCACHE(1), .PRIVATE_DCACHE_WORDS(256),
+  .PRIVATE_ICACHE(1), .PRIVATE_ICACHE_WORDS(256), .LOCAL_DCACHE_READS(1)
+) soc(/* puertos habituales */);
+```
+
+Cada I-cache es privada, física y de mapeo directo, con una palabra AHB por
+línea. Un acierto de instrucciones o una lectura ordinaria con acierto en
+la D-cache puede terminar sin usar el bus global. Varios harts pueden recibir
+respuestas simultáneas, incluso mientras otro espera un fallo de caché.
+Las escrituras, LR/SC, AMO y los fallos conservan un único punto de ordenación
+y una sola transacción de coherencia en curso. No hay escrituras locales
+que escapen al monitor de reservas.
+
+Una escritura correcta invalida la palabra de instrucciones en todos los
+harts. Durante las escrituras se retienen las lecturas locales de la misma palabra
+física; los aciertos a otras palabras pueden completarse en paralelo, aunque
+compartan índice de caché. Esto incluye el bloqueo ante escrituras por bytes
+para evitar carreras con la invalidación. Las lecturas de datos también esperan
+mientras hay un AMO bloqueado. Un fallo de I-cache consulta las copias M de
+datos antes de rellenarse; ROM/MMIO no se guardan. `fence.i` sigue usando la
+sincronización del pipeline. Las escrituras de DMA ajenas al bus siguen fuera
+del contrato. Con `NCORES=1` desaparecen ambas mejoras y el protocolo MSI.
+
+```bash
+source ./setup.sh
+python3 tests/multicore/run.py --private-dcache --private-icache --local-dcache-reads --unit-only --latency 0 3 --work-dir /tmp/wally-l1-unit
+python3 tests/multicore/run.py --private-dcache --private-icache --local-dcache-reads --suite atomic --cores 1 2 3 --latency 0 3 --work-dir /tmp/wally-l1-soc
+```
+
+`--icache-words` configura el banco de instrucciones del SoC completo;
+`--cache-words` configura el de datos. El banco unitario usa capacidades
+pequeñas para forzar reemplazos. Para comparar cada mejora, omitir uno de
+los dos indicadores nuevos. El SoC imprime ciclos y `TRAFFIC` (transferencias
+hacia memoria y respuestas locales), además del criterio funcional PASS.
+
+El [ADR 0004](../../docs/engineering/decisions/0004-private-instruction-caches.md)
+detalla la ordenación. El [experimento de la etapa 5](../../docs/engineering/experiments/2026-10-19-private-l1.md)
+recoge resultados y límites; el PASS Linux anterior con MSI no valida por sí
+solo estos nuevos caminos.
+
+La mejora de lecturas durante escrituras independientes queda descrita en el
+[ADR 0005](../../docs/engineering/decisions/0005-independent-read-write-overlap.md)
+y su [validación separada](../../docs/engineering/experiments/2026-10-19-independent-read-write.md).
+El Linux que ya estaba ejecutándose usa la versión anterior y no valida este cambio.
+
+## Escrituras locales en M
+
+`LOCAL_DCACHE_WRITES=1` permite que una escritura ordinaria con acierto en M
+actualice sus bytes sin emitir una transacción global. Se pueden activar estas
+escrituras independientemente de las lecturas locales y de las I-caches:
+
+```bash
+source ./setup.sh
+python3 tests/multicore/run.py --private-dcache --private-icache --local-dcache-reads --local-dcache-writes --suite atomic --cores 1 2 3 --latency 0 3 --work-dir /tmp/wally-m-stores
+```
+
+Los commits siguen notificándose al monitor central de reservas y a todas las
+I-caches. Se bloquean durante AMO y ante cualquier transacción global a la misma
+palabra, incluidas las lecturas que estén tomando datos modificados. Los
+aciertos S, fallos y atómicos conservan el camino global. Con NCORES=1 desaparece
+la mejora. El [ADR 0006](../../docs/engineering/decisions/0006-local-modified-stores.md)
+y su [registro](../../docs/engineering/experiments/2026-10-19-local-modified-stores.md)
+explican las prioridades para LR e I-fill simultáneos y las pruebas ejecutadas.

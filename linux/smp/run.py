@@ -23,6 +23,10 @@ def main():
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--cache-mode", choices=["shared", "msi"], help="Must match the image manifest")
     parser.add_argument("--cache-words", type=int, help="Must match the image manifest")
+    parser.add_argument("--private-icache", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--icache-words", type=int)
+    parser.add_argument("--local-dcache-writes", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--local-dcache-reads", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--build-only", action="store_true")
     parser.add_argument("--checkpoint", type=Path, help="Snapshot path; defaults to a mode-specific file in --work")
     parser.add_argument("--checkpoint-interval", type=int, default=5000000)
@@ -32,6 +36,27 @@ def main():
     work = args.work.resolve()
     manifest = json.loads((work / "manifest.json").read_text())
     cores = manifest["cores"]
+    mode = args.cache_mode or manifest.get("cache_mode", "shared")
+    words = args.cache_words if args.cache_words is not None else manifest.get("cache_words", 256)
+    if mode != manifest.get("cache_mode", "shared") or words != manifest.get("cache_words", 256):
+        parser.error("Cache parameters differ from the image manifest; regenerate the DTB/images")
+    icache = manifest.get("private_icache", False) if args.private_icache is None else args.private_icache
+    iwords = manifest.get("icache_words", 256) if args.icache_words is None else args.icache_words
+    local_reads = manifest.get("local_dcache_reads", False) if args.local_dcache_reads is None else args.local_dcache_reads
+    local_writes = manifest.get("local_dcache_writes", False) if args.local_dcache_writes is None else args.local_dcache_writes
+    if (icache, iwords, local_reads, local_writes) != (manifest.get("private_icache", False), manifest.get("icache_words", 256), manifest.get("local_dcache_reads", False), manifest.get("local_dcache_writes", False)):
+        parser.error("Private cache parameters differ from the image manifest; regenerate the DTB/images")
+    if (icache or local_reads or local_writes) and mode != "msi":
+        parser.error("Private cache local paths require MSI mode")
+    if iwords < 2 or iwords & (iwords - 1):
+        parser.error("--icache-words must be a power of two >= 2")
+    if args.cycles < 1 or args.checkpoint_interval < 1:
+        parser.error("Cycle limit and checkpoint interval must be positive")
+    if args.resume and (args.build_only or not args.reuse):
+        parser.error("--resume requires --reuse and cannot be combined with --build-only")
+    for name, digest in manifest["sha256"].items():
+        if hashlib.sha256((work / name).read_bytes()).hexdigest() != digest:
+            parser.error(f"Image manifest mismatch: {name}")
     if args.sim == "qemu":
         command = [
             "qemu-system-riscv64",
@@ -83,28 +108,22 @@ def main():
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         parser.error("Another RTL build/run is using this work directory")
-    mode = args.cache_mode or manifest.get("cache_mode", "shared")
-    words = args.cache_words if args.cache_words is not None else manifest.get("cache_words", 256)
-    if mode != manifest.get("cache_mode", "shared") or words != manifest.get("cache_words", 256):
-        parser.error("Cache parameters differ from the image manifest; regenerate the DTB/images")
-    if args.cycles < 1 or args.checkpoint_interval < 1:
-        parser.error("Cycle limit and checkpoint interval must be positive")
-    if args.resume and (args.build_only or not args.reuse):
-        parser.error("--resume requires --reuse and cannot be combined with --build-only")
-    for name, digest in manifest["sha256"].items():
-        if hashlib.sha256((work / name).read_bytes()).hexdigest() != digest:
-            parser.error(f"Image manifest mismatch: {name}")
     build = work / f"rtl-{cores}-{mode}-{words}"
+    if icache or local_reads:
+        build = Path(str(build) + f"-i{int(icache)}-{iwords}-r{int(local_reads)}")
+    if local_writes:
+        build = Path(str(build) + "-w1")
     exe = build / "Vlinux_tb"
     metadata_path = build / "model.json"
     sources = sorted(p for p in (ROOT / "src").rglob("*.sv") if p.name != "cvw.sv")
     if not args.reuse:
-        subprocess.run(["perl", str(ROOT / "bin/derivgen.pl")], check=True)
+        subprocess.run(["perl", str(ROOT / "bin/derivgen.pl")], check=True, env={**os.environ, "WALLY": str(ROOT)})
     inputs = [ROOT / "src/cvw.sv", *sources, HERE / "linux_tb.sv", HERE / "sim_main.cpp",
               ROOT / "tests/multicore/dpi.cpp", ROOT / "config/deriv/multicore_linux/config.vh",
               *sorted((ROOT / "config/shared").glob("*.vh"))]
     fingerprint = {
         "cores": cores, "cache_mode": mode, "cache_words": words, "savable": True,
+        "private_icache": icache, "icache_words": iwords, "local_dcache_reads": local_reads, "local_dcache_writes": local_writes,
         "verilator": subprocess.check_output(["verilator", "--version"], text=True).strip(),
         "sources": {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs},
     }
@@ -120,6 +139,9 @@ def main():
             "-CFLAGS", "-O3", "-MAKEFLAGS", "OPT_FAST=-O3", "-j", str(args.jobs),
             "--top-module", "linux_tb", f"-GNCORES={cores}", f"-GCACHE_WORDS={words}",
             "-GPRIVATE_DCACHE=1'b1" if mode == "msi" else "-GPRIVATE_DCACHE=1'b0",
+            f"-GPRIVATE_ICACHE=1'b{int(icache)}", f"-GICACHE_WORDS={iwords}",
+            f"-GLOCAL_DCACHE_READS=1'b{int(local_reads)}",
+            f"-GLOCAL_DCACHE_WRITES=1'b{int(local_writes)}",
             "--Mdir", str(build), f"-I{ROOT / 'config/shared'}",
             f"-I{ROOT / 'config/deriv/multicore_linux'}", str(ROOT / "src/cvw.sv"),
             str(HERE / "linux_tb.sv"), *map(str, sources), str(HERE / "sim_main.cpp"),
@@ -132,10 +154,11 @@ def main():
     if args.build_only:
         print(f"RTL model ready: {exe}", flush=True)
         return 0
-    checkpoint = args.checkpoint.resolve() if args.checkpoint else work / f"rtl-{cores}-{mode}-{words}.checkpoint"
+    checkpoint = args.checkpoint.resolve() if args.checkpoint else work / f"{build.name}.checkpoint"
     checkpoint_meta = Path(str(checkpoint) + ".json")
     identity = {"model_sha256": model["binary_sha256"], "images": manifest["sha256"],
-                "cores": cores, "cache_mode": mode, "cache_words": words}
+                "cores": cores, "cache_mode": mode, "cache_words": words,
+                "private_icache": icache, "icache_words": iwords, "local_dcache_reads": local_reads, "local_dcache_writes": local_writes}
     if args.resume:
         if not checkpoint.is_file() or not checkpoint_meta.is_file() or json.loads(checkpoint_meta.read_text()) != identity:
             parser.error("Checkpoint missing or incompatible with this model/images")

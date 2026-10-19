@@ -74,9 +74,9 @@ and retains the original core, bus latency and local atomic monitor.
 `ahbmulticore` now exports HOWNER, using the granted address owner before
 acceptance and the held owner during the data phase. `ahbmsicache` latches
 that owner with the accepted address and samples write data/strobes in the
-following data phase. Every access still passes the existing ordering point,
-including hits in the separate private banks. Thus all stores remain visible
-to reservation invalidation and AMO exclusion; local hits are not concurrent.
+following data phase. In the default blocking mode every access passes this
+ordering point. Optional concurrent read paths are described below; all stores
+still remain visible to reservation invalidation and AMO exclusion.
 
 Only data requests allocate; HPROT[0]=0 instruction reads snoop even the
 requesting hart's modified D-cache bank before fetching from memory. Dirty
@@ -87,3 +87,28 @@ the multicore_msi derivative. Shared-cache and effective MSI modes cannot be
 combined. See [ADR 0003](decisions/0003-private-msi-data-caches.md) for the
 blocking MSI transitions, restrictions and error/reset contract, and the
 [MSI result record](experiments/2026-10-19-private-msi.md) for executed checks.
+
+## Optional private instruction banks and concurrent reads
+
+The stage-5 changes based on `8ac2d4d6b` add PRIVATE_ICACHE,
+PRIVATE_ICACHE_WORDS and LOCAL_DCACHE_READS, all disabled by default except
+capacity (256). They require effective MSI; with NCORES=1 all are removed.
+`ahbmulticore` holds one physically tagged I bank per hart, and probes private
+D banks through CacheReadAddr/CacheReadHit/CacheReadData. Independent I hits
+and ordinary D read hits can complete together or during a global read miss.
+Stores, atomics and misses retain a single global ordering point. Local reads
+wait for in-flight writes to the same physical word; D reads also wait for
+AMO exclusion to end. The independent-word refinement is specified in
+[ADR 0005](decisions/0005-independent-read-write-overlap.md).
+Successful writes invalidate matching I words in all harts; failed fills do
+not allocate. See [ADR 0004](decisions/0004-private-instruction-caches.md)
+for the invalidation/fill ordering and external-DMA limits.
+
+## Optional local modified stores
+
+LOCAL_DCACHE_WRITES adds CacheWriteHit and per-hart CacheWriteCommit/Data/Strb
+between arbiter and MSI banks. Only ordinary M hits use it; each commit still
+invalidates reservations and I words centrally. Independent commits can
+complete in parallel, but a global access to the same word, its global owner
+or AMO exclusion blocks the local store. Coincident LR replacement and I fills
+have explicit priority. See [ADR 0006](decisions/0006-local-modified-stores.md).

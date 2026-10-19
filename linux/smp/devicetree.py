@@ -5,17 +5,25 @@ import argparse
 from pathlib import Path
 
 
-def generate(cores, memory_mb=128, frequency=20000000, cache_words=256, cache_mode="shared"):
+def generate(cores, memory_mb=128, frequency=20000000, cache_words=256, cache_mode="shared", private_icache=False, icache_words=256, local_dcache_reads=False, local_dcache_writes=False):
     if cache_mode not in ("shared", "msi") or cache_words < 2 or cache_words & (cache_words - 1):
         raise ValueError("Expected shared/msi and a power-of-two cache capacity >= 2 words")
+    if (private_icache or local_dcache_reads or local_dcache_writes) and cache_mode != "msi":
+        raise ValueError("Private cache local paths require MSI mode")
+    if icache_words < 2 or icache_words & (icache_words - 1):
+        raise ValueError("I-cache capacity must be a power of two >= 2 words")
     private = cache_mode == "msi" and cores > 1
     cpu_cache = (f"d-cache-size = <{cache_words * 8}>; d-cache-block-size = <8>; d-cache-sets = <{cache_words}>;"
                  if private else "next-level-cache = <&shared_cache>;" if cache_mode == "shared" else "")
+    if private and private_icache:
+        cpu_cache += f" i-cache-size = <{icache_words * 8}>; i-cache-block-size = <8>; i-cache-sets = <{icache_words}>;"
     cache_node = f"""shared_cache: cache {{
         compatible = "cache"; cache-level = <1>; cache-unified;
         cache-size = <{cache_words * 8}>; cache-line-size = <8>; cache-sets = <{cache_words}>;
     }};""" if cache_mode == "shared" else ""
     model = "a shared physical cache" if cache_mode == "shared" else "private MSI data caches" if private else "uncached single-core execution"
+    if private and private_icache:
+        model += " and private instruction caches"
     cpus = []
     for hart in range(cores):
         cpus.append(f"""
@@ -76,13 +84,19 @@ def main():
     parser.add_argument("--cores", type=int, default=2)
     parser.add_argument("--cache-mode", choices=["shared", "msi"], default="shared")
     parser.add_argument("--cache-words", type=int, default=256)
+    parser.add_argument("--private-icache", action="store_true")
+    parser.add_argument("--icache-words", type=int, default=256)
+    parser.add_argument("--local-dcache-writes", action="store_true")
+    parser.add_argument("--local-dcache-reads", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if not 1 <= args.cores <= 8:
         parser.error("This Linux configuration supports 1..8 harts")
     if args.cache_words < 2 or args.cache_words & (args.cache_words - 1):
         parser.error("--cache-words must be a power of two >= 2")
-    args.output.write_text(generate(args.cores, cache_words=args.cache_words, cache_mode=args.cache_mode))
+    args.output.write_text(generate(args.cores, cache_words=args.cache_words, cache_mode=args.cache_mode,
+                                    private_icache=args.private_icache, icache_words=args.icache_words,
+                                    local_dcache_reads=args.local_dcache_reads, local_dcache_writes=args.local_dcache_writes))
 
 
 if __name__ == "__main__":

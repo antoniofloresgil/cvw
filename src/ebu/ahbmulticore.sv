@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-// Buffered round-robin bridge for Wally's uncached, SINGLE-transfer masters.
+// Buffered round-robin bridge with optional coherent private instruction banks.
 // Accept each local address before stalling its data phase. This is necessary
 // because busfsm gates its initial HTRANS with HREADY: grants cannot depend on
 // HTRANS while HREADY is withheld. A pending hart holds write data until reply.
 module ahbmulticore import cvw::*; #(
   parameter cvw_t P,
-  parameter int unsigned NCORES = 2
+  parameter int unsigned NCORES = 2,
+  parameter bit PRIVATE_ICACHE = 0,
+  parameter int unsigned ICACHE_WORDS = 256,
+  parameter bit LOCAL_DCACHE_READS = 0,
+  parameter bit LOCAL_DCACHE_WRITES = 0
 )(
   input  logic HCLK, HRESETn,
   input  logic [NCORES-1:0][P.PA_BITS-1:0] CoreHADDR,
@@ -16,6 +20,14 @@ module ahbmulticore import cvw::*; #(
   input  logic [NCORES-1:0][3:0] CoreHPROT,
   input  logic [NCORES-1:0][1:0] CoreHTRANS,
   input  logic [NCORES-1:0][1:0] CoreHATOMIC,
+  // Bank probes use buffered physical addresses. Local M stores broadcast
+  // their commit to the reservation monitor and every instruction bank.
+  output logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr,
+  input  logic [NCORES-1:0] CacheReadHit, CacheWriteHit,
+  output logic [NCORES-1:0] CacheWriteCommit,
+  output logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData,
+  output logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb,
+  input  logic [NCORES-1:0][P.AHBW-1:0] CacheReadData,
   output logic [NCORES-1:0] CoreSCFail,
   output logic [NCORES-1:0][P.AHBW-1:0] CoreHRDATA,
   output logic [NCORES-1:0] CoreHREADY, CoreHRESP,
@@ -48,9 +60,99 @@ module ahbmulticore import cvw::*; #(
   logic [OWNER_BITS-1:0] LockOwner;
   logic DataPhase, Found, SCValid, FailedSC, BadAMOWrite;
   int Candidate;
+  logic [NCORES-1:0] LocalReply, LocalBlocked, LocalStoreConflict;
+  logic [NCORES-1:0][P.AHBW-1:0] LocalData;
+  assign CacheReadAddr = Addr;
+  assign CacheWriteData = CoreHWDATA;
+  assign CacheWriteStrb = CoreHWSTRB;
+  always_comb begin
+    LocalStoreConflict = '0;
+    for (int h = 0; h < NCORES; h++)
+      for (int writer = 0; writer < NCORES; writer++)
+        if (CacheWriteCommit[writer] &&
+            Addr[h][P.PA_BITS-1:GRANULE_BITS] == Addr[writer][P.PA_BITS-1:GRANULE_BITS])
+          LocalStoreConflict[h] = 1'b1;
+  end
+  for (genvar h = 0; h < NCORES; h++) begin : readhazards
+    // Compare full physical word addresses, not bank indices or byte offsets.
+    // A write can merge/invalidate before its bus reply; matching local reads
+    // must wait through commit. Independent words have no such dependency.
+    assign LocalBlocked[h] = DataPhase && (Owner == OWNER_BITS'(h) ||
+      (Write[Owner] && Addr[h][P.PA_BITS-1:GRANULE_BITS] == Addr[Owner][P.PA_BITS-1:GRANULE_BITS]));
+    // A local store must not race ANY global access to its word: a read
+    // may already have captured modified data for a writeback/intervention.
+    assign CacheWriteCommit[h] = HRESETn && LOCAL_DCACHE_WRITES &&
+      State[h] == PENDING && Write[h] && Prot[h][0] && Op[h] == 0 &&
+      CacheWriteHit[h] && !LockActive &&
+      !(DataPhase && (Owner == OWNER_BITS'(h) ||
+        Addr[h][P.PA_BITS-1:GRANULE_BITS] == Addr[Owner][P.PA_BITS-1:GRANULE_BITS]));
+  end
 
-  // One complete transfer at a time on the shared bus. Rotate after every
-  // reply, even when a master continuously presents back-to-back transfers.
+  function automatic logic cacheable(input logic [P.PA_BITS-1:0] address);
+    return (P.UNCORE_RAM_SUPPORTED &&
+      ((64'(address) & ~P.UNCORE_RAM_RANGE) == P.UNCORE_RAM_BASE)) ||
+      (P.EXT_MEM_SUPPORTED && ((64'(address) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE));
+  endfunction
+
+  if (PRIVATE_ICACHE) begin : icache
+    localparam OFFSET = $clog2(P.AHBW/8);
+    localparam INDEX = $clog2(ICACHE_WORDS);
+    localparam TAG = P.PA_BITS - OFFSET - INDEX;
+    logic [NCORES-1:0][ICACHE_WORDS-1:0] Valid;
+    logic [TAG-1:0] Tags[NCORES][ICACHE_WORDS];
+    logic [P.AHBW-1:0] Lines[NCORES][ICACHE_WORDS];
+    always_comb begin
+      for (int h = 0; h < NCORES; h++) begin
+        LocalData[h] = Prot[h][0] ? CacheReadData[h] : Lines[h][Addr[h][OFFSET +: INDEX]];
+        LocalReply[h] = State[h] == PENDING && !Write[h] && Op[h] == 0 &&
+          !LocalBlocked[h] && !LocalStoreConflict[h] &&
+          (Prot[h][0] ? (LOCAL_DCACHE_READS && !LockActive && CacheReadHit[h]) :
+           (cacheable(Addr[h]) && Valid[h][Addr[h][OFFSET +: INDEX]] &&
+            Tags[h][Addr[h][OFFSET +: INDEX]] == Addr[h][P.PA_BITS-1:OFFSET+INDEX]));
+      end
+    end
+    always_ff @(posedge HCLK) begin
+      if (!HRESETn) Valid <= '0;
+      else begin
+        // Apply invalidations before a global I fill. A simultaneous fill is
+        // of another word and must retain its new tag/valid bit, even if the
+        // victim's old tag matches a committing local store.
+        for (int writer = 0; writer < NCORES; writer++)
+          if (CacheWriteCommit[writer])
+            for (int h = 0; h < NCORES; h++)
+              if (Tags[h][Addr[writer][OFFSET +: INDEX]] == Addr[writer][P.PA_BITS-1:OFFSET+INDEX])
+                Valid[h][Addr[writer][OFFSET +: INDEX]] <= 1'b0;
+        if (DataPhase && HREADY && !HRESP) begin
+          if (Write[Owner]) begin
+            // Invalidate all instruction copies, including the writer's. This
+            // conservatively supplies coherence stronger than fence.i requires.
+            for (int h = 0; h < NCORES; h++)
+              if (Tags[h][Addr[Owner][OFFSET +: INDEX]] == Addr[Owner][P.PA_BITS-1:OFFSET+INDEX])
+                Valid[h][Addr[Owner][OFFSET +: INDEX]] <= 1'b0;
+          end else if (!Prot[Owner][0] && cacheable(Addr[Owner])) begin
+            Valid[Owner][Addr[Owner][OFFSET +: INDEX]] <= 1'b1;
+            Tags[Owner][Addr[Owner][OFFSET +: INDEX]] <= Addr[Owner][P.PA_BITS-1:OFFSET+INDEX];
+            Lines[Owner][Addr[Owner][OFFSET +: INDEX]] <= HRDATA;
+          end
+        end
+      end
+    end
+    initial begin
+      assert (ICACHE_WORDS >= 2 && (ICACHE_WORDS & (ICACHE_WORDS-1)) == 0 && TAG > 0)
+        else $fatal(1, "Private I-cache words must be a power of two >= 2 and fit PA_BITS");
+    end
+  end else begin : noicache
+    always_comb begin
+      LocalData = CacheReadData;
+      for (int h = 0; h < NCORES; h++)
+        LocalReply[h] = LOCAL_DCACHE_READS && State[h] == PENDING && !Write[h] &&
+          Prot[h][0] && Op[h] == 0 && !LockActive && CacheReadHit[h] &&
+          !LocalBlocked[h] && !LocalStoreConflict[h];
+    end
+  end
+
+  // Misses, permission changes and atomics share one global transfer.
+  // Rotate after every global reply; local commits do not consume a grant.
   always_comb begin
     Found = 1'b0;
     NextOwner = First;
@@ -58,7 +160,7 @@ module ahbmulticore import cvw::*; #(
     for (int offset = 0; offset < NCORES; offset++) begin
       Candidate = int'(First) + offset;
       if (Candidate >= NCORES) Candidate = Candidate - NCORES;
-      if (!Found && State[Candidate] == PENDING &&
+      if (!Found && State[Candidate] == PENDING && !LocalReply[Candidate] && !CacheWriteCommit[Candidate] &&
           (!LockActive || OWNER_BITS'(Candidate) == LockOwner)) begin
         NextOwner = OWNER_BITS'(Candidate);
         Found = 1'b1;
@@ -68,7 +170,7 @@ module ahbmulticore import cvw::*; #(
 
   // Validate SC where all stores are ordered, never at local address issue.
   assign SCValid = ReservationValid[NextOwner] && ReservationAddr[NextOwner] == Addr[NextOwner] &&
-                   ReservationSize[NextOwner] == Size[NextOwner];
+                   ReservationSize[NextOwner] == Size[NextOwner] && !LocalStoreConflict[NextOwner];
   assign FailedSC = Op[NextOwner] == SC && !SCValid;
   assign BadAMOWrite = Op[NextOwner] == AMO && Write[NextOwner] && !LockActive;
   assign AddressOwner = DataPhase ? Owner : NextOwner;
@@ -110,6 +212,11 @@ module ahbmulticore import cvw::*; #(
       for (int h = 0; h < NCORES; h++) State[h] <= AVAILABLE;
     end else begin
       for (int h = 0; h < NCORES; h++) begin
+        if (LocalReply[h] || CacheWriteCommit[h]) begin
+          CoreHRDATA[h] <= CacheWriteCommit[h] ? '0 : LocalData[h];
+          CoreHRESP[h] <= 1'b0;
+          State[h] <= REPLY;
+        end
         // Preserve AHB's two-cycle ERROR response on the local interface too.
         if (State[h] == ERROR_REPLY) State[h] <= REPLY;
         if (CoreHREADY[h]) begin
@@ -168,6 +275,20 @@ module ahbmulticore import cvw::*; #(
               ReservationValid[h] <= 1'b0;
         if (Op[Owner] == AMO && (Write[Owner] || HRESP)) LockActive <= 1'b0;
       end
+      // A coincident LR completion replaces the old reservation. Invalidate
+      // against its NEW word, not the stale address left by an earlier LR.
+      for (int writer = 0; writer < NCORES; writer++)
+        if (CacheWriteCommit[writer]) begin
+          for (int h = 0; h < NCORES; h++)
+            if ((DataPhase && HREADY && !HRESP && Op[Owner] == LR && Owner == OWNER_BITS'(h)) ?
+                (Addr[Owner][P.PA_BITS-1:GRANULE_BITS] == Addr[writer][P.PA_BITS-1:GRANULE_BITS]) :
+                (ReservationAddr[h][P.PA_BITS-1:GRANULE_BITS] == Addr[writer][P.PA_BITS-1:GRANULE_BITS]))
+              ReservationValid[h] <= 1'b0;
+          for (int peer = writer+1; peer < NCORES; peer++)
+            assert (!(CacheWriteCommit[peer] &&
+              Addr[writer][P.PA_BITS-1:GRANULE_BITS] == Addr[peer][P.PA_BITS-1:GRANULE_BITS]))
+              else $fatal(1, "Two local M stores to one physical word");
+        end
     end
   end
 endmodule

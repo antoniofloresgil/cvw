@@ -1,17 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 // Private, direct-mapped write-back data-cache banks; one AHB word per line.
-// The upstream ahbmulticore arbiter orders ALL accesses, including hits, and
-// supplies the requesting hart. This blocking baseline admits one operation
-// at a time; no independent local-hit completion or outstanding snoops.
+// The arbiter orders atomics, misses and permission acquisition. Optional local
+// read/M-write ports overlap independent traffic; each M write broadcasts a
+// commit through the arbiter for reservation and instruction invalidation.
 // BusRd: flush a modified snooper, downgrade to S, then fill requester in S.
 // BusRdX/BusUpgr: flush a modified snooper if any, invalidate peers, take M.
 // IFU reads do not allocate, but snoop all banks (including their own hart).
 module ahbmsicache import cvw::*; #(
   parameter cvw_t P,
   parameter int unsigned NCORES = 2,
-  parameter int unsigned WORDS = 256
+  parameter int unsigned WORDS = 256,
+  parameter bit LOCAL_READS = 0,
+  parameter bit LOCAL_WRITES = 0
 )(
   input  logic HCLK, HRESETn,
+  input  logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr,
+  output logic [NCORES-1:0] CacheReadHit, CacheWriteHit,
+  input  logic [NCORES-1:0] CacheWriteCommit,
+  input  logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData,
+  input  logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb,
+  output logic [NCORES-1:0][P.AHBW-1:0] CacheReadData,
   input  logic [(NCORES > 1 ? $clog2(NCORES) : 1)-1:0] UpHOWNER,
   input  logic [P.PA_BITS-1:0] UpHADDR,
   input  logic [P.AHBW-1:0] UpHWDATA,
@@ -55,6 +63,27 @@ module ahbmsicache import cvw::*; #(
   logic [2:0] Size;
   logic [3:0] Prot;
   logic [NCORES-1:0] Hit;
+
+  if (LOCAL_READS || LOCAL_WRITES) begin : readprobes
+    logic [NCORES-1:0] ProbeHit;
+    always_comb begin
+      for (int h = 0; h < NCORES; h++) begin
+        ProbeHit[h] = HRESETn &&
+          ((P.UNCORE_RAM_SUPPORTED && ((64'(CacheReadAddr[h]) & ~P.UNCORE_RAM_RANGE) == P.UNCORE_RAM_BASE)) ||
+           (P.EXT_MEM_SUPPORTED && ((64'(CacheReadAddr[h]) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE))) &&
+          States[h][CacheReadAddr[h][OFFSET +: INDEX]] != I &&
+          Tags[h][CacheReadAddr[h][OFFSET +: INDEX]] == CacheReadAddr[h][P.PA_BITS-1:OFFSET+INDEX];
+        CacheReadHit[h] = LOCAL_READS && ProbeHit[h];
+        CacheReadData[h] = LOCAL_READS ? Lines[h][CacheReadAddr[h][OFFSET +: INDEX]] : '0;
+        CacheWriteHit[h] = LOCAL_WRITES && ProbeHit[h] &&
+          States[h][CacheReadAddr[h][OFFSET +: INDEX]] == M;
+      end
+    end
+  end else begin : noreadprobes
+    assign CacheReadHit = '0;
+    assign CacheWriteHit = '0;
+    assign CacheReadData = '0;
+  end
 
   assign Index = Addr[OFFSET +: INDEX];
   assign Tag = Addr[P.PA_BITS-1:OFFSET+INDEX];
@@ -213,6 +242,20 @@ module ahbmsicache import cvw::*; #(
         ERROR_REPLY: State <= REPLY; // AHB ERROR: low-ready then high-ready.
         default: State <= IDLE;
       endcase
+      // An M-hit local commit only changes its owner's bytes. Ownership is
+      // already exclusive; the arbiter broadcasts reservation/I invalidation.
+      for (int h = 0; h < NCORES; h++)
+        if (CacheWriteCommit[h]) begin
+          assert (LOCAL_WRITES && CacheWriteHit[h])
+            else $fatal(1, "Local store without matching M permission");
+          assert ((State == IDLE || State == REPLY) ||
+            (Owner != HART_BITS'(h) &&
+             Addr[P.PA_BITS-1:OFFSET] != CacheReadAddr[h][P.PA_BITS-1:OFFSET]))
+            else $fatal(1, "Local M store raced a global owner or snoop");
+          for (int b = 0; b < P.XLEN/8; b++)
+            if (CacheWriteStrb[h][b])
+              Lines[h][CacheReadAddr[h][OFFSET +: INDEX]][8*b +: 8] <= CacheWriteData[h][8*b +: 8];
+        end
       // Snooping is a broadcast lookup to every bank. At most one dirty owner
       // exists and it cannot coexist with any other valid copy of that word.
       for (int h = 0; h < NCORES; h++)

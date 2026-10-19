@@ -3,7 +3,11 @@
 module linux_tb import cvw::*; #(
     parameter int NCORES = 2,
     parameter int CACHE_WORDS = 256,
-    parameter bit PRIVATE_DCACHE = 0
+    parameter bit PRIVATE_DCACHE = 0,
+    parameter bit PRIVATE_ICACHE = 0,
+    parameter int ICACHE_WORDS = 256,
+    parameter bit LOCAL_DCACHE_READS = 0,
+    parameter bit LOCAL_DCACHE_WRITES = 0
 )(
     input logic clk, reset_ext,
     output logic ConsoleValid,
@@ -14,7 +18,9 @@ module linux_tb import cvw::*; #(
     `include "parameter-defs.vh"
     string ram_image, rom_image;
     wallypipelinedsoc #(.P(P), .NCORES(NCORES), .SHARED_CACHE(!PRIVATE_DCACHE), .SHARED_CACHE_WORDS(CACHE_WORDS),
-        .PRIVATE_DCACHE(PRIVATE_DCACHE), .PRIVATE_DCACHE_WORDS(CACHE_WORDS)) dut(
+        .PRIVATE_DCACHE(PRIVATE_DCACHE), .PRIVATE_DCACHE_WORDS(CACHE_WORDS),
+        .PRIVATE_ICACHE(PRIVATE_ICACHE), .PRIVATE_ICACHE_WORDS(ICACHE_WORDS),
+        .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(
         .clk, .reset_ext, .reset(), .ExternalStall(1'b0),
         .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(),
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),

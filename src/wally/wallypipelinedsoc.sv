@@ -29,7 +29,9 @@
 
 module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsigned NCORES = 1,
   parameter bit SHARED_CACHE = 0, parameter int unsigned SHARED_CACHE_WORDS = 256,
-  parameter bit PRIVATE_DCACHE = 0, parameter int unsigned PRIVATE_DCACHE_WORDS = 256)  (
+  parameter bit PRIVATE_DCACHE = 0, parameter int unsigned PRIVATE_DCACHE_WORDS = 256,
+  parameter bit PRIVATE_ICACHE = 0, parameter int unsigned PRIVATE_ICACHE_WORDS = 256,
+  parameter bit LOCAL_DCACHE_READS = 0, parameter bit LOCAL_DCACHE_WRITES = 0)  (
   input  logic                clk,
   input  logic                reset_ext,        // external asynchronous reset pin
   output logic                reset,            // reset synchronized to clk to prevent races on release
@@ -90,6 +92,11 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   logic [NCORES-1:0][3:0] CoreHPROT;
   logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC;
 
+  logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr;
+  logic [NCORES-1:0][P.AHBW-1:0] CacheReadData;
+  logic [NCORES-1:0] CacheReadHit, CacheWriteHit, CacheWriteCommit;
+  logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData;
+  logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb;
   logic [(NCORES > 1 ? $clog2(NCORES) : 1)-1:0] BusHOWNER;
   logic [P.PA_BITS-1:0] BusHADDR;
   logic [P.AHBW-1:0] BusHWDATA, BusHRDATA;
@@ -130,8 +137,17 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
     assign CoreHRESP[0] = BusHRESP;
     assign CoreSCFail[0] = 1'b0;
     assign BusHOWNER = '0;
+    assign CacheReadAddr = '0;
+    assign CacheWriteCommit = '0;
+    assign CacheWriteData = '0;
+    assign CacheWriteStrb = '0;
   end else begin : multicore
-    ahbmulticore #(.P(P), .NCORES(NCORES)) bus(
+    ahbmulticore #(.P(P), .NCORES(NCORES),
+      .PRIVATE_ICACHE(MSI_ENABLED && PRIVATE_ICACHE), .ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
+      .LOCAL_DCACHE_READS(MSI_ENABLED && LOCAL_DCACHE_READS),
+      .LOCAL_DCACHE_WRITES(MSI_ENABLED && LOCAL_DCACHE_WRITES)) bus(
+      .CacheReadAddr, .CacheReadHit, .CacheReadData,
+      .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
       .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHSIZE,
       .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHMASTLOCK, .CoreHATOMIC, .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
       .HOWNER(BusHOWNER), .HADDR(BusHADDR), .HWDATA(BusHWDATA), .HWSTRB(BusHWSTRB), .HWRITE(BusHWRITE), .HSIZE(BusHSIZE), .HBURST(BusHBURST), .HPROT(BusHPROT), .HTRANS(BusHTRANS), .HMASTLOCK(BusHMASTLOCK),
@@ -139,7 +155,10 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   end
 
   if (MSI_ENABLED) begin : msicache
-    ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(PRIVATE_DCACHE_WORDS)) cache(
+    ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(PRIVATE_DCACHE_WORDS),
+      .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
+      .CacheReadAddr, .CacheReadHit, .CacheReadData,
+      .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
       .HCLK, .HRESETn, .UpHOWNER(BusHOWNER),
       .UpHADDR(BusHADDR), .UpHWDATA(BusHWDATA), .UpHWSTRB(BusHWSTRB),
       .UpHWRITE(BusHWRITE), .UpHSIZE(BusHSIZE), .UpHBURST(BusHBURST),
@@ -161,6 +180,12 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
     assign {BusHRDATA, BusHREADY, BusHRESP} = {HRDATA, HREADY, HRESP};
   end
 
+  if (!MSI_ENABLED) begin : nolocalreads
+    assign CacheReadHit = '0;
+    assign CacheWriteHit = '0;
+    assign CacheReadData = '0;
+  end
+
   initial begin
     assert (NCORES >= 1 && NCORES <= 4095)
       else $fatal(1, "NCORES outside the supported CLINT register range");
@@ -169,6 +194,8 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
               !P.DCACHE_SUPPORTED && !P.ICACHE_SUPPORTED && !P.BURST_EN)
         else $fatal(1, "Multicore requires a shared bus with no private memories/caches or bursts");
     end
+    assert (NCORES == 1 || (!(PRIVATE_ICACHE || LOCAL_DCACHE_READS || LOCAL_DCACHE_WRITES) || MSI_ENABLED))
+      else $fatal(1, "Private I-cache/local D reads require private MSI data caches");
     assert (!(MSI_ENABLED && SHARED_CACHE))
       else $fatal(1, "Select private MSI data caches or the shared cache, not both");
     if (MSI_ENABLED) begin

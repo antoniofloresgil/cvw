@@ -5,7 +5,11 @@ module soc_tb import cvw::*; #(
     parameter int LATENCY = 0,
     parameter bit SHARED_CACHE = 0,
     parameter bit PRIVATE_DCACHE = 0,
-    parameter int PRIVATE_DCACHE_WORDS = 256
+    parameter int PRIVATE_DCACHE_WORDS = 256,
+    parameter bit PRIVATE_ICACHE = 0,
+    parameter int PRIVATE_ICACHE_WORDS = 256,
+    parameter bit LOCAL_DCACHE_READS = 0,
+    parameter bit LOCAL_DCACHE_WRITES = 0
 );
     `include "parameter-defs.vh"
     function automatic cvw_t testconfig();
@@ -20,7 +24,9 @@ module soc_tb import cvw::*; #(
     string image, suite;
     always #5 clk = ~clk;
     wallypipelinedsoc #(.P(TEST_P), .NCORES(NCORES), .SHARED_CACHE(SHARED_CACHE),
-        .PRIVATE_DCACHE(PRIVATE_DCACHE), .PRIVATE_DCACHE_WORDS(PRIVATE_DCACHE_WORDS)) dut(
+        .PRIVATE_DCACHE(PRIVATE_DCACHE), .PRIVATE_DCACHE_WORDS(PRIVATE_DCACHE_WORDS),
+        .PRIVATE_ICACHE(PRIVATE_ICACHE), .PRIVATE_ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
+        .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(
         .clk, .reset_ext, .reset, .ExternalStall(1'b0),
         .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(),
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),
@@ -49,6 +55,15 @@ module soc_tb import cvw::*; #(
         endfunction
     end
     integer UARTWrites = 0;
+    int unsigned MemoryTransfers = 0, LocalCompletions = 0;
+    always @(posedge clk) if (!reset && dut.HTRANS[1] && dut.HREADY)
+        MemoryTransfers <= MemoryTransfers + 1;
+    if (NCORES > 1) begin : counters
+        always @(posedge clk) if (!reset)
+            LocalCompletions <= LocalCompletions + $countones(dut.multicore.bus.LocalReply | dut.multicore.bus.CacheWriteCommit);
+    end else begin : counters
+        assign LocalCompletions = 0;
+    end
     always @(posedge clk) begin
         if (!reset && dut.uncoregen.uncore.PSEL[3] && dut.uncoregen.uncore.PWRITE &&
             dut.uncoregen.uncore.PENABLE && dut.uncoregen.uncore.PREADY[3] &&
@@ -76,6 +91,7 @@ module soc_tb import cvw::*; #(
             end
             if (complete) begin
                 if (suite == "uart") assert (UARTWrites == 4) else $fatal(1, "Expected four UART writes, got %0d", UARTWrites);
+                $display("TRAFFIC: memory=%0d local=%0d", MemoryTransfers, LocalCompletions);
                 $display("PASS: %s, %0d harts, RAM latency %0d (%0d cycles)", suite, NCORES, LATENCY, cycle);
                 $finish;
             end

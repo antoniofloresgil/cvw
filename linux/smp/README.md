@@ -139,3 +139,30 @@ las cachés privadas MSI; consultar el registro de cada modo.
 Referencias: [entrada de Linux RISC-V](https://docs.kernel.org/arch/riscv/boot.html),
 [plataforma generic de OpenSBI](https://github.com/riscv-software-src/opensbi/blob/master/docs/platform/generic.md)
 y [firmware FW_JUMP](https://github.com/riscv-software-src/opensbi/blob/master/docs/firmware/fw_jump.md).
+
+## I-caches privadas y lecturas locales de datos
+
+El modo MSI permite activar las mejoras de la etapa 5 al preparar la imagen:
+
+```bash
+source ./setup.sh
+python3 linux/smp/build.py --buildroot /ruta/a/buildroot --work ~/wally-smp-l1 --cores 2 --cache-mode msi --private-icache --icache-words 256 --local-dcache-reads
+python3 linux/smp/run.py --work ~/wally-smp-l1 --sim qemu
+python3 linux/smp/run.py --work ~/wally-smp-l1
+```
+
+El manifiesto registra ambas opciones y la capacidad I; el DTB añade el banco
+de instrucciones a cada CPU cuando hay más de un hart. El runner selecciona
+los parámetros del manifiesto y comprueba también las opciones explícitas,
+incluidos `--no-private-icache` y `--no-local-dcache-reads`. Usa modelos y
+checkpoints separados de los del modo MSI anterior. No se puede restaurar un
+snapshot antiguo para probar RTL modificado. La referencia QEMU valida
+software y DTB; el resultado de RTL se registra por separado en el
+[experimento de la etapa 5](../../docs/engineering/experiments/2026-10-19-private-l1.md).
+
+Para incluir también las escrituras locales en M, añadir
+`--local-dcache-writes` al comando de build.py. El manifiesto registra la
+opción y run.py la selecciona automáticamente; `--no-local-dcache-writes`
+solo es válido si coincide con el manifiesto. Los modelos y checkpoints con
+esta opción tienen un sufijo `-w1`. Usar un directorio de trabajo nuevo para
+validar conjuntamente las mejoras 2 y 3, conservando los modelos anteriores.
