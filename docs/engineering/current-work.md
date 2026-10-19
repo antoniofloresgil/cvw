@@ -13,8 +13,11 @@ Merge main into the published multicore branch without rewriting its history,
 then revalidate the combined RTL before continuing development. The merge
 applied without text conflicts; shared atomics, hart IDs, derivative recipes,
 walker-owned FP controls and per-hart WFI/hazard wiring were inspected.
-Local merge commit: `d4378148d` (not pushed). All short checks passed; Linux
-SMP revalidation is running with periodic simulator checkpoints. See the
+Local merge commit: `d4378148d` (not pushed). Combined-source validation
+**PASS**: 11 lint configurations, direct peripheral/bus/cache tests, the
+cached/uncached multicore matrices, 18 directed RV64/RV32 tests, and Linux SMP
+on two RTL harts (261,982,868 cycles, both counters 128, process exit 0).
+No simulation is left running. See the
 [integration record](experiments/2026-10-19-multicore-main-integration.md).
 
 ## Confirmed development boundaries
@@ -23,7 +26,7 @@ SMP revalidation is running with periodic simulator checkpoints. See the
 | --- | --- | --- |
 | `main:82d0b80f7` | Official `712ee9719` integrated and published; fork container, line endings, Nexys Video and knowledge documentation retained | [Main integration](experiments/2026-10-18-upstream-integration.md) |
 | `multicore-support:f655debae` | Original stages 1/2 and shared-cache Linux SMP implementation, previously published | [ADR 0002](decisions/0002-shared-multicore-cache.md), [original SMP run](experiments/2026-10-18-linux-smp.md) |
-| `multicore-support`, combined sources | Main merged into the feature branch; current revalidation is recorded separately from the original PASS | [Current integration](experiments/2026-10-19-multicore-main-integration.md) |
+| `multicore-support`, combined sources | Main merged into the feature branch; short checks and dual-hart Linux SMP PASS, recorded separately from the original result | [Current integration](experiments/2026-10-19-multicore-main-integration.md) |
 | `opensource-fpga-bitstream:23ba9c2a7` | LiteDRAM/VexRiscv diagnostics committed; DDR bring-up still reported failing | [DDR record](experiments/open-ddr3-bringup.md) |
 
 This integration updates the feature branch; it does not merge multicore back
@@ -49,14 +52,11 @@ remain untouched.
 
 ## Next actions
 
-1. Finish Linux SMP revalidation and record its actual verdict. A replaced
-   container interrupted the first run at 104 million cycles without a verdict.
-   The current local harness saves every 5 million cycles; if no model process
-   is running, resume with `bash /tmp/wally-multicore-main-20261019/run-linux-checkpoint.sh`.
-   It verifies source/model hashes before restoring the last saved state.
-   See the integration record for validation of the checkpoint mechanism.
-   Do not start a duplicate model; inspect `pgrep -af '[V]linux_tb'` first.
-2. Continue multicore development from this updated feature branch, preserving
+1. Continue multicore development from this updated feature branch, preserving
    the shared-cache/atomic contract and parameter-specific verification.
+2. Revalidate affected scope after future RTL/configuration changes. The local
+   checkpoint procedure is in the integration record; reuse saved state only
+   with the verified source/model hashes. Main still lacks the multicore
+   implementation until the feature branch is merged back.
 3. With Nexys Video access, resume the diagnostic matrix in the DDR record.
    Moving initialization onto Wally remains a proposal.

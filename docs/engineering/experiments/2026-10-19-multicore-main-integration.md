@@ -1,7 +1,7 @@
 # Main integration into the multicore branch
 
-Status: **INCOMPLETE**, Linux verification running on 2026-10-19; all short
-checks below passed. Local merge commit: `d4378148d` (not pushed).
+Status: **PASS**, completed on 2026-10-19. Short checks and dual-hart Linux
+SMP passed on the combined sources. Local merge commit: `d4378148d` (not pushed).
 
 ## Question and source identity
 
@@ -26,7 +26,9 @@ APB error selection and RAM/ROM sizing fixes are retained.
 ## Environment and reproduction
 
 Source `./setup.sh` before build/simulation. Verilator 5.022
-(`v5.020-157-g2b4852048`), bare-metal GCC 13.2.0. This host lacks `uv`;
+(`v5.020-157-g2b4852048`), bare-metal GCC 13.2.0, host g++ 11.4.0 and
+Python 3.10.12 on WSL2. `tool-versions.json` preserves full version strings.
+This host lacks `uv`;
 Python tools run directly, with pre-commit's existing temporary installation.
 The installed Verilator lacks `--quiet`: lint uses the repository's flags
 without that switch, with no additional warning classes disabled.
@@ -94,8 +96,20 @@ Completed checks on the combined sources:
 | 3 | 0 | 14041 | 1782 |
 | 3 | 3 | 17344 | 2141 |
 
-Linux SMP is still in progress. Do not treat the original stage-3 Linux PASS
-as a verdict on these combined sources.
+Linux SMP **PASS** on the actual two-hart Wally RTL, with the merged sources,
+128 MiB RAM, Sv39/Svade and a shared cache of 256 words. Process exit code: 0.
+The static initramfs checked online CPUs, worker affinity and exit status,
+an atomic counter, and a spinlock-protected counter:
+
+```text
+WALLY_SMP_ONLINE cpus=2 expected=2
+WALLY_SMP_PASS cpus=2 counter=128 protected=128
+PASS: Linux SMP on Wally RTL after 261982868 cycles
+```
+
+This is a new combined-source result, separate from the older `f655debae`
+result. `linux-results.json` records the log hash and source/model/image
+manifests. No simulation is left running.
 
 ## Interrupted run and checkpointed continuation
 
@@ -123,6 +137,12 @@ These three bounded harness checks deliberately end at their cycle limits
 (exit 1); they are not failed full-Linux runs. `checkpoint-validation.json`,
 `test-checkpoint.py` and its three logs preserve the criterion and procedure.
 
+The checkpoint-capable model's PC/mcause probes also matched all 104 common
+samples of the original merged model, through 104 million cycles. See
+`compare-model-traces.py` and `checkpoint-trace-comparison.json`. The full
+successful Linux run used the checkpoint-capable model continuously from
+reset; checkpoint restoration itself was validated by the bounded test above.
+
 The checkpoint-capable model SHA-256 is
 `e8c2b4e714bf888badc5d3019897dedfb33658fa273d376ce8d4ba888d041465`.
 Before starting or restoring, the local launcher verifies this binary, its
@@ -133,11 +153,12 @@ check that there is no existing model process, then run:
 
 ```bash
 pgrep -af '[V]linux_tb'
-bash /tmp/wally-multicore-main-20261019/run-linux-checkpoint.sh
+python3 /tmp/wally-multicore-main-20261019/start-linux-checkpoint.py
 ```
 
-The launcher sources setup, restores the checkpoint if present, appends the
-actual UART/progress/verdict log to `linux/rtl.log`, and writes the process
+The launcher rejects duplicate model processes and archives stale exit status
+before starting. Its shell helper sources setup, restores the checkpoint if
+present, appends the actual UART/progress/verdict log to `linux/rtl.log`, and writes the process
 exit code to `linux-checkpoint-exit-code.txt` on termination. Exit 75 denotes
 an interrupted, saved run, not PASS. The Linux success criterion remains
 `WALLY_SMP_PASS cpus=2 counter=128 protected=128` and process exit 0.
@@ -147,8 +168,8 @@ an interrupted, saved run, not PASS. The Linux success criterion remains
 Working evidence: `/tmp/wally-multicore-main-20261019/`; a copy of completed
 logs and helpers is kept in the ignored
 `sim/verilator/wkdir/multicore/verification-main-20261019/`. The live checkpoint
-and generated model remain in the working evidence directory. `sources.json` records
-source and effective-configuration SHA-256 hashes. Local wrappers, build logs,
+and generated model remain in the working evidence directory. `sources.json`
+records source and effective-configuration SHA-256 hashes. Local wrappers, build logs,
 run logs and copied image manifest preserve the actual procedure. These are
 host-local artifacts, not a durable remote archive.
 
