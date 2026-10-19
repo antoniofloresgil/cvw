@@ -37,3 +37,10 @@ uv run pre-commit run --files path/to/changed/file
 - Signal suffixes F/D/E/M/W denote Fetch/Decode/Execute/Memory/Writeback. Stall/flush coordination lives in `src/hazard/hazard.sv`; preserve stage alignment when changing datapaths.
 - `.editorconfig` specifies two-space indentation for `src/**/*.sv` and four spaces otherwise. Ruff targets Python 3.9; pre-commit forbids tabs except in Makefiles and its listed exceptions.
 - `CLAUDE.md` has a broader architecture overview; verify command details against `bin/` scripts (notably the `--fcov` limitation above). Verification scope is documented in `docs/testplans/testplan.md`.
+
+## Persistent Engineering Knowledge
+
+- Read [docs/engineering/README.md](docs/engineering/README.md), then [current-work.md](docs/engineering/current-work.md); load only the architectural, verification or implementation records relevant to the task. Existing READMEs, CLAUDE.md and the test plan remain the detailed references.
+- Record significant choices as scoped ADRs in `docs/engineering/decisions/` with explicit proposed/accepted/superseded/rejected status. Keep reproducible experiment summaries in `docs/engineering/experiments/`; identify revision, configuration, tools, observed verdict, artifact paths/hashes and missing evidence. Keep raw logs and generated artifacts outside permanent docs.
+- After substantial changes, update only the affected architecture/interface notes, ADR, verification procedure or experimental record, and refresh `current-work.md` when objectives, branches, results or blockers change. Distinguish verified facts, hypotheses, plans and unexecuted/blocked checks; never promote a proposal or experiment automatically into an accepted decision.
+- Check the index's revision-specific verification notes before reusing remembered commands: scripts and RTL in the checked-out revision determine current behavior. Preserve branch boundaries; a feature-branch result is not evidence for main or for FPGA hardware. Do not turn these notes into a session transcript or update every document after every task.

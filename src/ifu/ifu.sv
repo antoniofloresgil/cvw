@@ -142,7 +142,6 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   logic                        BusCommittedF;                            // Bus memory operation in flight, delay interrupts
   logic                        CacheCommittedF;                          // I$ memory operation started, delay interrupts
   logic                        SelIROM;                                  // PMA indicates instruction address is in the IROM
-  logic [15:0]                 InstrRawE, InstrRawM;
   logic [LINELEN-1:0]          FetchBuffer;
   logic [31:0]                 ShiftUncachedInstr;
   logic                        ITLBMissF;
@@ -162,14 +161,15 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
     logic [P.XLEN-1:0] PCSpillD, PCSpillE;
     logic [P.XLEN-1:0] PCIncrM;
     logic              SelSpillF, SelSpillD, SelSpillE, SelSpillM;
-    logic              FirstHalfFaultF;
     spill #(P) spill(.clk, .reset, .StallF, .FlushD, .PCF, .PCPlus4F, .PCNextF, .InstrRawF,  .CacheableF,
       .InstrPageFaultF(InstrPageFaultRawF), .InstrAccessFaultF(InstrAccessFaultRawF),
-      .IFUCacheBusStallF, .ITLBMissOrUpdateAF(ITLBMissOrUpdateRawF), .PCSpillNextF, .PCSpillF, .SelSpillNextF, .SelSpillF,
-      .InstrPageFaultSpillF(InstrPageFaultF), .InstrAccessFaultSpillF(InstrAccessFaultF), .FirstHalfFaultF,
+      .IFUCacheBusStallF, .ITLBMissOrUpdateRawF, .PCSpillNextF, .PCSpillF, .SelSpillNextF, .SelSpillF,
       .PostSpillInstrRawF, .CompressedF);
-    // A fault on the first half is reported at PCM, not PCM+2, so clear the spill flag that adds the +2 in xtval
-    flopenr #(1) SpillDReg(clk, reset, ~StallD, SelSpillF & ~FirstHalfFaultF, SelSpillD);
+    // A spill is taken only when the first half fetches cleanly, so a fault during a spill belongs to the
+    // second half and is reported at PCM+2.
+    assign InstrPageFaultF = InstrPageFaultRawF;
+    assign InstrAccessFaultF = InstrAccessFaultRawF;
+    flopenr #(1) SpillDReg(clk, reset, ~StallD, SelSpillF, SelSpillD);
     flopenr #(1) SpillEReg(clk, reset, ~StallE, SelSpillD, SelSpillE);
     flopenr #(1) SpillMReg(clk, reset, ~StallM, SelSpillE, SelSpillM);
     assign PCIncrM = PCM + 'd2;
@@ -278,14 +278,19 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
 
     if(P.ICACHE_SUPPORTED) begin : icache
       localparam            LLENPOVERAHBW = P.LLEN / P.AHBW; // Number of AHB beats in a LLEN word. AHBW cannot be larger than LLEN. (implementation limitation)
+      localparam            LINEBYTELEN = P.ICACHE_LINELENINBITS/8;            // Line length in bytes
+      localparam            OFFSETLEN = $clog2(LINEBYTELEN);    // Number of bits in offset field
+      localparam            SETLEN = $clog2(P.ICACHE_WAYSIZEINBYTES*8/LINELEN);          // Number of set bits
       logic [P.PA_BITS-1:0] ICacheBusAdr;
       logic                 ICacheBusAck;
       logic [1:0]           CacheBusRW, BusRW, CacheRWF;
 
-      assign BusRW = ~ITLBMissF & ~CacheableF & ~SelIROM & ~IFUFaultF ? IFURWF : '0;
-      assign CacheRWF = ~ITLBMissF & CacheableF & ~SelIROM & ~IFUFaultF ? IFURWF : '0;
+      // Wait for an ITLB walk (miss or A update) before fetching: a fill from the old PA would be tagged with the new PA
+      assign BusRW = ~ITLBMissOrUpdateRawF & ~CacheableF & ~SelIROM & ~IFUFaultF ? IFURWF : '0;
+      assign CacheRWF = ~ITLBMissOrUpdateRawF & CacheableF & ~SelIROM & ~IFUFaultF ? IFURWF : '0;
       cache #(.P(P), .PA_BITS(P.PA_BITS), .LINELEN(P.ICACHE_LINELENINBITS),
               .NUMSETS(P.ICACHE_WAYSIZEINBYTES*8/P.ICACHE_LINELENINBITS),
+              .OFFSETLEN(OFFSETLEN), .SETLEN(SETLEN),
               .NUMWAYS(P.ICACHE_NUMWAYS), .LOGBWPL(AHBWLOGBWPL), .WORDLEN(32), .MUXINTERVAL(16), .READ_ONLY_CACHE(1))
       icache(.clk, .reset, .FlushStage(FlushD), .Stall(GatedStallD),
              .FetchBuffer, .CacheBusAck(ICacheBusAck),
@@ -298,7 +303,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
              .WriteData('0),
              .CacheRW(CacheRWF),
              .FlushCache('0),
-             .NextSet(PCSpillNextF[11:0]),
+             .NextSet(PCSpillNextF[OFFSETLEN+SETLEN-1:0]),
              .PAdr(PCPF),
              .CacheCommitted(CacheCommittedF), .InvalidateCache(InvalidateICacheM), .InvalidateFlushStage(FlushW), .CMOpM('0));
 
@@ -318,7 +323,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
     end else begin : passthrough
       assign IFUHADDR = PCPF;
       logic [1:0] BusRW;
-      assign BusRW = ~ITLBMissF & ~SelIROM & ~IFUFaultF ? IFURWF : 0;
+      assign BusRW = ~ITLBMissOrUpdateRawF & ~SelIROM & ~IFUFaultF ? IFURWF : 0;
       assign IFUHSIZE = 3'b010;
 
       ahbinterface #(P.XLEN, 1'b0) ahbinterface(.HCLK(clk), .Flush(FlushD), .HRESETn(~reset), .HREADY(IFUHREADY),
@@ -405,7 +410,7 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
       .CallD, .CallE, .CallM, .CallW, .ReturnD, .ReturnE, .ReturnM, .ReturnW,
       .BTBCallF(1'b0), .BTBReturnF(1'b0), .BTBJumpF(1'b0),
       .BTBBranchF(1'b0), .BPCallF(), .BPReturnF(), .BPJumpF(), .BPBranchF(), .IClassWrongM,
-      .BPReturnWrongD());
+      .BPReturnWrongD(), .BPReturnD());
     flopenrc #(1) PCSrcMReg(clk, reset, FlushM, ~StallM, PCSrcE, BPWrongM);
     assign RASPredPCWrongM = 1'b0;
     assign BPDirWrongM = BPWrongM;
@@ -472,8 +477,10 @@ module ifu import cvw::*;  #(parameter cvw_t P) (
   end
 
   // pipeline original compressed instruction in case it is needed for XTVAL on an illegal instruction exception
-  if (P.ZICSR_SUPPORTED & P.ZCA_SUPPORTED | 1) begin
-    logic CompressedM; // instruction is compressed
+  // Only csr reads InstrOrigM, and it differs from InstrM only for compressed instructions
+  if (P.ZICSR_SUPPORTED & P.ZCA_SUPPORTED) begin
+    logic        CompressedM; // instruction is compressed
+    logic [15:0] InstrRawE, InstrRawM;
     flopenrc #(16) InstrRawEReg(clk, reset, FlushE, ~StallE, InstrRawD[15:0], InstrRawE);
     flopenrc #(16) InstrRawMReg(clk, reset, FlushM, ~StallM, InstrRawE, InstrRawM);
     flopenrc #(1)  CompressedMReg(clk, reset, FlushM, ~StallM, CompressedE, CompressedM);

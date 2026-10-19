@@ -82,3 +82,46 @@ screen /dev/ttyUSB1 115200
 ```
 
 Swap out the `USB1` for `USB0` or `USB1` as needed.
+
+## Linux on Nexys Video
+
+The `nexysvideo` target uses a 20 MHz CPU clock and 512 MiB of DDR3 memory.
+Connect the board's PROG USB port for JTAG and its UART USB port for the serial
+console. The UART is configured for 115200 baud, 8 data bits, no parity, one stop
+bit, and no flow control. Use `/dev/serial/by-id/` to identify the UART device.
+See the [Digilent reference manual](https://digilent.com/reference/_media/reference/programmable-logic/nexys-video/nexys-video_rm.pdf)
+for the board's connector locations.
+
+From the repository root, build the bitstream and the board's device tree:
+
+```bash
+source /path/to/Vivado/settings64.sh
+source ./setup.sh
+make -C fpga/generator nexysvideo
+dtc -I dts -O dtb linux/devicetree/wally-nexysvideo.dts \
+    -o "$RISCV/buildroot/output/images/wally-nexysvideo.dtb"
+```
+
+The bitstream is `fpga/generator/WallyFPGA.runs/impl_1/fpgaTop.bit`.
+Program it with Vivado Hardware Manager. Rebuild after RTL changes; an existing
+bitstream does not automatically incorporate them.
+
+The supplied Buildroot configuration embeds the root filesystem in the kernel.
+The Nexys Video device tree therefore uses the kernel's built-in initramfs and
+does not declare an external initrd or a virtual disk root device.
+
+To prepare a microSD card, connect it to a reader on the host and identify its
+whole-disk device with `lsblk`. The following command erases the selected card;
+replace `/dev/sdX` with the verified card device:
+
+```bash
+cd "$WALLY/linux/sdcard"
+./flash-sd.sh -b "$RISCV/buildroot" \
+    -d "$RISCV/buildroot/output/images/wally-nexysvideo.dtb" /dev/sdX
+```
+
+Insert the prepared card into the Nexys Video, open the UART console, and program
+the FPGA. The bootloader reads the device tree, OpenSBI, and kernel from the first
+three GPT partitions. A successful Linux boot eventually displays the
+`WallyHostname login:` prompt. Without a prepared card, only the bootloader can
+be tested.

@@ -238,11 +238,8 @@ module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
 
   logic [3:0] SDCCSin;
   assign SDCCS = SDCCSin[0];
-`ifdef NEXYS_VIDEO
-  assign SD_RESET = 1'b1;
-`else
+  // Drive low to power the microSD slot after FPGA configuration.
   assign SD_RESET = 1'b0;
-`endif
 
   logic south_reset;
   assign south_reset = ~resetn;

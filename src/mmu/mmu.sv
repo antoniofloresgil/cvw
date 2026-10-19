@@ -78,6 +78,7 @@ module mmu import cvw::*;  #(parameter cvw_t P,
   logic                        MisalignedCausesAccessFaultM; // Misaligned access throws an access fault instead of a misaligned fault
   logic [1:0]                  EffectivePrivilegeModeW;  // Effective privilege mode accounting for MPRV
   logic                        MisalignedFaultAllowedM;  // System can throw misaligned if ZICCLSM is not supported, or access is uncachable, idempotent, and TLB has found the entry.
+  logic                        PAOutOfRange;             // Untranslated address has nonzero bits above PA_BITS
 
   // Get Effective Privilege Mode
   // for DLB, when mstatus.MPRV=1, use mstatus.MPP rather than the current privilege mode
@@ -112,11 +113,17 @@ module mmu import cvw::*;  #(parameter cvw_t P,
   mux2 #(P.PA_BITS-12) addressmux(VAdr[P.PA_BITS-1:12], TLBPAdr[P.PA_BITS-1:12], Translate, PhysicalAddress[P.PA_BITS-1:12]);
   assign PhysicalAddress[11:0] = VAdr[11:0];
 
+  // An untranslated address is a physical address, so bits XLEN-1:PA_BITS must be zero.  Otherwise it is outside
+  // the physical address space rather than an alias of a lower address, and the PMA checker raises an access fault.
+  // Translated addresses come from the PPN and always fit; RV32 addresses are narrower than PA_BITS.
+  if (P.XLEN > P.PA_BITS) assign PAOutOfRange = ~Translate & (|VAdr[P.XLEN-1:P.PA_BITS]);
+  else                    assign PAOutOfRange = 1'b0;
+
   ///////////////////////////////////////////
   // Check physical memory accesses
   ///////////////////////////////////////////
 
-  pmachecker #(P) pmachecker(.PhysicalAddress, .Size, .CMOpM,
+  pmachecker #(P) pmachecker(.PhysicalAddress, .PAOutOfRange, .Size, .CMOpM,
     .AtomicAccessM, .ExecuteAccessF, .WriteAccessM, .ReadAccessM, .PBMemoryType,
     .Cacheable, .Idempotent, .SelTIM,
     .PMAInstrAccessFaultF, .PMALoadAccessFaultM, .PMAStoreAmoAccessFaultM);
@@ -145,16 +152,17 @@ module mmu import cvw::*;  #(parameter cvw_t P,
 
   // When ZICCLSM_SUPPORTED, misaligned cacheable loads and stores are handled in hardware so they do not throw a misaligned fault
   // When ZICCLSM_SUPPORTED, misaligned uncachable accesses are lower priority than page and access faults, so must wait for TLB to resolve
+  // When ZICCLSM_SUPPORTED, misaligned atomics take an access fault instead (below), whatever the region
   // When ZICCLSM is not supported, misaligned accesses always fault, with higher priority than access or page fault
-  assign MisalignedFaultAllowedM  = ~P.ZICCLSM_SUPPORTED | (~Cacheable & ~TLBMiss & Idempotent); // should a misaligned access fault?
+  assign MisalignedFaultAllowedM  = ~P.ZICCLSM_SUPPORTED | (~Cacheable & ~TLBMiss & Idempotent & ~AtomicAccessM); // should a misaligned access fault?
   assign LoadMisalignedFaultM     = DataMisalignedM & ReadNoAmoAccessM & MisalignedFaultAllowedM;
   assign StoreAmoMisalignedFaultM = DataMisalignedM & WriteAccessM & MisalignedFaultAllowedM; // Store and AMO both assert WriteAccess
 
   // A misaligned access causes an access fault rather than a misaligned fault when a misaligned load/store is
-  // handled in hardware and either the access is atomic (never handled in hardware; see privileged spec 3.6.3.3)
-  // or the region is non-idempotent, where the spec recommends an access fault so software does not emulate the
-  // access with multiple smaller accesses that could have side effects
-  assign MisalignedCausesAccessFaultM = DataMisalignedM & P.ZICCLSM_SUPPORTED & ((AtomicAccessM & Cacheable) | ~Idempotent);
+  // handled in hardware and either the access is atomic, which is never handled in hardware and must not be
+  // emulated (privileged spec 3.6.3.3), or the region is non-idempotent, where the spec recommends an access
+  // fault so software does not emulate the access with multiple smaller accesses that could have side effects
+  assign MisalignedCausesAccessFaultM = DataMisalignedM & P.ZICCLSM_SUPPORTED & (AtomicAccessM | ~Idempotent);
 
   // Access faults
   // If TLB miss and translating we want to not have faults from the PMA and PMP checkers.

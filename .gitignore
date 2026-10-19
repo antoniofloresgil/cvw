@@ -23,17 +23,10 @@ __pycache__/
 /**/gmon*
 
 # Tests
-tests/riscof/config32.ini
-tests/riscof/config32e.ini
-tests/riscof/config64.ini
-tests/riscof/riscof_work/
-tests/wally-riscv-arch-test/riscv-test-suite/*/I/*/**
 tests/fp/vectors/*.tv
 tests/fp/vectors/sed*
-tests/fp/combined_IF_vectors/IF_vectors/*.tv
 tests/custom/*/*/
 tests/custom/*/*/*.memfile
-sim/tests/riscvdv
 testbench/trek_files/*/uvm_output
 
 # Linux
@@ -48,6 +41,7 @@ linux/testvector-generation/fixBinMem
 linux/testvector-generation/qemu-serial
 
 # FPGA
+fpga/generator/opensource-*/
 fpga/generator/IP
 fpga/generator/vivado.*
 fpga/generator/.Xil/*
@@ -163,6 +157,7 @@ examples/C/mcmodel/mcmodel_medlow
 examples/C/sum/sum
 examples/C/sum_mixed/sum_mixed
 examples/C/hello/hello
+examples/C/hello/hello.bin
 examples/C/gpio/gpio
 examples/asm/sumtest/sumtest
 examples/asm/example/example
@@ -183,3 +178,4 @@ config/deriv
 sim/slack-notifier/slack-webhook-url.txt
 docs/docker/buildroot-config-src
 docs/docker/testvector-generation
+sim/*/testlists/
