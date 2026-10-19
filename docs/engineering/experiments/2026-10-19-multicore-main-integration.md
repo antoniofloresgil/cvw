@@ -1,6 +1,7 @@
 # Main integration into the multicore branch
 
-Status: **INCOMPLETE**, verification running on 2026-10-19.
+Status: **INCOMPLETE**, Linux verification running on 2026-10-19; all short
+checks below passed. Local merge commit: `d4378148d` (not pushed).
 
 ## Question and source identity
 
@@ -47,8 +48,9 @@ python3 linux/smp/run.py --work /path/to/copied-smp-images --sim verilator
 ```
 
 The Linux run uses copies of the existing two-hart UART-profile images from
-`/home/cad/wally-smp-headless`, with a newly generated and compiled RTL model;
-no `--reuse` of an old executable. Kernel/firmware/userland inputs are
+`/home/cad/wally-smp-headless`, with a newly generated and compiled RTL model.
+The continuation described below preserves that merged RTL and the image
+inputs; it does not reuse a pre-merge model. Kernel/firmware/userland inputs are
 unchanged from the [original SMP record](2026-10-18-linux-smp.md).
 QEMU is not rerun because the software inputs did not change.
 
@@ -95,9 +97,57 @@ Completed checks on the combined sources:
 Linux SMP is still in progress. Do not treat the original stage-3 Linux PASS
 as a verdict on these combined sources.
 
+## Interrupted run and checkpointed continuation
+
+The first combined-source simulation stopped after the last reported
+104,000,000 cycles, with no PASS, FAIL or timeout verdict. When continuing,
+its process was absent and the environment's container had been replaced.
+This is **INCOMPLETE**, not an RTL failure. `linux/initial-rtl.log` preserves
+that attempt. A fresh run of the unchanged model was deliberately stopped to
+switch to a checkpoint-capable local harness; `linux/pre-checkpoint-rtl.log`
+preserves it, also without a Linux verdict.
+
+To avoid losing hours of simulation on another environment interruption, a
+local copy of `linux/smp/sim_main.cpp`, `sim_main_checkpoint.cpp`, adds
+Verilator `--savable` support. It serializes the complete RTL model, context,
+cycle counter, console-line recognizer and next heartbeat after a complete
+clock cycle. Every 5 million cycles it atomically replaces `linux/linux.checkpoint`;
+SIGTERM/SIGINT requests a save at the next cycle boundary. This is local
+verification tooling, not a new checked-in SoC or runner feature.
+
+Checkpoint validation **PASS**: uninterrupted execution to cycle 100,000 and
+execution stopped at 50,000 then restored and advanced to 100,000 produced
+byte-identical complete serialized states (SHA-256
+`e80cdf1954467c4b9671b821e63dbee0ed91b2b8544c500837803b2d7dbc715f`).
+These three bounded harness checks deliberately end at their cycle limits
+(exit 1); they are not failed full-Linux runs. `checkpoint-validation.json`,
+`test-checkpoint.py` and its three logs preserve the criterion and procedure.
+
+The checkpoint-capable model SHA-256 is
+`e8c2b4e714bf888badc5d3019897dedfb33658fa273d376ce8d4ba888d041465`.
+Before starting or restoring, the local launcher verifies this binary, its
+C++ harness, and all 623 source/configuration hashes. Build commands are in
+`build-checkpoint.py` and `checkpoint-build-run.log`; no RTL/configuration
+changes were made for saving state. To continue after an interruption, first
+check that there is no existing model process, then run:
+
+```bash
+pgrep -af '[V]linux_tb'
+bash /tmp/wally-multicore-main-20261019/run-linux-checkpoint.sh
+```
+
+The launcher sources setup, restores the checkpoint if present, appends the
+actual UART/progress/verdict log to `linux/rtl.log`, and writes the process
+exit code to `linux-checkpoint-exit-code.txt` on termination. Exit 75 denotes
+an interrupted, saved run, not PASS. The Linux success criterion remains
+`WALLY_SMP_PASS cpus=2 counter=128 protected=128` and process exit 0.
+
 ## Evidence and limits
 
-Working evidence: `/tmp/wally-multicore-main-20261019/`; `sources.json` records
+Working evidence: `/tmp/wally-multicore-main-20261019/`; a copy of completed
+logs and helpers is kept in the ignored
+`sim/verilator/wkdir/multicore/verification-main-20261019/`. The live checkpoint
+and generated model remain in the working evidence directory. `sources.json` records
 source and effective-configuration SHA-256 hashes. Local wrappers, build logs,
 run logs and copied image manifest preserve the actual procedure. These are
 host-local artifacts, not a durable remote archive.

@@ -13,7 +13,8 @@ Merge main into the published multicore branch without rewriting its history,
 then revalidate the combined RTL before continuing development. The merge
 applied without text conflicts; shared atomics, hart IDs, derivative recipes,
 walker-owned FP controls and per-hart WFI/hazard wiring were inspected.
-Validation is in progress; see the
+Local merge commit: `d4378148d` (not pushed). All short checks passed; Linux
+SMP revalidation is running with periodic simulator checkpoints. See the
 [integration record](experiments/2026-10-19-multicore-main-integration.md).
 
 ## Confirmed development boundaries
@@ -48,7 +49,13 @@ remain untouched.
 
 ## Next actions
 
-1. Complete combined-source verification and record the integration commit.
+1. Finish Linux SMP revalidation and record its actual verdict. A replaced
+   container interrupted the first run at 104 million cycles without a verdict.
+   The current local harness saves every 5 million cycles; if no model process
+   is running, resume with `bash /tmp/wally-multicore-main-20261019/run-linux-checkpoint.sh`.
+   It verifies source/model hashes before restoring the last saved state.
+   See the integration record for validation of the checkpoint mechanism.
+   Do not start a duplicate model; inspect `pgrep -af '[V]linux_tb'` first.
 2. Continue multicore development from this updated feature branch, preserving
    the shared-cache/atomic contract and parameter-specific verification.
 3. With Nexys Video access, resume the diagnostic matrix in the DDR record.
