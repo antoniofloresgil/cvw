@@ -22,7 +22,7 @@ module atomic_bus_tb import cvw::*; ();
     logic [3:0] HPROT;
     logic [1:0] HTRANS;
     int Delay = 0;
-    ahbmulticore #(.P(P), .NCORES(NCORES)) dut(.HOWNER(), .CacheReadAddr(), .CacheReadHit('0), .CacheReadData('0), .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(), .*);
+    ahbmulticore #(.P(P), .NCORES(NCORES)) dut(.ReservationClear('0), .HOWNER(), .CacheReadAddr(), .CacheReadHit('0), .CacheReadData('0), .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(), .*);
     logic [63:0] Memory[512];
     int Transfers = 0, Writes = 0;
     assign HREADY = !Active || Delay == 0;

@@ -14,6 +14,7 @@ module ahbmulticore import cvw::*; #(
   parameter bit LOCAL_DCACHE_WRITES = 0
 )(
   input  logic HCLK, HRESETn,
+  input  logic [NCORES-1:0] ReservationClear,
   input  logic [NCORES-1:0][P.PA_BITS-1:0] CoreHADDR,
   input  logic [NCORES-1:0][P.AHBW-1:0] CoreHWDATA,
   input  logic [NCORES-1:0][P.XLEN/8-1:0] CoreHWSTRB,
@@ -321,6 +322,10 @@ module ahbmulticore import cvw::*; #(
               ReservationValid[h] <= 1'b0;
         if (Op[Owner] == AMO && (Write[Owner] || HRESP)) LockActive <= 1'b0;
       end
+      // Another coherence bank completed this hart's LR/SC. Reservations
+      // belong to harts, not to independent address banks.
+      for (int h = 0; h < NCORES; h++)
+        if (ReservationClear[h]) ReservationValid[h] <= 1'b0;
       // A coincident LR completion replaces the old reservation. Invalidate
       // against its NEW word, not the stale address left by an earlier LR.
       for (int writer = 0; writer < NCORES; writer++)

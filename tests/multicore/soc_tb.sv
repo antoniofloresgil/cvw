@@ -10,7 +10,7 @@ module soc_tb import cvw::*; #(
     parameter bit PRIVATE_ICACHE = 0,
     parameter int PRIVATE_ICACHE_WORDS = 256,
     parameter int PRIVATE_ICACHE_LINE_WORDS = 1,
-    parameter bit CACHE_TO_CACHE = 0,
+    parameter bit CACHE_TO_CACHE = 0, parameter int unsigned COHERENCE_BANKS = 1,
   parameter bit LOCAL_DCACHE_READS = 0,
     parameter bit LOCAL_DCACHE_WRITES = 0
 );
@@ -31,7 +31,7 @@ module soc_tb import cvw::*; #(
         .PRIVATE_ICACHE(PRIVATE_ICACHE), .PRIVATE_ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
         .PRIVATE_DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
         .PRIVATE_ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS),
-        .CACHE_TO_CACHE(CACHE_TO_CACHE), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(
+        .CACHE_TO_CACHE(CACHE_TO_CACHE), .COHERENCE_BANKS(COHERENCE_BANKS), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(
         .clk, .reset_ext, .reset, .ExternalStall(1'b0),
         .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(),
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),
@@ -40,7 +40,34 @@ module soc_tb import cvw::*; #(
         .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
     // White-box architectural observer: write-back data may be newer than RAM.
     // This does not flush caches or participate in the coherence protocol.
-    if (PRIVATE_DCACHE && NCORES > 1) begin : observer
+    if (PRIVATE_DCACHE && NCORES > 1 && COHERENCE_BANKS > 1) begin : observer
+        localparam DW = PRIVATE_DCACHE_WORDS/COHERENCE_BANKS;
+        localparam IW = PRIVATE_ICACHE_WORDS/COHERENCE_BANKS;
+        localparam OFFSET = $clog2(P.XLEN/8);
+        localparam LINE_OFFSET = OFFSET + $clog2(PRIVATE_DCACHE_LINE_WORDS);
+        localparam CI = $clog2(DW/PRIVATE_DCACHE_LINE_WORDS);
+        localparam DI = $clog2(DW);
+        localparam HO = OFFSET + $clog2(DW > IW ? DW : IW);
+        logic [NCORES-1:0][DW/PRIVATE_DCACHE_LINE_WORDS-1:0][1:0] States[COHERENCE_BANKS];
+        logic [P.PA_BITS-LINE_OFFSET-CI-1:0] Tags[COHERENCE_BANKS][NCORES][DW/PRIVATE_DCACHE_LINE_WORDS];
+        logic [P.AHBW-1:0] Lines[COHERENCE_BANKS][NCORES][DW];
+        for (genvar b = 0; b < COHERENCE_BANKS; b++) begin : shadows
+            assign States[b] = dut.banked.fabric.banks[b].cache.States;
+            assign Tags[b] = dut.banked.fabric.banks[b].cache.Tags;
+            assign Lines[b] = dut.banked.fabric.banks[b].cache.Lines;
+        end
+        function automatic logic [63:0] word(input int unsigned index);
+            logic [P.PA_BITS-1:0] address;
+            int b;
+            address = P.PA_BITS'(P.UNCORE_RAM_BASE) + (P.PA_BITS'(index) << OFFSET);
+            b = int'((address >> HO) & P.PA_BITS'(int'(COHERENCE_BANKS-1)));
+            word = dut.uncoregen.uncore.ram.ram.memory.ram.RAM[index];
+            for (int h = 0; h < NCORES; h++)
+                if (States[b][h][address[LINE_OFFSET +: CI]] == 2 &&
+                    Tags[b][h][address[LINE_OFFSET +: CI]] == address[P.PA_BITS-1:LINE_OFFSET+CI])
+                    word = Lines[b][h][address[OFFSET +: DI]];
+        endfunction
+    end else if (PRIVATE_DCACHE && NCORES > 1) begin : observer
         function automatic logic [63:0] word(input int unsigned index);
             localparam OFFSET = $clog2(P.XLEN/8);
             localparam LINE_OFFSET = OFFSET + $clog2(PRIVATE_DCACHE_LINE_WORDS);
@@ -65,7 +92,16 @@ module soc_tb import cvw::*; #(
     int unsigned MemoryTransfers = 0, LocalCompletions = 0;
     always @(posedge clk) if (!reset && dut.HTRANS[1] && dut.HREADY)
         MemoryTransfers <= MemoryTransfers + 1;
-    if (NCORES > 1) begin : counters
+    if (NCORES > 1 && PRIVATE_DCACHE && COHERENCE_BANKS > 1) begin : counters
+        logic [COHERENCE_BANKS-1:0][31:0] Counts;
+        for (genvar b = 0; b < COHERENCE_BANKS; b++) begin : banks
+            assign Counts[b] = 32'($countones(dut.banked.fabric.banks[b].bus.LocalReply |
+                dut.banked.fabric.banks[b].bus.CacheWriteCommit));
+        end
+        always @(posedge clk) if (!reset)
+            for (int b = 0; b < COHERENCE_BANKS; b++)
+                LocalCompletions = LocalCompletions + Counts[b];
+    end else if (NCORES > 1) begin : counters
         always @(posedge clk) if (!reset)
             LocalCompletions <= LocalCompletions + $countones(dut.multicore.bus.LocalReply | dut.multicore.bus.CacheWriteCommit);
     end else begin : counters

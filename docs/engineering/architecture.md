@@ -137,3 +137,12 @@ semantics and the verification record; older Linux models remain separate.
 sharing forwards acknowledged memory-writeback beats, keeping S clean.
 Default off, with unchanged single-core bypass and one global transaction.
 See [ADR 0008](decisions/0008-cache-to-cache-supply.md).
+
+## Independent coherence homes
+
+`COHERENCE_BANKS` defaults to one. With multiple harts and private MSI, powers
+of two greater than one select `ahbmsifabric`: independent address-home
+controllers, fixed total private capacity, one blocking request per hart and
+a shared AHB memory port. Cross-home LR/SC clearing and global AMO admission
+retain atomic ordering. See [ADR 0009](decisions/0009-banked-coherence-transactions.md)
+for mapping, invariants, limitations and the independent verification scope.

@@ -1,31 +1,44 @@
 # Current work
 
-Checkpoint: 2026-10-20, branch `multicore-support`, parent `f9bd2003f53197268e306f997026956fcf7111a3`
-plus optional cache-to-cache supply. Check Git for actual publication state.
+Checkpoint: 2026-10-20, `multicore-support`, published base `f71666f07` plus
+optional independent coherence homes validated with their own Linux PASS.
+Use Git for current publication state.
 
 ## Objective and implementation
 
-The multiword baseline passed its own Linux SMP and was pushed before this
-change was applied. Optional CACHE_TO_CACHE (default off) forwards complete
-M-owner lines on ownership acquisition and forwards acknowledged writeback
-beats on read sharing. Standard MSI S copies remain clean. NCORES=1 removes
-coherence. See [ADR 0008](decisions/0008-cache-to-cache-supply.md) and
-[the experiment](experiments/2026-10-20-cache-to-cache.md).
+The user requested more than one outstanding coherence transaction. Optional
+`COHERENCE_BANKS` (default one) now selects independent address-home MSI
+controllers sharing one external AHB port. Total private capacity stays fixed;
+NCORES=1 eliminates coherence. One transaction per hart and per active home,
+with up to min(harts, homes) engines making progress. Cross-home LR/SC clearing
+and global AMO admission/owner IFU progress preserve ordering.
+See [ADR 0009](decisions/0009-banked-coherence-transactions.md) and
+[the experiment](experiments/2026-10-20-banked-coherence.md).
 
-16 controller configurations (32,000 random operations), 30 enabled full-core
-runs, three disabled comparisons, 20 lint/structural checks, four legacy
-checks, two negative controls and software identity checks pass. Linux with
-this exact implementation has **PASS at 288,425,528 cycles**, exit 0, under the guarded supervisor
-`/tmp/wally-c2c-preparation/chain.py`; `chain-status.json` records its stage.
-Its new frozen model passed QEMU, bit-exact checkpoint restoration and full
-Linux with two online CPUs and both counters equal to 128. Documentation and
-publication follow that verified result; see chain-status.json for push status.
+Focused checks PASS in `/tmp/wally-banked-20261020/`: ten banked and two
+one-home controller cases (24,000 random operations), 18 full-core runs,
+18 lint/structural checks, four legacy checks, two negative controls and
+DTS/manifest/CLI checks. Four-hart RV32/RV64 tests reach four active homes. The short two-hart atomic test is slower with two homes:
+19,583 versus 14,147 cycles with one; the new router/port bridge adds latency.
+Defaults remain unchanged. QEMU and byte-exact 100k versus 50k+restore
+checkpoint checks pass for the new two-home model. Full Linux is
+**PASS at 457,165,361 cycles**, exit 0 in `/tmp/wally-linux-banked-20261020/`, model SHA-256
+`d2d7f71051e31af1b8ed7060853bfd815ba6834c34bd9a899b14c9156e5166e3`.
+Its `supervisor-status.json` and `production-process.json` record the completed
+run, with a 1.5-billion-cycle limit and 5M checkpoints. The final result verifies two online CPUs and both shared counters equal
+to 128. The user authorized commit and push after this verified result.
+The publication finisher records its actual commit/push outcome in
+`publication-status.json`; Linux PASS alone does not establish publication.
 
-## Boundaries
+## Completed baseline and boundaries
 
-Single global coherence transaction, AHB SINGLE beats, mandatory memory
-writeback for M-to-S, no external DMA coherence or Owned state. No FPGA
-timing/resources or DDR3 validation. Existing CPU error handling does not
-provide precise cache/writeback exceptions. Multi-core remains separate from
-main; open FPGA DDR3 initialization requires board verification. Earlier
-experiment/ADR records retain their exact configuration and revision scopes.
+One-home cache-to-cache Linux passed at 288,425,528 cycles with two CPUs and
+both shared counters 128, documented and pushed as `f71666f07`. The prior
+multiword-line baseline passed at 287,836,760 cycles, commit `f9bd2003f`.
+Neither verdict validates the new home fabric. Earlier records retain their
+configuration/revision scope.
+
+Same-home misses, physical AHB beats and AMOs remain serialized. There are no
+per-hart multiple miss slots, bursts, Owned state, external DMA coherence,
+precise writeback exceptions or FPGA/DDR3 results. Multicore stays separate
+from main; open FPGA DDR3 initialization still needs board verification.

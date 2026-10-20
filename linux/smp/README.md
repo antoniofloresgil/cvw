@@ -196,3 +196,12 @@ manifest, or verifies an explicit `--cache-to-cache`/`--no-cache-to-cache`.
 Model directories, fingerprints, result and checkpoint identities include
 this option. Forwarding does not change DTB geometry. Default off, single-core
 bypass unchanged. A preceding Linux PASS cannot validate a new RTL option.
+
+### Multiple coherence homes
+
+Build MSI images with `--coherence-banks 2` to select independent address-home
+controllers. The default is one; capacities remain total per hart. `run.py`
+infers the count from the manifest and rejects a conflicting explicit count.
+Model names/fingerprints, checkpoint identity and result metadata include it.
+The geometry/DTB stays unchanged for the same total capacities and line sizes.
+A new model and independent full RTL Linux run are required for validation.

@@ -77,3 +77,8 @@ index is brought into another branch, refresh its checkout-specific notes and
 The optional [cache-to-cache supply](decisions/0008-cache-to-cache-supply.md)
 and [its experiment](experiments/2026-10-20-cache-to-cache.md) extend MSI;
 consult current-work for its independent Linux verdict.
+
+The proposed [independent coherence homes](decisions/0009-banked-coherence-transactions.md)
+and [their experiment](experiments/2026-10-20-banked-coherence.md) permit
+multiple active transactions in distinct homes; validation is separate from
+the completed one-home Linux cache-to-cache result.

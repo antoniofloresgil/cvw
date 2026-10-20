@@ -33,6 +33,7 @@ def main():
     parser.add_argument("--cache-mode", choices=["shared", "msi"], default="shared")
     parser.add_argument("--private-icache", action="store_true")
     parser.add_argument("--icache-words", type=int, default=256)
+    parser.add_argument("--coherence-banks", type=int, default=1)
     parser.add_argument("--cache-to-cache", action="store_true", help="Direct private-cache data supply; MSI mode only")
     parser.add_argument("--local-dcache-writes", action="store_true")
     parser.add_argument("--local-dcache-reads", action="store_true")
@@ -54,6 +55,12 @@ def main():
             parser.error("Line size must be a power of two with at least two lines per cache")
     if not (args.cache_mode == "msi") and (args.cache_line_words != 1 or args.icache_line_words != 1):
         parser.error("Multiword private lines require MSI mode")
+    if args.coherence_banks < 1 or args.coherence_banks & (args.coherence_banks-1):
+        parser.error("Coherence banks must be a power of two >= 1")
+    if args.coherence_banks > 1 and args.cache_mode != "msi":
+        parser.error("Multiple coherence banks require MSI")
+    if args.cores > 1 and (args.cache_words < 2*args.coherence_banks*args.cache_line_words or args.icache_words < 2*args.coherence_banks*args.icache_line_words):
+        parser.error("Each coherence bank needs at least two I/D lines")
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
     br = args.buildroot.resolve()
@@ -93,6 +100,7 @@ def main():
     run(["python3", HERE / "devicetree.py", "--cores", args.cores, "--cache-mode", args.cache_mode,
          "--cache-line-words", args.cache_line_words, "--icache-line-words", args.icache_line_words,
          "--cache-words", args.cache_words, "--icache-words", args.icache_words,
+         "--coherence-banks", str(args.coherence_banks),
          *(["--cache-to-cache"] if args.cache_to_cache else []),
          *(["--private-icache"] if args.private_icache else []),
          *(["--local-dcache-reads"] if args.local_dcache_reads else []),
@@ -125,7 +133,7 @@ def main():
         "icache_words": args.icache_words,
         "local_dcache_reads": args.local_dcache_reads,
         "local_dcache_writes": args.local_dcache_writes,
-        "cache_to_cache": args.cache_to_cache,
+        "cache_to_cache": args.cache_to_cache, "coherence_banks": args.coherence_banks,
         "linux": "6.19.14",
         "opensbi": "1.7",
         "ram_mb": 128,

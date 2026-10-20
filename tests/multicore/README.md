@@ -420,3 +420,13 @@ transfer and read-intervention forwarding. Default off; local-hit options
 remain independent. Tests check every line word, byte masks, no target RAM
 traffic for M-to-M, exact mandatory writeback for M-to-S and old-owner
 invalidation. See the engineering cache-to-cache experiment for the matrix.
+
+### Multiple active coherence transactions
+
+Use `--coherence-banks 2` (or another power of two) with `--private-dcache`.
+The default remains one. Each home requires at least two complete I/D lines;
+`--cache-words` and `--icache-words` remain the total capacity per hart.
+`msifabric_tb` checks actual overlap between independent home controllers,
+remote dirty-owner completion while RAM waits, cross-home reservations,
+AMO/IFU progress, errors and reset. Requests to one home remain serialized,
+as do physical AHB beats. Each hart still has one blocking transaction.

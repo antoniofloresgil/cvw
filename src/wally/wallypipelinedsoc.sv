@@ -33,7 +33,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   parameter int unsigned PRIVATE_DCACHE_LINE_WORDS = 1,
   parameter bit PRIVATE_ICACHE = 0, parameter int unsigned PRIVATE_ICACHE_WORDS = 256,
   parameter int unsigned PRIVATE_ICACHE_LINE_WORDS = 1,
-  parameter bit CACHE_TO_CACHE = 0,
+  parameter bit CACHE_TO_CACHE = 0, parameter int unsigned COHERENCE_BANKS = 1,
   parameter bit LOCAL_DCACHE_READS = 0, parameter bit LOCAL_DCACHE_WRITES = 0)  (
   input  logic                clk,
   input  logic                reset_ext,        // external asynchronous reset pin
@@ -144,13 +144,28 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
     assign CacheWriteCommit = '0;
     assign CacheWriteData = '0;
     assign CacheWriteStrb = '0;
+  end else if (MSI_ENABLED && COHERENCE_BANKS > 1) begin : banked
+    ahbmsifabric #(.P(P), .NCORES(NCORES), .BANKS(COHERENCE_BANKS),
+      .DCACHE_WORDS(PRIVATE_DCACHE_WORDS), .DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
+      .PRIVATE_ICACHE(PRIVATE_ICACHE), .ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
+      .ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS), .CACHE_TO_CACHE(CACHE_TO_CACHE),
+      .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) fabric(
+      .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHMASTLOCK,
+      .CoreHSIZE, .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHATOMIC,
+      .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
+      .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HRDATA, .HREADY, .HRESP);
+    assign {BusHADDR, BusHWDATA, BusHWSTRB, BusHWRITE, BusHSIZE, BusHBURST, BusHPROT, BusHTRANS, BusHMASTLOCK, BusHOWNER} = '0;
+    assign CacheReadAddr = '0;
+    assign CacheWriteCommit = '0;
+    assign CacheWriteData = '0;
+    assign CacheWriteStrb = '0;
   end else begin : multicore
     ahbmulticore #(.P(P), .NCORES(NCORES),
       .PRIVATE_ICACHE(MSI_ENABLED && PRIVATE_ICACHE), .ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
       .ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS), .DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
       .LOCAL_DCACHE_READS(MSI_ENABLED && LOCAL_DCACHE_READS),
       .LOCAL_DCACHE_WRITES(MSI_ENABLED && LOCAL_DCACHE_WRITES)) bus(
-      .CacheReadAddr, .CacheReadHit, .CacheReadData,
+      .ReservationClear('0), .CacheReadAddr, .CacheReadHit, .CacheReadData,
       .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
       .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHSIZE,
       .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHMASTLOCK, .CoreHATOMIC, .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
@@ -158,7 +173,9 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
       .HRDATA(BusHRDATA), .HREADY(BusHREADY), .HRESP(BusHRESP));
   end
 
-  if (MSI_ENABLED) begin : msicache
+  if (MSI_ENABLED && COHERENCE_BANKS > 1) begin : bankedresponse
+    assign {BusHRDATA, BusHREADY, BusHRESP} = '0;
+  end else if (MSI_ENABLED) begin : msicache
     ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(PRIVATE_DCACHE_WORDS), .LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
       .CACHE_TO_CACHE(CACHE_TO_CACHE), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
       .CacheReadAddr, .CacheReadHit, .CacheReadData,
@@ -184,13 +201,16 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
     assign {BusHRDATA, BusHREADY, BusHRESP} = {HRDATA, HREADY, HRESP};
   end
 
-  if (!MSI_ENABLED) begin : nolocalreads
+  if (!MSI_ENABLED || COHERENCE_BANKS > 1) begin : nolocalreads
     assign CacheReadHit = '0;
     assign CacheWriteHit = '0;
     assign CacheReadData = '0;
   end
 
   initial begin
+    assert (COHERENCE_BANKS >= 1 && (COHERENCE_BANKS & (COHERENCE_BANKS-1)) == 0 &&
+      (NCORES == 1 || COHERENCE_BANKS == 1 || MSI_ENABLED))
+      else $fatal(1, "Coherence banks require private MSI and a power-of-two count");
     assert (NCORES >= 1 && NCORES <= 4095)
       else $fatal(1, "NCORES outside the supported CLINT register range");
     if (NCORES > 1 || SHARED_CACHE) begin

@@ -25,7 +25,7 @@ module bus_tb import cvw::*;();
     int Delay = 0;
     int Served[NCORES] = '{default:0};
     logic [NCORES-1:0] Done = '0;
-    ahbmulticore #(.P(P), .NCORES(NCORES)) dut(.HOWNER(), .CacheReadAddr(), .CacheReadHit('0), .CacheReadData('0), .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(), .*);
+    ahbmulticore #(.P(P), .NCORES(NCORES)) dut(.ReservationClear('0), .HOWNER(), .CacheReadAddr(), .CacheReadHit('0), .CacheReadData('0), .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(), .*);
     assign HREADY = !Active || Delay == 0;
     assign HRESP = Active && SavedAddr[4:3] == 2'b11 && Delay <= 1;
     assign HRDATA = P.AHBW'(SavedAddr) ^ P.AHBW'('h12345678);
