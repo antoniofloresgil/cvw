@@ -9,6 +9,7 @@ module msi_tb import cvw::*; #(
     parameter int ICACHE_LINE_WORDS = 1,
     parameter bit PRIVATE_ICACHE = 0,
     parameter int ICACHE_WORDS = 4,
+    parameter bit CACHE_TO_CACHE = 0,
     parameter bit LOCAL_DCACHE_READS = 0,
     parameter bit LOCAL_DCACHE_WRITES = 0
 );
@@ -42,7 +43,7 @@ module msi_tb import cvw::*; #(
     logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb;
     ahbmulticore #(.P(P), .NCORES(NCORES), .PRIVATE_ICACHE(PRIVATE_ICACHE),
         .ICACHE_WORDS(ICACHE_WORDS), .ICACHE_LINE_WORDS(ICACHE_LINE_WORDS), .DCACHE_LINE_WORDS(LINE_WORDS), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) bus(.*);
-    ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(WORDS), .LINE_WORDS(LINE_WORDS), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
+    ahbmsicache #(.P(P), .NCORES(NCORES), .CACHE_TO_CACHE(CACHE_TO_CACHE), .WORDS(WORDS), .LINE_WORDS(LINE_WORDS), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
         .CacheReadAddr, .CacheReadHit, .CacheReadData,
         .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
         .HCLK, .HRESETn, .UpHOWNER(HOWNER), .UpHADDR(HADDR), .UpHWDATA(HWDATA), .UpHWSTRB(HWSTRB),
@@ -327,6 +328,43 @@ module msi_tb import cvw::*; #(
         assert (local_stores == saved+1) else $fatal(1, "Queued M store did not resume after AMO");
         load(0, 192, 'h9101);
     endtask
+    task automatic forwarding_checks();
+        int before_count, before_writes;
+        for (int w = 0; w < LINE_WORDS; w++) begin
+            reference[w] = P.XLEN'(int'('hd000+w));
+            store(0, w, reference[w]);
+        end
+        before_count = transfers;
+        before_writes = writebacks;
+        // An ownership move must copy ALL dirty words, not just store bytes.
+        access(1, 1, BASE+1, 'hab00, (P.XLEN/8)'(2), 0, 0, 0, 0, 0, 0);
+        reference[0] = (reference[0] & ~P.XLEN'('hff00)) | P.XLEN'('hab00);
+        assert (transfers == before_count && writebacks == before_writes)
+            else $fatal(1, "M-to-M handoff unnecessarily touched RAM");
+        assert (cache.States[0][0] == 0 && cache.States[1][0] == 2)
+            else $fatal(1, "M-to-M ownership did not transfer atomically");
+        for (int w = 0; w < LINE_WORDS; w++) load(1, w, reference[w]);
+        before_count = transfers;
+        // MSI read sharing writes back once, and must not read the line again.
+        load(0, LINE_WORDS-1, reference[LINE_WORDS-1]);
+        assert (transfers-before_count == LINE_WORDS && writebacks-before_writes == LINE_WORDS)
+            else $fatal(1, "M-to-S forwarding reread memory or skipped mandatory writeback");
+        for (int w = 0; w < LINE_WORDS; w++)
+            assert (mem[w] == reference[w]) else $fatal(1, "Shared line is dirty after forwarding");
+        for (int w = 0; w < ICACHE_LINE_WORDS; w += LINE_WORDS)
+            load(0, w, reference[w]);
+        store(0, 0, reference[0]);
+        before_count = transfers;
+        // IFU gets the dirty owner's word, then reuses the clean supplier.
+        for (int w = 0; w < LINE_WORDS; w++) load(1, w, reference[w], 0, 1);
+        assert (transfers-before_count == LINE_WORDS)
+            else $fatal(1, "IFU did not use forwarded words after intervention");
+        // Put RAM/reference back in agreement before the legacy directed suite.
+        for (int h = 0; h < NCORES; h++)
+            for (int line = 0; line < WORDS/LINE_WORDS; line++)
+                load(h, WORDS+line*LINE_WORDS, reference[WORDS+line*LINE_WORDS]);
+        $display("PASS: cache-to-cache ownership, clean sharing and IFU forwarding");
+    endtask
     task automatic multiline_checks();
         int before_count;
         logic [P.XLEN-1:0] value;
@@ -511,6 +549,7 @@ module msi_tb import cvw::*; #(
         end
         repeat (3) @(negedge HCLK);
         HRESETn = 1;
+        if (CACHE_TO_CACHE) forwarding_checks();
         if (LINE_WORDS > 1 || ICACHE_LINE_WORDS > 1) multiline_checks();
         else begin
         load(0, 0, reference[0]);

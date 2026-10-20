@@ -412,3 +412,11 @@ can increase false sharing and transfer cost; compare identical total byte
 capacities before choosing a non-default geometry. See
 [ADR 0007](../../docs/engineering/decisions/0007-multiword-private-cache-lines.md)
 and the [multiword results](../../docs/engineering/experiments/2026-10-19-multiword-lines.md).
+
+### Optional supplier forwarding
+
+Add `--cache-to-cache` with private MSI to enable complete-line ownership
+transfer and read-intervention forwarding. Default off; local-hit options
+remain independent. Tests check every line word, byte masks, no target RAM
+traffic for M-to-M, exact mandatory writeback for M-to-S and old-owner
+invalidation. See the engineering cache-to-cache experiment for the matrix.

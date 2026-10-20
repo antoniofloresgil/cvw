@@ -11,6 +11,7 @@ module ahbmsicache import cvw::*; #(
   parameter int unsigned NCORES = 2,
   parameter int unsigned WORDS = 256,
   parameter int unsigned LINE_WORDS = 1,
+  parameter bit CACHE_TO_CACHE = 0,
   parameter bit LOCAL_READS = 0,
   parameter bit LOCAL_WRITES = 0
 )(
@@ -59,7 +60,8 @@ module ahbmsicache import cvw::*; #(
   logic [P.AHBW-1:0] Lines[NCORES][WORDS];
   state_t State;
   transfer_t Transfer;
-  logic [HART_BITS-1:0] Owner, Snooper, FlushOwner;
+  logic [HART_BITS-1:0] Owner, Snooper, FlushOwner, Supplier;
+  logic AnyHit;
   logic [P.PA_BITS-1:0] Addr;
   logic [INDEX-1:0] Index;
   logic [TAG-1:0] Tag;
@@ -106,9 +108,15 @@ module ahbmsicache import cvw::*; #(
     (P.EXT_MEM_SUPPORTED && ((64'(Addr) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE));
   always_comb begin
     DirtyPeer = 1'b0;
+    AnyHit = 1'b0;
+    Supplier = '0;
     Snooper = '0;
     for (int h = 0; h < NCORES; h++) begin
       Hit[h] = States[h][Index] != I && Tags[h][Index] == Tag;
+      if (Hit[h] && !AnyHit) begin
+        AnyHit = 1'b1;
+        Supplier = HART_BITS'(h);
+      end
       // An uncached instruction fetch must also snoop its own D-cache.
       if (Hit[h] && States[h][Index] == M && (HART_BITS'(h) != Owner || !Prot[0])) begin
         DirtyPeer = 1'b1;
@@ -178,7 +186,15 @@ module ahbmsicache import cvw::*; #(
           end else State <= SNOOP;
         end
         SNOOP: begin
-          if (Cacheable && DirtyPeer) begin
+          if (CACHE_TO_CACHE && Cacheable && DirtyPeer && Write && Prot[0]) begin
+            // Move dirty responsibility directly M->M. Keep the supplier M
+            // until COMPLETE atomically installs the requester and invalidates
+            // every peer. No target-line RAM write/read is needed.
+            for (int beat = 0; beat < LINE_WORDS; beat++)
+              FillLine[beat] <= Lines[Snooper][data_index(Index, beat)];
+            Filled <= 1'b1;
+            State <= COMPLETE;
+          end else if (Cacheable && DirtyPeer) begin
             HADDR <= {Addr[P.PA_BITS-1:LINE_OFFSET], {LINE_OFFSET{1'b0}}};
             HWDATA <= Lines[Snooper][data_index(Index, 0)];
             Beat <= '0;
@@ -189,6 +205,12 @@ module ahbmsicache import cvw::*; #(
             FlushOwner <= Snooper;
             Transfer <= FLUSH;
             State <= ADDRESS;
+          end else if (CACHE_TO_CACHE && Cacheable && !Write && !Prot[0] && AnyHit) begin
+            // After an M->S intervention, subsequent IFU words can use the
+            // clean supplier directly. IFU never allocates a D line.
+            FillData <= Lines[Supplier][WordIndex];
+            Filled <= 1'b1;
+            State <= COMPLETE;
           end else if (!Cacheable) begin
             HADDR <= Addr;
             HWDATA <= WriteData;
@@ -221,11 +243,21 @@ module ahbmsicache import cvw::*; #(
             State <= ERROR_REPLY;
           end else case (Transfer)
             EVICT, FLUSH: begin
+              if (CACHE_TO_CACHE && Transfer == FLUSH) begin
+                // MSI shared copies must be clean: acknowledge every RAM
+                // writeback beat, but forward those same words without reread.
+                FillLine[Beat] <= HWDATA;
+                if (int'(Beat) == ((int'(Addr) >> OFFSET) & (LINE_WORDS-1)))
+                  FillData <= HWDATA;
+              end
               if (int'(Beat) == LINE_WORDS-1) begin
                 if (Transfer == EVICT) States[Owner][Index] <= I;
                 else States[FlushOwner][Index] <= S;
                 Beat <= '0;
-                State <= SNOOP;
+                if (CACHE_TO_CACHE && Transfer == FLUSH) begin
+                  Filled <= 1'b1;
+                  State <= COMPLETE;
+                end else State <= SNOOP;
               end else begin
                 Beat <= Beat + 1'b1;
                 HADDR <= HADDR + (P.PA_BITS'(1) << OFFSET);

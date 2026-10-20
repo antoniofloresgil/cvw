@@ -188,3 +188,11 @@ imply one-word lines. Explicit mismatches are rejected; a snapshot from a
 different model cannot be reused. Existing one-word Linux runs do not validate
 multiword RTL. See the [multiword record](../../docs/engineering/experiments/2026-10-19-multiword-lines.md)
 for the actual verification scope.
+
+### Optional cache-to-cache supply
+
+Add `--cache-to-cache` when building MSI images; run.py infers it from the
+manifest, or verifies an explicit `--cache-to-cache`/`--no-cache-to-cache`.
+Model directories, fingerprints, result and checkpoint identities include
+this option. Forwarding does not change DTB geometry. Default off, single-core
+bypass unchanged. A preceding Linux PASS cannot validate a new RTL option.

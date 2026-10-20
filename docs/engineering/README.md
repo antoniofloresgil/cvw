@@ -73,3 +73,7 @@ Historical branch references below use immutable commits. For local inspection,
 use `git show <commit>:<path>`; no branch switch or merge is required. If this
 index is brought into another branch, refresh its checkout-specific notes and
 `current-work.md` before treating them as current state.
+
+The optional [cache-to-cache supply](decisions/0008-cache-to-cache-supply.md)
+and [its experiment](experiments/2026-10-20-cache-to-cache.md) extend MSI;
+consult current-work for its independent Linux verdict.

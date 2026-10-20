@@ -42,6 +42,7 @@ def main():
     caches.add_argument("--private-dcache", action="store_true", help="Use private MSI data caches (automatically bypassed with one hart)")
     parser.add_argument("--private-icache", action="store_true", help="Private coherent instruction banks; requires --private-dcache")
     parser.add_argument("--icache-words", type=int, default=256)
+    parser.add_argument("--cache-to-cache", action="store_true", help="Direct private-cache data supply; MSI mode only")
     parser.add_argument("--local-dcache-writes", action="store_true", help="Concurrent M-hit stores with reservation/I invalidation; requires --private-dcache")
     parser.add_argument("--local-dcache-reads", action="store_true", help="Concurrent ordinary D-cache read hits; requires --private-dcache")
     parser.add_argument("--cache-line-words", type=int, default=1, help="AHB words per private D line; total capacity unchanged")
@@ -58,7 +59,7 @@ def main():
         parser.error("--cache-words must be a power of two >= 2")
     if args.icache_words < 2 or args.icache_words & (args.icache_words - 1):
         parser.error("--icache-words must be a power of two >= 2")
-    if (args.private_icache or args.local_dcache_reads or args.local_dcache_writes) and not args.private_dcache:
+    if (args.private_icache or args.cache_to_cache or args.local_dcache_reads or args.local_dcache_writes) and not args.private_dcache:
         parser.error("Private cache local paths require --private-dcache")
     for capacity, line in ((args.cache_words, args.cache_line_words), (args.icache_words, args.icache_line_words)):
         if line < 1 or line & (line-1) or capacity < 2*line:
@@ -93,12 +94,12 @@ def main():
         for config in ("rv64gc", "rv32gc"):
             for cores in (2, 3):
                 for latency in args.latency:
-                    name = f"msi-{config}-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}"
+                    name = f"c2c{int(args.cache_to_cache)}-msi-{config}-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}"
                     executable = build_test("msi_tb", config,
                         [tests / "msi_tb.sv", root / "src/ebu/ahbmulticore.sv", root / "src/ebu/ahbmsicache.sv"],
                         name, [f"-GNCORES={cores}", f"-GLATENCY={latency}",
                                f"-GWORDS={args.cache_words}", f"-GICACHE_WORDS={args.icache_words}",
-                               f"-GLINE_WORDS={args.cache_line_words}", f"-GICACHE_LINE_WORDS={args.icache_line_words}", f"-GPRIVATE_ICACHE=1'b{int(args.private_icache)}",
+                               f"-GCACHE_TO_CACHE=1'b{int(args.cache_to_cache)}", f"-GLINE_WORDS={args.cache_line_words}", f"-GICACHE_LINE_WORDS={args.icache_line_words}", f"-GPRIVATE_ICACHE=1'b{int(args.private_icache)}",
                                f"-GLOCAL_DCACHE_READS=1'b{int(args.local_dcache_reads)}",
                                f"-GLOCAL_DCACHE_WRITES=1'b{int(args.local_dcache_writes)}"])
                     run([executable], work / f"{name}-run.log")
@@ -119,10 +120,10 @@ def main():
                 "soc_tb",
                 f"deriv/{config}",
                 [tests / "soc_tb.sv", tests / "dpi.cpp", *sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")],
-                f"{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else ""),
+                f"c2c{int(args.cache_to_cache)}-{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else ""),
                 [f"-GNCORES={cores}", f"-GLATENCY={latency}", "-GSHARED_CACHE=1'b1" if args.shared_cache else "-GSHARED_CACHE=1'b0",
                  "-GPRIVATE_DCACHE=1'b1" if args.private_dcache else "-GPRIVATE_DCACHE=1'b0",
-                 f"-GPRIVATE_DCACHE_WORDS={args.cache_words}",
+                 f"-GCACHE_TO_CACHE=1'b{int(args.cache_to_cache)}", f"-GPRIVATE_DCACHE_WORDS={args.cache_words}",
                  f"-GPRIVATE_DCACHE_LINE_WORDS={args.cache_line_words}", f"-GPRIVATE_ICACHE_LINE_WORDS={args.icache_line_words}",
                  f"-GPRIVATE_ICACHE=1'b{int(args.private_icache)}", f"-GPRIVATE_ICACHE_WORDS={args.icache_words}",
                  f"-GLOCAL_DCACHE_READS=1'b{int(args.local_dcache_reads)}",

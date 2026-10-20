@@ -130,3 +130,10 @@ reservation granule and AMO retains global exclusion. Entire I lines are
 invalidated on successful global/local stores. See
 [ADR 0007](decisions/0007-multiword-private-cache-lines.md) for ordering, error
 semantics and the verification record; older Linux models remain separate.
+
+## Optional MSI supplier path
+
+`CACHE_TO_CACHE=1` copies an M owner directly to a writing requester; read
+sharing forwards acknowledged memory-writeback beats, keeping S clean.
+Default off, with unchanged single-core bypass and one global transaction.
+See [ADR 0008](decisions/0008-cache-to-cache-supply.md).

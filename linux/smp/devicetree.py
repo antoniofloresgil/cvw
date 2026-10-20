@@ -5,10 +5,10 @@ import argparse
 from pathlib import Path
 
 
-def generate(cores, memory_mb=128, frequency=20000000, cache_words=256, cache_mode="shared", private_icache=False, icache_words=256, local_dcache_reads=False, local_dcache_writes=False, cache_line_words=1, icache_line_words=1):
+def generate(cores, memory_mb=128, frequency=20000000, cache_words=256, cache_mode="shared", private_icache=False, icache_words=256, local_dcache_reads=False, local_dcache_writes=False, cache_line_words=1, icache_line_words=1, cache_to_cache=False):
     if cache_mode not in ("shared", "msi") or cache_words < 2 or cache_words & (cache_words - 1):
         raise ValueError("Expected shared/msi and a power-of-two cache capacity >= 2 words")
-    if (private_icache or local_dcache_reads or local_dcache_writes) and cache_mode != "msi":
+    if (private_icache or cache_to_cache or local_dcache_reads or local_dcache_writes) and cache_mode != "msi":
         raise ValueError("Private cache local paths require MSI mode")
     if icache_words < 2 or icache_words & (icache_words - 1):
         raise ValueError("I-cache capacity must be a power of two >= 2 words")
@@ -93,6 +93,7 @@ def main():
     parser.add_argument("--cache-words", type=int, default=256)
     parser.add_argument("--private-icache", action="store_true")
     parser.add_argument("--icache-words", type=int, default=256)
+    parser.add_argument("--cache-to-cache", action="store_true", help="Direct private-cache data supply; MSI mode only")
     parser.add_argument("--local-dcache-writes", action="store_true")
     parser.add_argument("--local-dcache-reads", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
@@ -104,7 +105,7 @@ def main():
     args.output.write_text(generate(args.cores, cache_words=args.cache_words, cache_mode=args.cache_mode,
                                     private_icache=args.private_icache, icache_words=args.icache_words,
                                     local_dcache_reads=args.local_dcache_reads, local_dcache_writes=args.local_dcache_writes,
-                                    cache_line_words=args.cache_line_words, icache_line_words=args.icache_line_words))
+                                    cache_line_words=args.cache_line_words, icache_line_words=args.icache_line_words, cache_to_cache=args.cache_to_cache))
 
 
 if __name__ == "__main__":

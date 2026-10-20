@@ -10,7 +10,8 @@ module soc_tb import cvw::*; #(
     parameter bit PRIVATE_ICACHE = 0,
     parameter int PRIVATE_ICACHE_WORDS = 256,
     parameter int PRIVATE_ICACHE_LINE_WORDS = 1,
-    parameter bit LOCAL_DCACHE_READS = 0,
+    parameter bit CACHE_TO_CACHE = 0,
+  parameter bit LOCAL_DCACHE_READS = 0,
     parameter bit LOCAL_DCACHE_WRITES = 0
 );
     `include "parameter-defs.vh"
@@ -30,7 +31,7 @@ module soc_tb import cvw::*; #(
         .PRIVATE_ICACHE(PRIVATE_ICACHE), .PRIVATE_ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
         .PRIVATE_DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
         .PRIVATE_ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS),
-        .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(
+        .CACHE_TO_CACHE(CACHE_TO_CACHE), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(
         .clk, .reset_ext, .reset, .ExternalStall(1'b0),
         .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(),
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),
