@@ -2,10 +2,12 @@
 
 Start with [AGENTS.md](../../AGENTS.md), then this index and
 [current-work.md](current-work.md). Read the remaining documents only when
-relevant to the task. Snapshot: 2026-10-18; `main` integrates official upstream
-`712ee9719` onto fork `50ad3a44a`. See the
-[integration record](experiments/2026-10-18-upstream-integration.md) for scope
-and validation; earlier source audits retain their original revision labels.
+relevant to the task. Snapshot: 2026-10-20; `main` integrates official upstream
+`89479dd09` onto fork `5ce564236`. See the
+[latest integration record](experiments/2026-10-20-upstream-integration.md)
+for scope and validation; earlier source audits retain their original revision
+labels. The [Nexys Video hardware boot](experiments/2026-10-20-nexysvideo-vivado.md)
+was verified before this merge, at `82d0b80f7`.
 
 ## Find the authoritative information
 
@@ -16,7 +18,7 @@ and validation; earlier source audits retain their original revision labels.
 | Verification scope | [Existing test plan](../testplans/testplan.md), [revision-specific verification notes](verification.md) |
 | FPGA, Linux, ASIC flows | [Implementation notes](implementation.md), linking the existing flow documentation |
 | Significant decisions | [ADR 0001: knowledge organization](decisions/0001-knowledge-organization.md), [ADR 0002: multicore cache](decisions/0002-shared-multicore-cache.md) |
-| Results | [Upstream integration](experiments/2026-10-18-upstream-integration.md), [Linux SMP](experiments/2026-10-18-linux-smp.md), [open DDR3 bring-up](experiments/open-ddr3-bringup.md) |
+| Results | [Latest upstream integration](experiments/2026-10-20-upstream-integration.md), [Nexys Video hardware boot](experiments/2026-10-20-nexysvideo-vivado.md), [Linux SMP](experiments/2026-10-18-linux-smp.md), [open DDR3 bring-up](experiments/open-ddr3-bringup.md) |
 | Active work, branch boundaries, unresolved questions | [Current work](current-work.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 

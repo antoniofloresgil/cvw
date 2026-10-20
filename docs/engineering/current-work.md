@@ -9,6 +9,15 @@ This is a branch-scoped checkpoint, not an automatic branch-selection policy.
 
 ## Objective and local work
 
+Latest upstream integration (2026-10-20): integrated all 19 missing commits
+through official `89479dd09` over fork `5ce564236`. Resolved conflicts in
+the FPGA Makefile and Tcl flow while retaining Nexys Video and adding Qmtech
+K7. Seven standard plus two FPGA configuration lints, 16 directed RTL tests
+and all-file pre-commit checks passed. See the
+[integration record](experiments/2026-10-20-upstream-integration.md).
+No new bitstream or board test was performed for this merge; the hardware
+boot below remains scoped to `82d0b80f7`.
+
 Latest implementation result (2026-10-20): generated the Nexys Video Vivado
 bitstream from `main` at `82d0b80f7`, at 20 MHz, with routed timing PASS
 (WNS +0.303 ns, WHS +0.021 ns) and successful bitstream generation.
