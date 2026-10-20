@@ -82,3 +82,11 @@ The proposed [independent coherence homes](decisions/0009-banked-coherence-trans
 and [their experiment](experiments/2026-10-20-banked-coherence.md) permit
 multiple active transactions in distinct homes; validation is separate from
 the completed one-home Linux cache-to-cache result.
+
+The proposed [pipelined line transfers](decisions/0010-pipelined-cache-line-bursts.md)
+and [their experiment](experiments/2026-10-20-cache-line-bursts.md) add optional
+AHB bursts below MSI, with separate protocol/performance/Linux evidence.
+
+The proposed [optional MESI state](decisions/0011-optional-mesi-exclusive-state.md)
+and [its experiment](experiments/2026-10-20-mesi.md) add clean-exclusive data
+permission without changing the default MSI protocol or single-core bypass.

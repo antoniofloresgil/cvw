@@ -146,3 +146,24 @@ controllers, fixed total private capacity, one blocking request per hart and
 a shared AHB memory port. Cross-home LR/SC clearing and global AMO admission
 retain atomic ordering. See [ADR 0009](decisions/0009-banked-coherence-transactions.md)
 for mapping, invariants, limitations and the independent verification scope.
+
+## Optional pipelined line transfers
+
+`CACHE_BURSTS` enables `ahblineburst` for complete D fills/writebacks and
+coherently clean instruction-line prefetch, without changing core SINGLE
+requests. `ahbburstmux` retains a bank's memory grant through the line and
+separates address/data ownership. Disabled operation keeps the existing port
+bridge; one-core generate removes both. See
+[ADR 0010](decisions/0010-pipelined-cache-line-bursts.md) for error recovery,
+mixed-geometry IFU snooping and the bounded-grant contract.
+
+## Optional clean-exclusive private data permission
+
+`MESI=1` extends the private MSI topology with E. A successful data fill with
+no matching peer gets E; a peer read downgrades E to S only on success. Local
+ordinary E stores become M through the existing commit/invalidation sideband
+when `LOCAL_DCACHE_WRITES` is enabled. Instruction copies do not count as D
+sharers; stores still invalidate them. One and multiple address homes use the
+same rules. `MESI=0` retains MSI; NCORES=1 strips coherence. See
+[ADR 0011](decisions/0011-optional-mesi-exclusive-state.md) and the
+[separate verification record](experiments/2026-10-20-mesi.md).

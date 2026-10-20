@@ -6,12 +6,14 @@ module ahbmsifabric import cvw::*; #(
   parameter cvw_t P,
   parameter int unsigned NCORES = 2,
   parameter int unsigned BANKS = 2,
-  parameter int unsigned DCACHE_WORDS = 256,
+  parameter int unsigned DCACHE_WORDS = 8192/(P.AHBW/8),
   parameter int unsigned DCACHE_LINE_WORDS = 1,
   parameter bit PRIVATE_ICACHE = 0,
-  parameter int unsigned ICACHE_WORDS = 256,
+  parameter int unsigned ICACHE_WORDS = 8192/(P.AHBW/8),
   parameter int unsigned ICACHE_LINE_WORDS = 1,
   parameter bit CACHE_TO_CACHE = 0,
+  parameter bit CACHE_BURSTS = 0,
+  parameter bit MESI = 0,
   parameter bit LOCAL_DCACHE_READS = 0,
   parameter bit LOCAL_DCACHE_WRITES = 0
 )(
@@ -166,7 +168,8 @@ module ahbmsifabric import cvw::*; #(
       .HOWNER(Owner), .HADDR(A), .HWDATA(WD), .HWSTRB(WS), .HWRITE(Wr), .HMASTLOCK(Lock),
       .HSIZE(Sz), .HBURST(Burst), .HPROT(Pr), .HTRANS(Tr), .HRDATA(RD), .HREADY(Ready), .HRESP(Resp));
     ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(DW), .LINE_WORDS(DCACHE_LINE_WORDS),
-      .CACHE_TO_CACHE(CACHE_TO_CACHE), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
+      .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI),
+      .IFILL_WORDS(PRIVATE_ICACHE ? ICACHE_LINE_WORDS : 1), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
       .HCLK, .HRESETn, .CacheReadAddr, .CacheReadHit, .CacheReadData,
       .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
       .UpHOWNER(Owner), .UpHADDR(A), .UpHWDATA(WD), .UpHWSTRB(WS), .UpHWRITE(Wr), .UpHMASTLOCK(Lock),
@@ -177,6 +180,13 @@ module ahbmsifabric import cvw::*; #(
   end
   // Only the physical port serializes. A bank retains its state while another
   // bank uses RAM; cache-to-cache completion need not wait for this arbiter.
+  if (CACHE_BURSTS) begin : burstport
+    ahbburstmux #(.P(P), .MASTERS(BANKS)) memorybus(
+      .HCLK, .HRESETn, .MAddr(MemAddr), .MWData(MemWData), .MStrb(MemStrb), .MWrite(MemWrite),
+      .MSize(MemSize), .MBurst(MemBurst), .MProt(MemProt), .MTrans(MemTrans),
+      .MRData(MemRData), .MReady(MemReady), .MResp(MemResp),
+      .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HRDATA, .HREADY, .HRESP);
+  end else begin : scalarport
   ahbmulticore #(.P(P), .NCORES(BANKS)) memorybus(
     .HCLK, .HRESETn, .ReservationClear('0), .CoreHADDR(MemAddr), .CoreHWDATA(MemWData),
     .CoreHWSTRB(MemStrb), .CoreHWRITE(MemWrite), .CoreHMASTLOCK('0), .CoreHSIZE(MemSize),
@@ -184,6 +194,7 @@ module ahbmsifabric import cvw::*; #(
     .CoreHRDATA(MemRData), .CoreHREADY(MemReady), .CoreHRESP(MemResp), .CoreSCFail(),
     .CacheReadAddr(), .CacheReadHit('0), .CacheReadData('0), .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(),
     .HOWNER(), .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HMASTLOCK(), .HSIZE, .HBURST, .HPROT, .HTRANS, .HRDATA, .HREADY, .HRESP);
+  end
   assign HMASTLOCK = AtomicLock;
   initial begin
     assert (BANKS >= 2 && (BANKS & (BANKS-1)) == 0 && NCORES >= 2)

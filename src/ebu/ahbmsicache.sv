@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 // Private, direct-mapped write-back data-cache banks; parameterizable multiword lines.
 // The arbiter orders atomics, misses and permission acquisition. Optional local
-// read/M-write ports overlap independent traffic; each M write broadcasts a
+// read/exclusive-write ports overlap independent traffic; each M write broadcasts a
 // commit through the arbiter for reservation and instruction invalidation.
-// BusRd: flush a modified snooper, downgrade to S, then fill requester in S.
+// BusRd: flush M, downgrade a data peer to S; MESI grants E without a peer.
 // BusRdX/BusUpgr: flush a modified snooper if any, invalidate peers, take M.
 // IFU reads do not allocate, but snoop all banks (including their own hart).
 module ahbmsicache import cvw::*; #(
   parameter cvw_t P,
   parameter int unsigned NCORES = 2,
-  parameter int unsigned WORDS = 256,
+  parameter int unsigned WORDS = 8192/(P.AHBW/8),
   parameter int unsigned LINE_WORDS = 1,
   parameter bit CACHE_TO_CACHE = 0,
+  parameter bit CACHE_BURSTS = 0,
+  parameter bit MESI = 0,
+  parameter int unsigned IFILL_WORDS = 1,
   parameter bit LOCAL_READS = 0,
   parameter bit LOCAL_WRITES = 0
 )(
@@ -51,9 +54,9 @@ module ahbmsicache import cvw::*; #(
   localparam BEAT_BITS = LINE_BITS > 0 ? LINE_BITS : 1;
   localparam TAG = P.PA_BITS - LINE_OFFSET - INDEX;
   localparam HART_BITS = NCORES > 1 ? $clog2(NCORES) : 1;
-  typedef enum logic [1:0] {I, S, M} msi_t;
+  typedef enum logic [1:0] {I, S, M, E} msi_t;
   typedef enum logic [3:0] {IDLE, LOOKUP, SNOOP, ADDRESS, DATA, COMPLETE, REPLY, ERROR_REPLY} state_t;
-  typedef enum logic [1:0] {EVICT, FLUSH, FILL, BYPASS} transfer_t;
+  typedef enum logic [2:0] {EVICT, FLUSH, FILL, BYPASS, IFILL} transfer_t;
   // One independently tagged/stateful data bank per hart, not a shared cache.
   msi_t [NCORES-1:0][N_LINES-1:0] States;
   logic [TAG-1:0] Tags[NCORES][N_LINES];
@@ -61,7 +64,7 @@ module ahbmsicache import cvw::*; #(
   state_t State;
   transfer_t Transfer;
   logic [HART_BITS-1:0] Owner, Snooper, FlushOwner, Supplier;
-  logic AnyHit;
+  logic AnyHit, PeerHit;
   logic [P.PA_BITS-1:0] Addr;
   logic [INDEX-1:0] Index;
   logic [TAG-1:0] Tag;
@@ -79,6 +82,59 @@ module ahbmsicache import cvw::*; #(
   logic [3:0] Prot;
   logic [NCORES-1:0] Hit;
 
+  localparam MAX_WORDS = LINE_WORDS > IFILL_WORDS ? LINE_WORDS : IFILL_WORDS;
+  localparam BC = $clog2(MAX_WORDS+1);
+  localparam IO = OFFSET+$clog2(IFILL_WORDS);
+  logic [P.PA_BITS-1:0] SAddr, BAddr;
+  logic [P.AHBW-1:0] SWData, BWData;
+  logic [P.XLEN/8-1:0] SStrb, BStrb;
+  logic SWrite, BWrite, BurstDone, BurstError, UseBurst;
+  logic [2:0] SSize, BSize, BBurst;
+  logic [3:0] SProt, BProt;
+  logic [1:0] STrans, BTrans;
+  logic [P.AHBW-1:0] BurstReadLine[MAX_WORDS], BurstWriteLine[MAX_WORDS];
+  logic IBufferValid, IFillClean;
+  logic [P.PA_BITS-1:0] IBufferBase;
+  logic [P.AHBW-1:0] IBuffer[IFILL_WORDS];
+  logic [P.PA_BITS-1:0] ProbeIAddr;
+  always_comb begin
+    IFillClean = 1'b1;
+    ProbeIAddr = '0;
+    // Prefetch IFU words only when the ENTIRE I line is current in RAM.
+    // Other D lines in a larger I region may have different dirty owners.
+    for (int w = 0; w < IFILL_WORDS; w++) begin
+      ProbeIAddr = ((Addr >> IO) << IO) + (P.PA_BITS'(w) << OFFSET);
+      for (int h = 0; h < NCORES; h++)
+        if (States[h][ProbeIAddr[LINE_OFFSET +: INDEX]] == M &&
+            Tags[h][ProbeIAddr[LINE_OFFSET +: INDEX]] == ProbeIAddr[P.PA_BITS-1:LINE_OFFSET+INDEX])
+          IFillClean = 1'b0;
+    end
+  end
+  assign UseBurst = CACHE_BURSTS &&
+    (Transfer == IFILL || (LINE_WORDS > 1 &&
+     (Transfer == EVICT || Transfer == FLUSH || (Transfer == FILL && Prot[0]))));
+  for (genvar w = 0; w < MAX_WORDS; w++) begin : writebuffer
+    if (w < LINE_WORDS)
+      assign BurstWriteLine[w] = Lines[Transfer == EVICT ? Owner : FlushOwner][data_index(Index, w)];
+    else assign BurstWriteLine[w] = '0;
+  end
+  if (CACHE_BURSTS && MAX_WORDS > 1) begin : burst
+    ahblineburst #(.P(P), .MAX_WORDS(MAX_WORDS)) engine(
+      .HCLK, .HRESETn, .Start(UseBurst && State == ADDRESS), .Write(SWrite), .Base(SAddr),
+      .WordCount(BC'(Transfer == IFILL ? IFILL_WORDS : LINE_WORDS)), .Prot(SProt),
+      .WriteLine(BurstWriteLine), .ReadLine(BurstReadLine), .Done(BurstDone), .Error(BurstError),
+      .HADDR(BAddr), .HWDATA(BWData), .HWSTRB(BStrb), .HWRITE(BWrite), .HSIZE(BSize),
+      .HBURST(BBurst), .HPROT(BProt), .HTRANS(BTrans), .HRDATA, .HREADY, .HRESP);
+    assign {HADDR, HWDATA, HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS} = UseBurst ?
+      {BAddr, BWData, BStrb, BWrite, BSize, BBurst, BProt, BTrans} :
+      {SAddr, SWData, SStrb, SWrite, SSize, 3'b000, SProt, STrans};
+  end else begin : scalar
+    assign {HADDR, HWDATA, HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS} =
+      {SAddr, SWData, SStrb, SWrite, SSize, 3'b000, SProt, STrans};
+    assign {BAddr, BWData, BStrb, BWrite, BSize, BBurst, BProt, BTrans, BurstDone, BurstError} = '0;
+    for (genvar w = 0; w < MAX_WORDS; w++) assign BurstReadLine[w] = '0;
+  end
+
   if (LOCAL_READS || LOCAL_WRITES) begin : readprobes
     logic [NCORES-1:0] ProbeHit;
     always_comb begin
@@ -91,7 +147,8 @@ module ahbmsicache import cvw::*; #(
         CacheReadHit[h] = LOCAL_READS && ProbeHit[h];
         CacheReadData[h] = LOCAL_READS ? Lines[h][CacheReadAddr[h][OFFSET +: WORD_INDEX]] : '0;
         CacheWriteHit[h] = LOCAL_WRITES && ProbeHit[h] &&
-          States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == M;
+          (States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == M ||
+           (MESI && States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == E));
       end
     end
   end else begin : noreadprobes
@@ -109,10 +166,12 @@ module ahbmsicache import cvw::*; #(
   always_comb begin
     DirtyPeer = 1'b0;
     AnyHit = 1'b0;
+    PeerHit = 1'b0;
     Supplier = '0;
     Snooper = '0;
     for (int h = 0; h < NCORES; h++) begin
       Hit[h] = States[h][Index] != I && Tags[h][Index] == Tag;
+      if (Hit[h] && HART_BITS'(h) != Owner) PeerHit = 1'b1;
       if (Hit[h] && !AnyHit) begin
         AnyHit = 1'b1;
         Supplier = HART_BITS'(h);
@@ -125,12 +184,14 @@ module ahbmsicache import cvw::*; #(
     end
   end
   assign UpHREADY = HRESETn && (State == IDLE || State == REPLY);
-  assign HTRANS = HRESETn && State == ADDRESS ? 2'b10 : 2'b00;
-  assign HBURST = 3'b000;
+  assign STrans = HRESETn && State == ADDRESS ? 2'b10 : 2'b00;
+
   assign HMASTLOCK = UpHMASTLOCK;
 
   always_ff @(posedge HCLK) begin
     if (!HRESETn) begin
+      IBufferValid <= 1'b0;
+      IBufferBase <= '0;
       State <= IDLE;
       Beat <= '0;
       Transfer <= BYPASS;
@@ -146,12 +207,12 @@ module ahbmsicache import cvw::*; #(
       Prot <= '0;
       UpHRDATA <= '0;
       UpHRESP <= 1'b0;
-      HADDR <= '0;
-      HWDATA <= '0;
-      HWSTRB <= '0;
-      HWRITE <= 1'b0;
-      HSIZE <= '0;
-      HPROT <= '0;
+      SAddr <= '0;
+      SWData <= '0;
+      SStrb <= '0;
+      SWrite <= 1'b0;
+      SSize <= '0;
+      SProt <= '0;
       States <= '0;
     end else begin
       case (State)
@@ -160,6 +221,8 @@ module ahbmsicache import cvw::*; #(
           if (UpHTRANS[1]) begin
             assert (UpHTRANS == 2'b10 && UpHBURST == 0 && int'(UpHOWNER) < NCORES)
               else $fatal(1, "MSI requires serialized SINGLE transfers and a valid owner");
+            if (UpHWRITE || UpHPROT[0] ||
+                UpHADDR[P.PA_BITS-1:IO] != IBufferBase[P.PA_BITS-1:IO]) IBufferValid <= 1'b0;
             Addr <= UpHADDR;
             Owner <= UpHOWNER;
             Size <= UpHSIZE;
@@ -175,12 +238,12 @@ module ahbmsicache import cvw::*; #(
           WriteData <= UpHWDATA;
           Strobes <= UpHWSTRB;
           if (Cacheable && Prot[0] && !Hit[Owner] && States[Owner][Index] == M) begin
-            HADDR <= {Tags[Owner][Index], Index, {LINE_OFFSET{1'b0}}};
-            HWDATA <= Lines[Owner][data_index(Index, 0)];
-            HWSTRB <= '1;
-            HWRITE <= 1'b1;
-            HSIZE <= 3'(OFFSET);
-            HPROT <= 4'b0011;
+            SAddr <= {Tags[Owner][Index], Index, {LINE_OFFSET{1'b0}}};
+            SWData <= Lines[Owner][data_index(Index, 0)];
+            SStrb <= '1;
+            SWrite <= 1'b1;
+            SSize <= 3'(OFFSET);
+            SProt <= 4'b0011;
             Transfer <= EVICT;
             State <= ADDRESS;
           end else State <= SNOOP;
@@ -195,16 +258,22 @@ module ahbmsicache import cvw::*; #(
             Filled <= 1'b1;
             State <= COMPLETE;
           end else if (Cacheable && DirtyPeer) begin
-            HADDR <= {Addr[P.PA_BITS-1:LINE_OFFSET], {LINE_OFFSET{1'b0}}};
-            HWDATA <= Lines[Snooper][data_index(Index, 0)];
+            SAddr <= {Addr[P.PA_BITS-1:LINE_OFFSET], {LINE_OFFSET{1'b0}}};
+            SWData <= Lines[Snooper][data_index(Index, 0)];
             Beat <= '0;
-            HWSTRB <= '1;
-            HWRITE <= 1'b1;
-            HSIZE <= 3'(OFFSET);
-            HPROT <= 4'b0011;
+            SStrb <= '1;
+            SWrite <= 1'b1;
+            SSize <= 3'(OFFSET);
+            SProt <= 4'b0011;
             FlushOwner <= Snooper;
             Transfer <= FLUSH;
             State <= ADDRESS;
+          end else if (CACHE_BURSTS && Cacheable && !Write && !Prot[0] && IBufferValid &&
+              Addr[P.PA_BITS-1:IO] == IBufferBase[P.PA_BITS-1:IO]) begin
+            FillData <= IBuffer[(int'(Addr) >> OFFSET) & (IFILL_WORDS-1)];
+            if (((int'(Addr) >> OFFSET) & (IFILL_WORDS-1)) == IFILL_WORDS-1) IBufferValid <= 1'b0;
+            Filled <= 1'b1;
+            State <= COMPLETE;
           end else if (CACHE_TO_CACHE && Cacheable && !Write && !Prot[0] && AnyHit) begin
             // After an M->S intervention, subsequent IFU words can use the
             // clean supplier directly. IFU never allocates a D line.
@@ -212,43 +281,59 @@ module ahbmsicache import cvw::*; #(
             Filled <= 1'b1;
             State <= COMPLETE;
           end else if (!Cacheable) begin
-            HADDR <= Addr;
-            HWDATA <= WriteData;
-            HWSTRB <= Strobes;
-            HWRITE <= Write;
-            HSIZE <= Size;
-            HPROT <= Prot;
+            SAddr <= Addr;
+            SWData <= WriteData;
+            SStrb <= Strobes;
+            SWrite <= Write;
+            SSize <= Size;
+            SProt <= Prot;
             Transfer <= BYPASS;
             State <= ADDRESS;
+          end else if (CACHE_BURSTS && IFILL_WORDS > 1 && !Write && !Prot[0] && IFillClean) begin
+            SAddr <= (Addr >> IO) << IO;
+            SWrite <= 1'b0; SWData <= '0; SStrb <= '0;
+            SSize <= 3'(OFFSET); SProt <= Prot;
+            IBufferValid <= 1'b0;
+            Transfer <= IFILL;
+            State <= ADDRESS;
           end else if (!Hit[Owner] || !Prot[0]) begin
-            HADDR <= Prot[0] ? {Addr[P.PA_BITS-1:LINE_OFFSET], {LINE_OFFSET{1'b0}}} :
+            SAddr <= Prot[0] ? {Addr[P.PA_BITS-1:LINE_OFFSET], {LINE_OFFSET{1'b0}}} :
               {Addr[P.PA_BITS-1:OFFSET], {OFFSET{1'b0}}};
             Beat <= '0;
-            HWRITE <= 1'b0;
-            HWDATA <= '0;
-            HWSTRB <= '0;
-            HSIZE <= 3'(OFFSET);
-            HPROT <= Prot;
+            SWrite <= 1'b0;
+            SWData <= '0;
+            SStrb <= '0;
+            SSize <= 3'(OFFSET);
+            SProt <= Prot;
             Transfer <= FILL;
             State <= ADDRESS;
           end else State <= COMPLETE;
         end
-        ADDRESS: if (HREADY) State <= DATA;
-        DATA: if (HREADY) begin
-          if (HRESP) begin
+        ADDRESS: if (UseBurst || HREADY) State <= DATA;
+        DATA: if (UseBurst ? BurstDone : HREADY) begin
+          if (UseBurst ? BurstError : HRESP) begin
             // Preserve dirty ownership on a failed writeback. Never install
             // a failed fill or grant M before its required operations succeed.
             UpHRESP <= 1'b1;
             UpHRDATA <= '0;
             State <= ERROR_REPLY;
           end else case (Transfer)
-            EVICT, FLUSH: begin
+            EVICT, FLUSH: if (UseBurst) begin
+              if (Transfer == EVICT) States[Owner][Index] <= I;
+              else States[FlushOwner][Index] <= S;
+              if (CACHE_TO_CACHE && Transfer == FLUSH) begin
+                for (int w = 0; w < LINE_WORDS; w++) FillLine[w] <= BurstWriteLine[w];
+                FillData <= BurstWriteLine[(int'(Addr) >> OFFSET) & (LINE_WORDS-1)];
+                Filled <= 1'b1;
+                State <= COMPLETE;
+              end else State <= SNOOP;
+            end else begin
               if (CACHE_TO_CACHE && Transfer == FLUSH) begin
                 // MSI shared copies must be clean: acknowledge every RAM
                 // writeback beat, but forward those same words without reread.
-                FillLine[Beat] <= HWDATA;
+                FillLine[Beat] <= SWData;
                 if (int'(Beat) == ((int'(Addr) >> OFFSET) & (LINE_WORDS-1)))
-                  FillData <= HWDATA;
+                  FillData <= SWData;
               end
               if (int'(Beat) == LINE_WORDS-1) begin
                 if (Transfer == EVICT) States[Owner][Index] <= I;
@@ -260,12 +345,25 @@ module ahbmsicache import cvw::*; #(
                 end else State <= SNOOP;
               end else begin
                 Beat <= Beat + 1'b1;
-                HADDR <= HADDR + (P.PA_BITS'(1) << OFFSET);
-                HWDATA <= Lines[Transfer == EVICT ? Owner : FlushOwner][data_index(Index, int'(Beat)+1)];
+                SAddr <= SAddr + (P.PA_BITS'(1) << OFFSET);
+                SWData <= Lines[Transfer == EVICT ? Owner : FlushOwner][data_index(Index, int'(Beat)+1)];
                 State <= ADDRESS;
               end
             end
-            FILL: begin
+            IFILL: begin
+              for (int w = 0; w < IFILL_WORDS; w++) IBuffer[w] <= BurstReadLine[w];
+              IBufferBase <= (Addr >> IO) << IO;
+              // This buffer serves the current ordered I-line refill only.
+              IBufferValid <= ((int'(Addr) >> OFFSET) & (IFILL_WORDS-1)) != IFILL_WORDS-1;
+              FillData <= BurstReadLine[(int'(Addr) >> OFFSET) & (IFILL_WORDS-1)];
+              Filled <= 1'b1;
+              State <= COMPLETE;
+            end
+            FILL: if (UseBurst) begin
+              for (int w = 0; w < LINE_WORDS; w++) FillLine[w] <= BurstReadLine[w];
+              Filled <= 1'b1;
+              State <= COMPLETE;
+            end else begin
               FillData <= HRDATA;
               FillLine[Beat] <= HRDATA;
               if (!Prot[0] || int'(Beat) == LINE_WORDS-1) begin
@@ -273,7 +371,7 @@ module ahbmsicache import cvw::*; #(
                 State <= COMPLETE;
               end else begin
                 Beat <= Beat + 1'b1;
-                HADDR <= HADDR + (P.PA_BITS'(1) << OFFSET);
+                SAddr <= SAddr + (P.PA_BITS'(1) << OFFSET);
                 State <= ADDRESS;
               end
             end
@@ -299,24 +397,32 @@ module ahbmsicache import cvw::*; #(
               for (int h = 0; h < NCORES; h++)
                 if (HART_BITS'(h) != Owner && Hit[h]) States[h][Index] <= I;
             end else if (Filled) begin
-              States[Owner][Index] <= S;
+              States[Owner][Index] <= MESI && !PeerHit ? E : S;
             end
+            // A successful data read shares a clean exclusive peer. IFU
+            // reads do not allocate D copies; stores still invalidate I banks.
+            if (MESI && !Write)
+              for (int h = 0; h < NCORES; h++)
+                if (HART_BITS'(h) != Owner && Hit[h] && States[h][Index] == E)
+                  States[h][Index] <= S;
           end
           State <= REPLY;
         end
         ERROR_REPLY: State <= REPLY; // AHB ERROR: low-ready then high-ready.
         default: State <= IDLE;
       endcase
-      // An M-hit local commit only changes its owner's bytes. Ownership is
+      // An M/E-hit local commit promotes E to M and changes its owner's bytes. Ownership is
       // already exclusive; the arbiter broadcasts reservation/I invalidation.
       for (int h = 0; h < NCORES; h++)
         if (CacheWriteCommit[h]) begin
+          IBufferValid <= 1'b0;
           assert (LOCAL_WRITES && CacheWriteHit[h])
-            else $fatal(1, "Local store without matching M permission");
+            else $fatal(1, "Local store without exclusive permission");
           assert ((State == IDLE || State == REPLY) ||
             (Owner != HART_BITS'(h) &&
              Addr[P.PA_BITS-1:LINE_OFFSET] != CacheReadAddr[h][P.PA_BITS-1:LINE_OFFSET]))
             else $fatal(1, "Local M store raced a global owner or snoop");
+          States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] <= M;
           for (int b = 0; b < P.XLEN/8; b++)
             if (CacheWriteStrb[h][b])
               Lines[h][CacheReadAddr[h][OFFSET +: WORD_INDEX]][8*b +: 8] <= CacheWriteData[h][8*b +: 8];
@@ -331,6 +437,8 @@ module ahbmsicache import cvw::*; #(
     end
   end
   initial begin
+    assert (IFILL_WORDS >= 1 && (IFILL_WORDS & (IFILL_WORDS-1)) == 0)
+      else $fatal(1, "IFU burst line must be a power of two");
     assert (NCORES >= 2 && P.AHBW == P.XLEN && (P.XLEN == 32 || P.XLEN == 64))
       else $fatal(1, "MSI requires at least two harts and XLEN-wide AHB");
     assert (LINE_WORDS >= 1 && (LINE_WORDS & (LINE_WORDS-1)) == 0 &&

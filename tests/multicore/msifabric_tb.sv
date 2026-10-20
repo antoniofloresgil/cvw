@@ -10,6 +10,8 @@ module msifabric_tb import cvw::*; #(
     parameter int ICACHE_LINE_WORDS = 4,
     parameter bit PRIVATE_ICACHE = 1,
     parameter int ICACHE_WORDS = 32,
+    parameter bit CACHE_BURSTS = 0,
+    parameter bit MESI = 0,
     parameter bit CACHE_TO_CACHE = 1,
     parameter bit LOCAL_DCACHE_READS = 0,
     parameter bit LOCAL_DCACHE_WRITES = 0
@@ -31,18 +33,18 @@ module msifabric_tb import cvw::*; #(
     logic [P.AHBW-1:0] downwdata, downrdata;
     logic [P.XLEN/8-1:0] downstrb;
     logic downwrite, downready, downresp;
-    logic [2:0] downsize;
+    logic [2:0] downsize, downburst;
     logic [1:0] downtrans;
     ahbmsifabric #(.P(P), .NCORES(NCORES), .BANKS(BANKS),
         .DCACHE_WORDS(WORDS), .DCACHE_LINE_WORDS(LINE_WORDS),
         .PRIVATE_ICACHE(PRIVATE_ICACHE), .ICACHE_WORDS(ICACHE_WORDS), .ICACHE_LINE_WORDS(ICACHE_LINE_WORDS),
-        .CACHE_TO_CACHE(CACHE_TO_CACHE), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS),
+        .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS),
         .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(
         .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHMASTLOCK,
         .CoreHSIZE, .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHATOMIC,
         .CoreHRDATA, .CoreHREADY, .CoreHRESP, .CoreSCFail,
         .HADDR(downaddr), .HWDATA(downwdata), .HWSTRB(downstrb), .HWRITE(downwrite), .HMASTLOCK(),
-        .HSIZE(downsize), .HBURST(), .HPROT(), .HTRANS(downtrans),
+        .HSIZE(downsize), .HBURST(downburst), .HPROT(), .HTRANS(downtrans),
         .HRDATA(downrdata), .HREADY(downready), .HRESP(downresp));
     logic [P.XLEN-1:0] mem[4096], reference[4096];
     logic pending = 0, writeq, errorq, error_first = 0;
@@ -64,37 +66,70 @@ module msifabric_tb import cvw::*; #(
     assign downrdata = mem[addrq[OFFSET +: 12]];
     always @(posedge HCLK) begin
         if (!HRESETn) begin
-            pending <= 0;
-            error_first <= 0;
-            delayq <= 0;
-        end else if (pending) begin
-            if (delayq != 0) delayq <= delayq - 1;
-            else if (errorq && !error_first) error_first <= 1;
-            else begin
-                if (writeq && !errorq) begin
-                    assert (&downstrb) else $fatal(1, "Incomplete dirty writeback data phase");
+            pending <= 0; error_first <= 0; delayq <= 0;
+        end else begin
+            if (pending && delayq != 0) delayq <= delayq-1;
+            if (pending && delayq == 0 && errorq && !error_first) error_first <= 1;
+            if (downready) begin
+                if (pending && writeq && !errorq) begin
+                    if (addrq != P.PA_BITS'('h10000001))
+                        assert (&downstrb) else $fatal(1, "Incomplete dirty writeback data phase");
                     for (int b = 0; b < P.XLEN/8; b++)
                         if (downstrb[b]) mem[addrq[OFFSET +: 12]][8*b +: 8] <= downwdata[8*b +: 8];
                 end
-                pending <= 0;
+                pending <= downtrans[1];
+                if (downtrans[1]) begin
+                    addrq <= downaddr; writeq <= downwrite;
+                    errorq <= downaddr == fault_addr && (downwrite ? fault_write : fault_read);
+                    error_first <= 0; delayq <= LATENCY;
+                    transfers <= transfers+1;
+                    if (downwrite) writebacks <= writebacks+1;
+                    if (downaddr == P.PA_BITS'('h10000001)) begin
+                        mmio <= mmio+1;
+                        assert (downsize == 0 && downburst == 0 && downtrans == 2)
+                            else $fatal(1, "MMIO burst or access size changed");
+                    end else
+                        assert (downsize == 3'(OFFSET) && downaddr[OFFSET-1:0] == 0)
+                            else $fatal(1, "Fill/writeback must use aligned words");
+                end
             end
-        end else if (downtrans[1]) begin
-            pending <= 1;
-            addrq <= downaddr;
-            writeq <= downwrite;
-            errorq <= downaddr == fault_addr && (downwrite ? fault_write : fault_read);
-            error_first <= 0;
-            delayq <= LATENCY;
-            transfers <= transfers + 1;
-            if (downwrite) writebacks <= writebacks + 1;
-            if (downaddr == P.PA_BITS'('h10000001)) begin
-                mmio <= mmio + 1;
-                assert (downsize == 0) else $fatal(1, "MMIO access size changed");
-            end else begin
-                assert (downsize == 3'(OFFSET) && downaddr[OFFSET-1:0] == 0)
-                    else $fatal(1, "MSI fill/writeback must use a whole aligned word");
-
+        end
+    end
+    // Check real sequential transfers, control/data stability and boundaries.
+    int sequential = 0;
+    logic waiting = 0, write_wait = 0;
+    logic [P.PA_BITS-1:0] held_addr, previous_addr;
+    logic [P.AHBW-1:0] held_data;
+    logic [P.XLEN/8-1:0] held_strb;
+    logic [2:0] previous_burst;
+    logic [1:0] held_trans;
+    logic previous_valid = 0;
+    always @(posedge HCLK) begin
+        if (!HRESETn) begin
+            waiting <= 0; write_wait <= 0; previous_valid <= 0;
+        end else begin
+            if (waiting && !downresp)
+                assert (downaddr == held_addr && downtrans == held_trans)
+                    else $fatal(1, "Address changed during AHB wait");
+            if (write_wait)
+                assert (downwdata == held_data && downstrb == held_strb)
+                    else $fatal(1, "Write data changed during AHB wait");
+            waiting <= !downready && !downresp;
+            write_wait <= pending && writeq && !downready;
+            held_addr <= downaddr; held_trans <= downtrans;
+            held_data <= downwdata; held_strb <= downstrb;
+            if (downready && downtrans[1]) begin
+                if (downtrans == 3) begin
+                    sequential <= sequential+1;
+                    assert (previous_valid && downburst != 0 && downburst == previous_burst &&
+                        downaddr == previous_addr+(P.PA_BITS'(1) << OFFSET) &&
+                        downaddr[P.PA_BITS-1:10] == previous_addr[P.PA_BITS-1:10])
+                        else $fatal(1, "Malformed or cross-1KiB sequential beat");
+                end
+                previous_valid <= 1;
+                previous_addr <= downaddr; previous_burst <= downburst;
             end
+            if (downready && downresp) previous_valid <= 0;
         end
     end
     task automatic access(input int hart, input bit wr, input logic [P.PA_BITS-1:0] address,
@@ -131,6 +166,19 @@ module msifabric_tb import cvw::*; #(
         input logic [1:0] op = 0, input bit sc_failed = 0);
         access(h, 1, BASE + (P.PA_BITS'(word_index) << OFFSET), value, '1, 0, op, 0, 0, sc_failed);
     endtask
+    int coherence_requests = 0;
+    logic [BANKS-1:0][NCORES-1:0][WORDS/BANKS/LINE_WORDS-1:0][1:0] TestStates;
+    logic [BANKS-1:0] TestLookup;
+    for (genvar b = 0; b < BANKS; b++) begin : mesiprobes
+        assign TestStates[b] = dut.banks[b].cache.States;
+        assign TestLookup[b] = dut.banks[b].cache.State == 1;
+    end
+    always @(posedge HCLK) if (HRESETn)
+        coherence_requests <= coherence_requests+$countones(TestLookup);
+    function automatic int line_state(input int hart, input int word_index);
+        return int'(TestStates[(word_index/STRIDE)%BANKS][hart][(word_index/LINE_WORDS) % (WORDS/BANKS/LINE_WORDS)]);
+    endfunction
+    `include "mesi_checks.vh"
     initial begin
         bit slow_done, fast_first;
         for (int w = 0; w < 4096; w++) begin
@@ -139,6 +187,7 @@ module msifabric_tb import cvw::*; #(
         end
         repeat (3) @(negedge HCLK);
         HRESETn = 1;
+        mesi_checks();
         $display("BANKED: parallel ownership and RAM miss"); $fflush();
         store(0, STRIDE, 'h1234); reference[STRIDE] = 'h1234;
         slow_done = 0; fast_first = 0;
@@ -193,6 +242,15 @@ module msifabric_tb import cvw::*; #(
                 load(3, 12*WORDS+3*STRIDE, reference[12*WORDS+3*STRIDE]);
             join
             assert (peak_active >= 4) else $fatal(1, "Four homes did not become active together");
+        end
+        if (CACHE_BURSTS && PRIVATE_ICACHE && ICACHE_LINE_WORDS > LINE_WORDS) begin
+            // The first D line is absent/clean while a later D line in the
+            // same I refill has a modified owner. Whole-region snooping must
+            // prevent a RAM burst from exposing stale instruction words.
+            store(1, 8*WORDS+LINE_WORDS, 'hc0de);
+            reference[8*WORDS+LINE_WORDS] = 'hc0de;
+            load(0, 8*WORDS, reference[8*WORDS], 0, 1);
+            load(0, 8*WORDS+LINE_WORDS, 'hc0de, 0, 1);
         end
         $display("BANKED: writeback errors"); $fflush();
         // A partial intervention keeps the dirty owner and never installs a
@@ -260,6 +318,10 @@ module msifabric_tb import cvw::*; #(
         HRESETn = 0; repeat (3) @(negedge HCLK); HRESETn = 1;
         load(0, 0, mem[0]);
         load(1, STRIDE, mem[STRIDE]);
+        if (CACHE_BURSTS && (LINE_WORDS > 1 || (PRIVATE_ICACHE && ICACHE_LINE_WORDS > 1)))
+            assert (sequential > 0) else $fatal(1, "Burst option emitted no sequential transfers");
+        if (!CACHE_BURSTS) assert (sequential == 0) else $fatal(1, "Disabled burst path emitted SEQ");
+        $display("AHB SEQ beats: %0d", sequential);
         $display("PASS: banked MSI RV%0d harts=%0d banks=%0d overlap=%0d peak=%0d: directed + 2000 random operations", P.XLEN, NCORES, BANKS, overlap, peak_active);
         $finish;
     end

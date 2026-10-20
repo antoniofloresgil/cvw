@@ -32,19 +32,23 @@ def main():
     parser.add_argument("--cores", type=int, default=2)
     parser.add_argument("--cache-mode", choices=["shared", "msi"], default="shared")
     parser.add_argument("--private-icache", action="store_true")
-    parser.add_argument("--icache-words", type=int, default=256)
+    parser.add_argument("--icache-words", type=int, default=1024)
     parser.add_argument("--coherence-banks", type=int, default=1)
+    parser.add_argument("--mesi", action="store_true", help="Enable exclusive clean state in private data caches")
+    parser.add_argument("--cache-bursts", action="store_true", help="Pipeline private-cache line transfers on AHB")
     parser.add_argument("--cache-to-cache", action="store_true", help="Direct private-cache data supply; MSI mode only")
     parser.add_argument("--local-dcache-writes", action="store_true")
     parser.add_argument("--local-dcache-reads", action="store_true")
     parser.add_argument("--cache-line-words", type=int, default=1, help="AHB words per private D line; total capacity unchanged")
     parser.add_argument("--icache-line-words", type=int, default=1, help="AHB words per private I line")
-    parser.add_argument("--cache-words", type=int, default=256)
+    parser.add_argument("--cache-words", type=int)
     parser.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args()
+    if args.cache_words is None:
+        args.cache_words = 1024 if args.cache_mode == "msi" else 256
     if not 1 <= args.cores <= 8:
         parser.error("Expected 1..8 cores")
-    if (args.private_icache or args.cache_to_cache or args.local_dcache_reads or args.local_dcache_writes) and args.cache_mode != "msi":
+    if (args.mesi or args.private_icache or args.cache_bursts or args.cache_to_cache or args.local_dcache_reads or args.local_dcache_writes) and args.cache_mode != "msi":
         parser.error("Private cache local paths require MSI mode")
     if args.icache_words < 2 or args.icache_words & (args.icache_words - 1):
         parser.error("--icache-words must be a power of two >= 2")
@@ -101,6 +105,8 @@ def main():
          "--cache-line-words", args.cache_line_words, "--icache-line-words", args.icache_line_words,
          "--cache-words", args.cache_words, "--icache-words", args.icache_words,
          "--coherence-banks", str(args.coherence_banks),
+         *(["--cache-bursts"] if args.cache_bursts else []),
+         *(["--mesi"] if args.mesi else []),
          *(["--cache-to-cache"] if args.cache_to_cache else []),
          *(["--private-icache"] if args.private_icache else []),
          *(["--local-dcache-reads"] if args.local_dcache_reads else []),
@@ -133,7 +139,7 @@ def main():
         "icache_words": args.icache_words,
         "local_dcache_reads": args.local_dcache_reads,
         "local_dcache_writes": args.local_dcache_writes,
-        "cache_to_cache": args.cache_to_cache, "coherence_banks": args.coherence_banks,
+        "cache_to_cache": args.cache_to_cache, "coherence_banks": args.coherence_banks, "cache_bursts": args.cache_bursts, "mesi": args.mesi,
         "linux": "6.19.14",
         "opensbi": "1.7",
         "ram_mb": 128,

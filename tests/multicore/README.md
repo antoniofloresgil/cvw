@@ -430,3 +430,28 @@ The default remains one. Each home requires at least two complete I/D lines;
 remote dirty-owner completion while RAM waits, cross-home reservations,
 AMO/IFU progress, errors and reset. Requests to one home remain serialized,
 as do physical AHB beats. Each hart still has one blocking transaction.
+
+### Pipelined cache-line bursts
+
+Add `--cache-bursts` with private MSI. Default off; CPU/MMIO requests remain
+SINGLE. The engine issues INCR4/8/16 or INCR for two words, splitting larger
+lines into aligned 16-beat chunks. It overlaps address/data phases rather than
+only changing HBURST. `lineburst_tb` checks every error position, zero/waited
+reads/writes, exact beat counts, boundary handling and reset. Cache/fabric
+scoreboards use a pipelined AHB slave and check SEQ, stability and ownership.
+
+### Optional MESI
+
+Add `--mesi --private-dcache` to select the clean-exclusive E state instead
+of the default MSI permissions. Combine with `--local-dcache-writes` for a
+local first write to E. It supports `--coherence-banks`, `--cache-bursts`,
+private instruction caches and cache-to-cache supply independently. With one
+hart the SoC still bypasses all coherence logic. Controller tests additionally
+run shared `mesi_checks.vh` for permission transitions, byte stores, clean
+replacement, instruction invalidation, LR/SC, simultaneous readers and failed
+peer-fill recovery. See the [MESI experiment](../../docs/engineering/experiments/2026-10-20-mesi.md)
+for actual verification scope and performance.
+
+The `--suite exclusive` program reads then writes 32 clean private lines per
+hart and checks values. It isolates the first-write permission cost; matched
+MSI/MESI results and exact configuration are in the experiment above.

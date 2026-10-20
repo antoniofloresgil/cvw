@@ -29,11 +29,12 @@
 
 module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsigned NCORES = 1,
   parameter bit SHARED_CACHE = 0, parameter int unsigned SHARED_CACHE_WORDS = 256,
-  parameter bit PRIVATE_DCACHE = 0, parameter int unsigned PRIVATE_DCACHE_WORDS = 256,
+  parameter bit PRIVATE_DCACHE = 0, parameter int unsigned PRIVATE_DCACHE_WORDS = 8192/(P.AHBW/8),
   parameter int unsigned PRIVATE_DCACHE_LINE_WORDS = 1,
-  parameter bit PRIVATE_ICACHE = 0, parameter int unsigned PRIVATE_ICACHE_WORDS = 256,
+  parameter bit PRIVATE_ICACHE = 0, parameter int unsigned PRIVATE_ICACHE_WORDS = 8192/(P.AHBW/8),
   parameter int unsigned PRIVATE_ICACHE_LINE_WORDS = 1,
-  parameter bit CACHE_TO_CACHE = 0, parameter int unsigned COHERENCE_BANKS = 1,
+  parameter bit CACHE_TO_CACHE = 0, parameter bit CACHE_BURSTS = 0,
+  parameter bit MESI = 0, parameter int unsigned COHERENCE_BANKS = 1,
   parameter bit LOCAL_DCACHE_READS = 0, parameter bit LOCAL_DCACHE_WRITES = 0)  (
   input  logic                clk,
   input  logic                reset_ext,        // external asynchronous reset pin
@@ -148,7 +149,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
     ahbmsifabric #(.P(P), .NCORES(NCORES), .BANKS(COHERENCE_BANKS),
       .DCACHE_WORDS(PRIVATE_DCACHE_WORDS), .DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
       .PRIVATE_ICACHE(PRIVATE_ICACHE), .ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
-      .ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS), .CACHE_TO_CACHE(CACHE_TO_CACHE),
+      .ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS), .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI),
       .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) fabric(
       .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHMASTLOCK,
       .CoreHSIZE, .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHATOMIC,
@@ -177,7 +178,8 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
     assign {BusHRDATA, BusHREADY, BusHRESP} = '0;
   end else if (MSI_ENABLED) begin : msicache
     ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(PRIVATE_DCACHE_WORDS), .LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
-      .CACHE_TO_CACHE(CACHE_TO_CACHE), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
+      .IFILL_WORDS(PRIVATE_ICACHE ? PRIVATE_ICACHE_LINE_WORDS : 1),
+      .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
       .CacheReadAddr, .CacheReadHit, .CacheReadData,
       .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
       .HCLK, .HRESETn, .UpHOWNER(BusHOWNER),
@@ -218,7 +220,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
               !P.DCACHE_SUPPORTED && !P.ICACHE_SUPPORTED && !P.BURST_EN)
         else $fatal(1, "Multicore requires a shared bus with no private memories/caches or bursts");
     end
-    assert (NCORES == 1 || (!(PRIVATE_ICACHE || CACHE_TO_CACHE || LOCAL_DCACHE_READS || LOCAL_DCACHE_WRITES) || MSI_ENABLED))
+    assert (NCORES == 1 || (!(PRIVATE_ICACHE || CACHE_TO_CACHE || CACHE_BURSTS || MESI || LOCAL_DCACHE_READS || LOCAL_DCACHE_WRITES) || MSI_ENABLED))
       else $fatal(1, "Private I-cache/local D reads require private MSI data caches");
     assert (!(MSI_ENABLED && SHARED_CACHE))
       else $fatal(1, "Select private MSI data caches or the shared cache, not both");

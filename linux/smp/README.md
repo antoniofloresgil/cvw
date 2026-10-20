@@ -205,3 +205,22 @@ infers the count from the manifest and rejects a conflicting explicit count.
 Model names/fingerprints, checkpoint identity and result metadata include it.
 The geometry/DTB stays unchanged for the same total capacities and line sizes.
 A new model and independent full RTL Linux run are required for validation.
+
+### Pipelined private-cache line transfers
+
+Use `--cache-bursts` when building MSI test images. `run.py` infers the flag
+from the manifest, or checks explicit `--cache-bursts`/`--no-cache-bursts`.
+The geometry/DTB is unchanged. Binary directory suffix `-burst1`, source/model
+fingerprints, result and checkpoint identity distinguish burst operation.
+P.BURST_EN stays off in cores: only the downstream private-cache fabric bursts.
+
+### Optional MESI permissions
+
+Use `--cache-mode msi --mesi` with `build.py`; `msi` continues to select the
+private-cache topology, while `--mesi` enables clean-exclusive D lines.
+`run.py` infers MESI from the manifest; explicit `--mesi` or `--no-mesi` must
+match it. The flag is included in model and checkpoint identities and uses
+a separate `-mesi1` build directory. Geometry and DTB bytes do not change.
+Enable `--local-dcache-writes` to use local E-to-M stores. A new RTL model is
+required; an earlier MSI/Linux checkpoint is not compatible. See the
+[MESI experiment](../../docs/engineering/experiments/2026-10-20-mesi.md).

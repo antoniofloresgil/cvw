@@ -7,7 +7,7 @@ module ahbmulticore import cvw::*; #(
   parameter cvw_t P,
   parameter int unsigned NCORES = 2,
   parameter bit PRIVATE_ICACHE = 0,
-  parameter int unsigned ICACHE_WORDS = 256,
+  parameter int unsigned ICACHE_WORDS = 8192/(P.AHBW/8),
   parameter int unsigned ICACHE_LINE_WORDS = 1,
   parameter int unsigned DCACHE_LINE_WORDS = 1,
   parameter bit LOCAL_DCACHE_READS = 0,

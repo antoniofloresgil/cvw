@@ -28,6 +28,8 @@ def main():
     parser.add_argument("--private-icache", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--icache-words", type=int)
     parser.add_argument("--coherence-banks", type=int)
+    parser.add_argument("--mesi", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--cache-bursts", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--cache-to-cache", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--local-dcache-writes", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--local-dcache-reads", action=argparse.BooleanOptionalAction, default=None)
@@ -55,6 +57,12 @@ def main():
         parser.error("Coherence banks differ from the image manifest")
     if banks < 1 or banks & (banks-1) or (banks > 1 and mode != "msi"):
         parser.error("Coherence banks must be a power of two and require MSI")
+    mesi = manifest.get("mesi", False) if args.mesi is None else args.mesi
+    if mesi != manifest.get("mesi", False) or (mesi and mode != "msi"):
+        parser.error("MESI requires matching private-cache image metadata")
+    bursts = manifest.get("cache_bursts", False) if args.cache_bursts is None else args.cache_bursts
+    if bursts != manifest.get("cache_bursts", False) or (bursts and mode != "msi"):
+        parser.error("Cache bursts require matching MSI image metadata")
     forwarding = manifest.get("cache_to_cache", False) if args.cache_to_cache is None else args.cache_to_cache
     if forwarding != manifest.get("cache_to_cache", False):
         parser.error("Forwarding differs from the image manifest")
@@ -144,6 +152,10 @@ def main():
         build = Path(str(build) + "-c2c1")
     if banks > 1:
         build = Path(str(build) + f"-b{banks}")
+    if bursts:
+        build = Path(str(build) + "-burst1")
+    if mesi:
+        build = Path(str(build) + "-mesi1")
     exe = build / "Vlinux_tb"
     metadata_path = build / "model.json"
     sources = sorted(p for p in (ROOT / "src").rglob("*.sv") if p.name != "cvw.sv")
@@ -154,7 +166,7 @@ def main():
               *sorted((ROOT / "config/shared").glob("*.vh"))]
     fingerprint = {
         "cores": cores, "cache_mode": mode, "cache_words": words, "savable": True,
-        "cache_line_words": dline, "icache_line_words": iline, "cache_to_cache": forwarding, "coherence_banks": banks,
+        "cache_line_words": dline, "icache_line_words": iline, "cache_to_cache": forwarding, "coherence_banks": banks, "cache_bursts": bursts, "mesi": mesi,
         "private_icache": icache, "icache_words": iwords, "local_dcache_reads": local_reads, "local_dcache_writes": local_writes,
         "verilator": subprocess.check_output(["verilator", "--version"], text=True).strip(),
         "sources": {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs},
@@ -172,7 +184,7 @@ def main():
             "--top-module", "linux_tb", f"-GNCORES={cores}", f"-GCACHE_WORDS={words}",
             "-GPRIVATE_DCACHE=1'b1" if mode == "msi" else "-GPRIVATE_DCACHE=1'b0",
             f"-GPRIVATE_ICACHE=1'b{int(icache)}", f"-GICACHE_WORDS={iwords}",
-            f"-GCOHERENCE_BANKS={banks}", f"-GCACHE_TO_CACHE=1'b{int(forwarding)}", f"-GPRIVATE_DCACHE_LINE_WORDS={dline}", f"-GPRIVATE_ICACHE_LINE_WORDS={iline}",
+            f"-GMESI=1'b{int(mesi)}", f"-GCACHE_BURSTS=1'b{int(bursts)}", f"-GCOHERENCE_BANKS={banks}", f"-GCACHE_TO_CACHE=1'b{int(forwarding)}", f"-GPRIVATE_DCACHE_LINE_WORDS={dline}", f"-GPRIVATE_ICACHE_LINE_WORDS={iline}",
             f"-GLOCAL_DCACHE_READS=1'b{int(local_reads)}",
             f"-GLOCAL_DCACHE_WRITES=1'b{int(local_writes)}",
             "--Mdir", str(build), f"-I{ROOT / 'config/shared'}",
@@ -191,7 +203,7 @@ def main():
     checkpoint_meta = Path(str(checkpoint) + ".json")
     identity = {"model_sha256": model["binary_sha256"], "images": manifest["sha256"],
                 "cores": cores, "cache_mode": mode, "cache_words": words,
-                "cache_line_words": dline, "icache_line_words": iline, "cache_to_cache": forwarding, "coherence_banks": banks,
+                "cache_line_words": dline, "icache_line_words": iline, "cache_to_cache": forwarding, "coherence_banks": banks, "cache_bursts": bursts, "mesi": mesi,
                 "private_icache": icache, "icache_words": iwords, "local_dcache_reads": local_reads, "local_dcache_writes": local_writes}
     if args.resume:
         if not checkpoint.is_file() or not checkpoint_meta.is_file() or json.loads(checkpoint_meta.read_text()) != identity:

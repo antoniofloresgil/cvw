@@ -5,7 +5,9 @@ import argparse
 from pathlib import Path
 
 
-def generate(cores, memory_mb=128, frequency=20000000, cache_words=256, cache_mode="shared", private_icache=False, icache_words=256, local_dcache_reads=False, local_dcache_writes=False, cache_line_words=1, icache_line_words=1, cache_to_cache=False, coherence_banks=1):
+def generate(cores, memory_mb=128, frequency=20000000, cache_words=None, cache_mode="shared", private_icache=False, icache_words=1024, local_dcache_reads=False, local_dcache_writes=False, cache_line_words=1, icache_line_words=1, cache_to_cache=False, coherence_banks=1, cache_bursts=False, mesi=False):
+    if cache_words is None:
+        cache_words = 1024 if cache_mode == "msi" else 256
     if cache_mode not in ("shared", "msi") or cache_words < 2 or cache_words & (cache_words - 1):
         raise ValueError("Expected shared/msi and a power-of-two cache capacity >= 2 words")
     if coherence_banks < 1 or coherence_banks & (coherence_banks-1):
@@ -14,7 +16,7 @@ def generate(cores, memory_mb=128, frequency=20000000, cache_words=256, cache_mo
         raise ValueError("Multiple coherence banks require MSI")
     if cores > 1 and (cache_words < 2*coherence_banks*cache_line_words or icache_words < 2*coherence_banks*icache_line_words):
         raise ValueError("Each coherence bank needs at least two I/D lines")
-    if (private_icache or cache_to_cache or local_dcache_reads or local_dcache_writes) and cache_mode != "msi":
+    if (mesi or private_icache or cache_bursts or cache_to_cache or local_dcache_reads or local_dcache_writes) and cache_mode != "msi":
         raise ValueError("Private cache local paths require MSI mode")
     if icache_words < 2 or icache_words & (icache_words - 1):
         raise ValueError("I-cache capacity must be a power of two >= 2 words")
@@ -96,10 +98,12 @@ def main():
     parser.add_argument("--cache-mode", choices=["shared", "msi"], default="shared")
     parser.add_argument("--cache-line-words", type=int, default=1)
     parser.add_argument("--icache-line-words", type=int, default=1)
-    parser.add_argument("--cache-words", type=int, default=256)
+    parser.add_argument("--cache-words", type=int)
     parser.add_argument("--private-icache", action="store_true")
-    parser.add_argument("--icache-words", type=int, default=256)
+    parser.add_argument("--icache-words", type=int, default=1024)
     parser.add_argument("--coherence-banks", type=int, default=1)
+    parser.add_argument("--mesi", action="store_true", help="Enable exclusive clean state in private data caches")
+    parser.add_argument("--cache-bursts", action="store_true", help="Pipeline private-cache line transfers on AHB")
     parser.add_argument("--cache-to-cache", action="store_true", help="Direct private-cache data supply; MSI mode only")
     parser.add_argument("--local-dcache-writes", action="store_true")
     parser.add_argument("--local-dcache-reads", action="store_true")
@@ -107,12 +111,12 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.cores <= 8:
         parser.error("This Linux configuration supports 1..8 harts")
-    if args.cache_words < 2 or args.cache_words & (args.cache_words - 1):
+    if args.cache_words is not None and (args.cache_words < 2 or args.cache_words & (args.cache_words - 1)):
         parser.error("--cache-words must be a power of two >= 2")
     args.output.write_text(generate(args.cores, cache_words=args.cache_words, cache_mode=args.cache_mode,
                                     private_icache=args.private_icache, icache_words=args.icache_words,
                                     local_dcache_reads=args.local_dcache_reads, local_dcache_writes=args.local_dcache_writes,
-                                    cache_line_words=args.cache_line_words, icache_line_words=args.icache_line_words, cache_to_cache=args.cache_to_cache, coherence_banks=args.coherence_banks))
+                                    cache_line_words=args.cache_line_words, icache_line_words=args.icache_line_words, cache_to_cache=args.cache_to_cache, coherence_banks=args.coherence_banks, cache_bursts=args.cache_bursts, mesi=args.mesi))
 
 
 if __name__ == "__main__":
