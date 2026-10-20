@@ -9,6 +9,19 @@ This is a branch-scoped checkpoint, not an automatic branch-selection policy.
 
 ## Objective and local work
 
+Latest implementation result (2026-10-20): generated the Nexys Video Vivado
+bitstream from `main` at `82d0b80f7`, at 20 MHz, with routed timing PASS
+(WNS +0.303 ns, WHS +0.021 ns) and successful bitstream generation.
+No RTL/build-script changes were performed. The same bitstream was then
+programmed into the connected Nexys Video and booted the user's microSD:
+OpenSBI v1.7, Linux 6.19.14 and BusyBox reached `WallyHostname login:`.
+Network startup failed due to missing `ifup`; `crond` reported a missing
+crontab directory. No network or memory stress test was performed. CPU timing
+leaves little margin for increasing frequency in this implementation; no
+higher-frequency build has been validated. See the
+[Vivado experiment](experiments/2026-10-20-nexysvideo-vivado.md) for exact
+inputs, cached IP, artifact paths, warnings and external timing limitations.
+
 Integrate the 88 upstream-exclusive commits into main and publish to origin,
 preserving fork changes. The merge applied without conflicts; the Ubuntu
 package/derivative recipe combinations were inspected. Two explicit RAM/ROM
