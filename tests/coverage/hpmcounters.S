@@ -14,7 +14,7 @@
 //            2. every counter inhibited: no counter changes, including mcycle and minstret, and a
 //               value written to an mhpmcounter reads back exactly through mhpmcounter and hpmcounter
 //            3. every mhpmevent nonzero and nothing inhibited: each counter with an event source
-//               counts, counters 25-31 (no event source) stay 0, and the events that are a property
+//               counts, counters 27-31 (no event source) stay 0, and the events that are a property
 //               of retired instructions count exactly over straight-line blocks in the workload.
 //          ImperasDV does not model the counters (the testbench marks them volatile), so lockstep
 //          cannot check them; these checks are the only thing that does.
@@ -53,8 +53,8 @@
 
 // Counters with an event selector (rv64gc implements all 32)
 #define HPM_ALL     3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
-#define HPM_EVENT   3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24
-#define HPM_NOEVENT 25,26,27,28,29,30,31
+#define HPM_EVENT   3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26
+#define HPM_NOEVENT 27,28,29,30,31
 
 // SC_CHECK_GTU actual, bound, index: fail the test (status 2) unless actual > bound, unsigned.
 .macro SC_CHECK_GTU actual, bound, index
@@ -167,7 +167,7 @@ main:
     csrr a0, mhpmcounter\n
     SC_CHECK_GTU a0, zero, 400 + \n
     .endr
-    .irp n, HPM_NOEVENT         // CounterEvent[31:25] is tied low
+    .irp n, HPM_NOEVENT         // CounterEvent[31:27] is tied low
     csrr a0, mhpmcounter\n
     SC_CHECK_EQ a0, zero, 400 + \n
     .endr

@@ -88,4 +88,5 @@
       compatible = "sifive,clint0\0riscv,clint0";
     };
   };
+  /include/ "wally-pmu.dtsi"
 };

@@ -55,3 +55,7 @@ Historical branch references below use immutable commits. For local inspection,
 use `git show <commit>:<path>`; no branch switch or merge is required. If this
 index is brought into another branch, refresh its checkout-specific notes and
 `current-work.md` before treating them as current state.
+
+The proposed [SBI PMU counting integration](decisions/0013-sbi-pmu-perf-stat.md)
+and [its experiment](experiments/2026-10-20-sbi-pmu.md) belong to
+`adding-mpu-support`, based on main. They do not integrate multicore RTL.

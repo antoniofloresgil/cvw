@@ -129,7 +129,11 @@ module csrc  import cvw::*;  #(parameter cvw_t P) (
     assign CounterEvent[23] = TrapM & ~StallW & ~InterruptM;                             // exceptions taken, counted once; InstrValidNotFlushedM will be low
     // DivBusyE is never asserted on rv64gc, which divides integers in the FPU; coverage-exclusions-rv64gc.do excludes that row
     assign CounterEvent[24] = DivBusyE | FDivBusyE;                                      // division cycles
-    assign CounterEvent[31:25] = '0; // eventually give these sources, including FP instructions, I$/D$ misses, branches and mispredictions
+    // Standard perf branch events include conditional branches, jumps and returns.
+    // Preserve the legacy sources (3-10) and give these aggregates their own slots.
+    assign CounterEvent[25] = |IClassM[2:0] & InstrValidNotFlushedM;
+    assign CounterEvent[26] = BPWrongM & |IClassM[2:0] & InstrValidNotFlushedM;
+    assign CounterEvent[31:27] = '0;
   end else begin : cevent
     assign CounterEvent[31:3] = '0;
   end
