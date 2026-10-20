@@ -35,6 +35,8 @@ def main():
     parser.add_argument("--icache-words", type=int, default=256)
     parser.add_argument("--local-dcache-writes", action="store_true")
     parser.add_argument("--local-dcache-reads", action="store_true")
+    parser.add_argument("--cache-line-words", type=int, default=1, help="AHB words per private D line; total capacity unchanged")
+    parser.add_argument("--icache-line-words", type=int, default=1, help="AHB words per private I line")
     parser.add_argument("--cache-words", type=int, default=256)
     parser.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args()
@@ -46,6 +48,11 @@ def main():
         parser.error("--icache-words must be a power of two >= 2")
     if args.cache_words < 2 or args.cache_words & (args.cache_words - 1):
         parser.error("--cache-words must be a power of two >= 2")
+    for capacity, line in ((args.cache_words, args.cache_line_words), (args.icache_words, args.icache_line_words)):
+        if line < 1 or line & (line-1) or capacity < 2*line:
+            parser.error("Line size must be a power of two with at least two lines per cache")
+    if not (args.cache_mode == "msi") and (args.cache_line_words != 1 or args.icache_line_words != 1):
+        parser.error("Multiword private lines require MSI mode")
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
     br = args.buildroot.resolve()
@@ -83,6 +90,7 @@ def main():
     run([*sbi_command, f"-j{args.jobs}"], env=env)
     marker.write_text(recipe)
     run(["python3", HERE / "devicetree.py", "--cores", args.cores, "--cache-mode", args.cache_mode,
+         "--cache-line-words", args.cache_line_words, "--icache-line-words", args.icache_line_words,
          "--cache-words", args.cache_words, "--icache-words", args.icache_words,
          *(["--private-icache"] if args.private_icache else []),
          *(["--local-dcache-reads"] if args.local_dcache_reads else []),
@@ -109,6 +117,8 @@ def main():
         "cores": args.cores,
         "cache_mode": args.cache_mode,
         "cache_words": args.cache_words,
+        "cache_line_words": args.cache_line_words,
+        "icache_line_words": args.icache_line_words,
         "private_icache": args.private_icache,
         "icache_words": args.icache_words,
         "local_dcache_reads": args.local_dcache_reads,

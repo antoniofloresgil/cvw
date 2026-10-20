@@ -1,7 +1,7 @@
 # Local modified stores and Linux validation of items 2 and 3
 
 Date: 2026-10-19. Branch: multicore-support, Git base `8ac2d4d6b` plus
-uncommitted stage-5/item-2/item-3 changes. **Directed/full-core verification PASS; new Linux RTL run INCOMPLETE (running).**
+uncommitted stage-5/item-2/item-3 changes. **Directed/full-core verification and two-hart Linux RTL PASS.**
 See [ADR 0006](../decisions/0006-local-modified-stores.md) for commit ordering.
 The [item-2 result](2026-10-19-independent-read-write.md) is the comparison
 baseline, not proof for the new local-write ports.
@@ -80,7 +80,9 @@ published remote artifact.
 
 Started on 2026-10-19 at 20:27:25 UTC in
 `/tmp/wally-linux-local-m-20261019/`, after the checks above passed.
-Status at this record: **INCOMPLETE, running**; no new Linux PASS is claimed.
+Final status: **PASS at 243,089,303 cycles**, exit 0, with two online CPUs
+and `counter=128 protected=128`. This validates items 2 and 3 in the frozen
+one-word model identified below; it does not validate later multiword changes.
 The separate `/tmp/wally-linux-l1-20261019/` run retains its older binary and
 validates neither item 2 nor item 3.
 
@@ -134,3 +136,9 @@ Follow `rtl.log` for RTL/UART output and `production-runner.log` for runner
 messages. Final acceptance still requires the RTL Linux test's two online
 CPUs and shared-counter PASS markers. QEMU and bare-metal success do not
 substitute for that pending result. No FPGA or external-DMA result is claimed.
+
+Final Linux output/result are preserved as `linux-final-rtl.log` and
+`linux-final-result.json` in the local-M archive. Final log SHA-256:
+`9eaa961d44b05d0f1b99c6f5cc921d40fee27ca884d6546302d24b3936d6cf25`. The original `results.json` remains its
+in-progress capture; final evidence is separate and retains the same model
+and image identities.

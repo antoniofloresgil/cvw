@@ -5,18 +5,23 @@ import argparse
 from pathlib import Path
 
 
-def generate(cores, memory_mb=128, frequency=20000000, cache_words=256, cache_mode="shared", private_icache=False, icache_words=256, local_dcache_reads=False, local_dcache_writes=False):
+def generate(cores, memory_mb=128, frequency=20000000, cache_words=256, cache_mode="shared", private_icache=False, icache_words=256, local_dcache_reads=False, local_dcache_writes=False, cache_line_words=1, icache_line_words=1):
     if cache_mode not in ("shared", "msi") or cache_words < 2 or cache_words & (cache_words - 1):
         raise ValueError("Expected shared/msi and a power-of-two cache capacity >= 2 words")
     if (private_icache or local_dcache_reads or local_dcache_writes) and cache_mode != "msi":
         raise ValueError("Private cache local paths require MSI mode")
     if icache_words < 2 or icache_words & (icache_words - 1):
         raise ValueError("I-cache capacity must be a power of two >= 2 words")
+    for capacity, line in ((cache_words, cache_line_words), (icache_words, icache_line_words)):
+        if line < 1 or line & (line-1) or capacity < 2*line:
+            raise ValueError("Line size must be a power of two with at least two lines per cache")
+    if cache_mode != "msi" and (cache_line_words != 1 or icache_line_words != 1):
+        raise ValueError("Multiword private lines require MSI mode")
     private = cache_mode == "msi" and cores > 1
-    cpu_cache = (f"d-cache-size = <{cache_words * 8}>; d-cache-block-size = <8>; d-cache-sets = <{cache_words}>;"
+    cpu_cache = (f"d-cache-size = <{cache_words * 8}>; d-cache-block-size = <{cache_line_words * 8}>; d-cache-sets = <{cache_words // cache_line_words}>;"
                  if private else "next-level-cache = <&shared_cache>;" if cache_mode == "shared" else "")
     if private and private_icache:
-        cpu_cache += f" i-cache-size = <{icache_words * 8}>; i-cache-block-size = <8>; i-cache-sets = <{icache_words}>;"
+        cpu_cache += f" i-cache-size = <{icache_words * 8}>; i-cache-block-size = <{icache_line_words * 8}>; i-cache-sets = <{icache_words // icache_line_words}>;"
     cache_node = f"""shared_cache: cache {{
         compatible = "cache"; cache-level = <1>; cache-unified;
         cache-size = <{cache_words * 8}>; cache-line-size = <8>; cache-sets = <{cache_words}>;
@@ -83,6 +88,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cores", type=int, default=2)
     parser.add_argument("--cache-mode", choices=["shared", "msi"], default="shared")
+    parser.add_argument("--cache-line-words", type=int, default=1)
+    parser.add_argument("--icache-line-words", type=int, default=1)
     parser.add_argument("--cache-words", type=int, default=256)
     parser.add_argument("--private-icache", action="store_true")
     parser.add_argument("--icache-words", type=int, default=256)
@@ -96,7 +103,8 @@ def main():
         parser.error("--cache-words must be a power of two >= 2")
     args.output.write_text(generate(args.cores, cache_words=args.cache_words, cache_mode=args.cache_mode,
                                     private_icache=args.private_icache, icache_words=args.icache_words,
-                                    local_dcache_reads=args.local_dcache_reads, local_dcache_writes=args.local_dcache_writes))
+                                    local_dcache_reads=args.local_dcache_reads, local_dcache_writes=args.local_dcache_writes,
+                                    cache_line_words=args.cache_line_words, icache_line_words=args.icache_line_words))
 
 
 if __name__ == "__main__":

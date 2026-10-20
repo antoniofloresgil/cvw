@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-// Private, direct-mapped write-back data-cache banks; one AHB word per line.
+// Private, direct-mapped write-back data-cache banks; parameterizable multiword lines.
 // The arbiter orders atomics, misses and permission acquisition. Optional local
 // read/M-write ports overlap independent traffic; each M write broadcasts a
 // commit through the arbiter for reservation and instruction invalidation.
@@ -10,6 +10,7 @@ module ahbmsicache import cvw::*; #(
   parameter cvw_t P,
   parameter int unsigned NCORES = 2,
   parameter int unsigned WORDS = 256,
+  parameter int unsigned LINE_WORDS = 1,
   parameter bit LOCAL_READS = 0,
   parameter bit LOCAL_WRITES = 0
 )(
@@ -41,15 +42,20 @@ module ahbmsicache import cvw::*; #(
   input  logic HREADY, HRESP
 );
   localparam OFFSET = $clog2(P.AHBW/8);
-  localparam INDEX = $clog2(WORDS);
-  localparam TAG = P.PA_BITS - OFFSET - INDEX;
+  localparam LINE_BITS = $clog2(LINE_WORDS);
+  localparam LINE_OFFSET = OFFSET + LINE_BITS;
+  localparam N_LINES = WORDS / LINE_WORDS;
+  localparam INDEX = $clog2(N_LINES);
+  localparam WORD_INDEX = $clog2(WORDS);
+  localparam BEAT_BITS = LINE_BITS > 0 ? LINE_BITS : 1;
+  localparam TAG = P.PA_BITS - LINE_OFFSET - INDEX;
   localparam HART_BITS = NCORES > 1 ? $clog2(NCORES) : 1;
   typedef enum logic [1:0] {I, S, M} msi_t;
   typedef enum logic [3:0] {IDLE, LOOKUP, SNOOP, ADDRESS, DATA, COMPLETE, REPLY, ERROR_REPLY} state_t;
   typedef enum logic [1:0] {EVICT, FLUSH, FILL, BYPASS} transfer_t;
   // One independently tagged/stateful data bank per hart, not a shared cache.
-  msi_t [NCORES-1:0][WORDS-1:0] States;
-  logic [TAG-1:0] Tags[NCORES][WORDS];
+  msi_t [NCORES-1:0][N_LINES-1:0] States;
+  logic [TAG-1:0] Tags[NCORES][N_LINES];
   logic [P.AHBW-1:0] Lines[NCORES][WORDS];
   state_t State;
   transfer_t Transfer;
@@ -58,6 +64,13 @@ module ahbmsicache import cvw::*; #(
   logic [INDEX-1:0] Index;
   logic [TAG-1:0] Tag;
   logic [P.AHBW-1:0] WriteData, FillData;
+  logic [P.AHBW-1:0] FillLine[LINE_WORDS];
+  logic [BEAT_BITS-1:0] Beat;
+  logic [WORD_INDEX-1:0] WordIndex;
+  // Flat data storage keeps total capacity independent of line size.
+  function automatic int data_index(input logic [INDEX-1:0] idx, input int beat);
+    return int'(idx) * LINE_WORDS + beat;
+  endfunction
   logic [P.XLEN/8-1:0] Strobes;
   logic Write, Filled, Cacheable, DirtyPeer;
   logic [2:0] Size;
@@ -71,12 +84,12 @@ module ahbmsicache import cvw::*; #(
         ProbeHit[h] = HRESETn &&
           ((P.UNCORE_RAM_SUPPORTED && ((64'(CacheReadAddr[h]) & ~P.UNCORE_RAM_RANGE) == P.UNCORE_RAM_BASE)) ||
            (P.EXT_MEM_SUPPORTED && ((64'(CacheReadAddr[h]) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE))) &&
-          States[h][CacheReadAddr[h][OFFSET +: INDEX]] != I &&
-          Tags[h][CacheReadAddr[h][OFFSET +: INDEX]] == CacheReadAddr[h][P.PA_BITS-1:OFFSET+INDEX];
+          States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] != I &&
+          Tags[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == CacheReadAddr[h][P.PA_BITS-1:LINE_OFFSET+INDEX];
         CacheReadHit[h] = LOCAL_READS && ProbeHit[h];
-        CacheReadData[h] = LOCAL_READS ? Lines[h][CacheReadAddr[h][OFFSET +: INDEX]] : '0;
+        CacheReadData[h] = LOCAL_READS ? Lines[h][CacheReadAddr[h][OFFSET +: WORD_INDEX]] : '0;
         CacheWriteHit[h] = LOCAL_WRITES && ProbeHit[h] &&
-          States[h][CacheReadAddr[h][OFFSET +: INDEX]] == M;
+          States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == M;
       end
     end
   end else begin : noreadprobes
@@ -85,8 +98,9 @@ module ahbmsicache import cvw::*; #(
     assign CacheReadData = '0;
   end
 
-  assign Index = Addr[OFFSET +: INDEX];
-  assign Tag = Addr[P.PA_BITS-1:OFFSET+INDEX];
+  assign Index = Addr[LINE_OFFSET +: INDEX];
+  assign WordIndex = Addr[OFFSET +: WORD_INDEX];
+  assign Tag = Addr[P.PA_BITS-1:LINE_OFFSET+INDEX];
   assign Cacheable = (P.UNCORE_RAM_SUPPORTED &&
     ((64'(Addr) & ~P.UNCORE_RAM_RANGE) == P.UNCORE_RAM_BASE)) ||
     (P.EXT_MEM_SUPPORTED && ((64'(Addr) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE));
@@ -110,6 +124,7 @@ module ahbmsicache import cvw::*; #(
   always_ff @(posedge HCLK) begin
     if (!HRESETn) begin
       State <= IDLE;
+      Beat <= '0;
       Transfer <= BYPASS;
       Owner <= '0;
       FlushOwner <= '0;
@@ -143,6 +158,7 @@ module ahbmsicache import cvw::*; #(
             Prot <= UpHPROT;
             Write <= UpHWRITE;
             Filled <= 1'b0;
+            Beat <= '0;
             State <= LOOKUP;
           end else State <= IDLE;
         end
@@ -151,8 +167,8 @@ module ahbmsicache import cvw::*; #(
           WriteData <= UpHWDATA;
           Strobes <= UpHWSTRB;
           if (Cacheable && Prot[0] && !Hit[Owner] && States[Owner][Index] == M) begin
-            HADDR <= {Tags[Owner][Index], Index, {OFFSET{1'b0}}};
-            HWDATA <= Lines[Owner][Index];
+            HADDR <= {Tags[Owner][Index], Index, {LINE_OFFSET{1'b0}}};
+            HWDATA <= Lines[Owner][data_index(Index, 0)];
             HWSTRB <= '1;
             HWRITE <= 1'b1;
             HSIZE <= 3'(OFFSET);
@@ -163,8 +179,9 @@ module ahbmsicache import cvw::*; #(
         end
         SNOOP: begin
           if (Cacheable && DirtyPeer) begin
-            HADDR <= {Addr[P.PA_BITS-1:OFFSET], {OFFSET{1'b0}}};
-            HWDATA <= Lines[Snooper][Index];
+            HADDR <= {Addr[P.PA_BITS-1:LINE_OFFSET], {LINE_OFFSET{1'b0}}};
+            HWDATA <= Lines[Snooper][data_index(Index, 0)];
+            Beat <= '0;
             HWSTRB <= '1;
             HWRITE <= 1'b1;
             HSIZE <= 3'(OFFSET);
@@ -182,7 +199,9 @@ module ahbmsicache import cvw::*; #(
             Transfer <= BYPASS;
             State <= ADDRESS;
           end else if (!Hit[Owner] || !Prot[0]) begin
-            HADDR <= {Addr[P.PA_BITS-1:OFFSET], {OFFSET{1'b0}}};
+            HADDR <= Prot[0] ? {Addr[P.PA_BITS-1:LINE_OFFSET], {LINE_OFFSET{1'b0}}} :
+              {Addr[P.PA_BITS-1:OFFSET], {OFFSET{1'b0}}};
+            Beat <= '0;
             HWRITE <= 1'b0;
             HWDATA <= '0;
             HWSTRB <= '0;
@@ -201,18 +220,30 @@ module ahbmsicache import cvw::*; #(
             UpHRDATA <= '0;
             State <= ERROR_REPLY;
           end else case (Transfer)
-            EVICT: begin
-              States[Owner][Index] <= I;
-              State <= SNOOP;
-            end
-            FLUSH: begin
-              States[FlushOwner][Index] <= S;
-              State <= SNOOP;
+            EVICT, FLUSH: begin
+              if (int'(Beat) == LINE_WORDS-1) begin
+                if (Transfer == EVICT) States[Owner][Index] <= I;
+                else States[FlushOwner][Index] <= S;
+                Beat <= '0;
+                State <= SNOOP;
+              end else begin
+                Beat <= Beat + 1'b1;
+                HADDR <= HADDR + (P.PA_BITS'(1) << OFFSET);
+                HWDATA <= Lines[Transfer == EVICT ? Owner : FlushOwner][data_index(Index, int'(Beat)+1)];
+                State <= ADDRESS;
+              end
             end
             FILL: begin
               FillData <= HRDATA;
-              Filled <= 1'b1;
-              State <= COMPLETE;
+              FillLine[Beat] <= HRDATA;
+              if (!Prot[0] || int'(Beat) == LINE_WORDS-1) begin
+                Filled <= 1'b1;
+                State <= COMPLETE;
+              end else begin
+                Beat <= Beat + 1'b1;
+                HADDR <= HADDR + (P.PA_BITS'(1) << OFFSET);
+                State <= ADDRESS;
+              end
             end
             BYPASS: begin
               UpHRDATA <= HRDATA;
@@ -222,18 +253,20 @@ module ahbmsicache import cvw::*; #(
           endcase
         end
         COMPLETE: begin
-          UpHRDATA <= Filled ? FillData : Lines[Owner][Index];
+          UpHRDATA <= Filled ? (Prot[0] ? FillLine[(int'(Addr) >> OFFSET) & (LINE_WORDS-1)] : FillData) :
+            Lines[Owner][WordIndex];
           if (Prot[0]) begin
             Tags[Owner][Index] <= Tag;
+            if (Filled)
+              for (int beat = 0; beat < LINE_WORDS; beat++)
+                Lines[Owner][data_index(Index, beat)] <= FillLine[beat];
             if (Write) begin
-              Lines[Owner][Index] <= Filled ? FillData : Lines[Owner][Index];
               for (int b = 0; b < P.XLEN/8; b++)
-                if (Strobes[b]) Lines[Owner][Index][8*b +: 8] <= WriteData[8*b +: 8];
+                if (Strobes[b]) Lines[Owner][WordIndex][8*b +: 8] <= WriteData[8*b +: 8];
               States[Owner][Index] <= M;
               for (int h = 0; h < NCORES; h++)
                 if (HART_BITS'(h) != Owner && Hit[h]) States[h][Index] <= I;
             end else if (Filled) begin
-              Lines[Owner][Index] <= FillData;
               States[Owner][Index] <= S;
             end
           end
@@ -250,11 +283,11 @@ module ahbmsicache import cvw::*; #(
             else $fatal(1, "Local store without matching M permission");
           assert ((State == IDLE || State == REPLY) ||
             (Owner != HART_BITS'(h) &&
-             Addr[P.PA_BITS-1:OFFSET] != CacheReadAddr[h][P.PA_BITS-1:OFFSET]))
+             Addr[P.PA_BITS-1:LINE_OFFSET] != CacheReadAddr[h][P.PA_BITS-1:LINE_OFFSET]))
             else $fatal(1, "Local M store raced a global owner or snoop");
           for (int b = 0; b < P.XLEN/8; b++)
             if (CacheWriteStrb[h][b])
-              Lines[h][CacheReadAddr[h][OFFSET +: INDEX]][8*b +: 8] <= CacheWriteData[h][8*b +: 8];
+              Lines[h][CacheReadAddr[h][OFFSET +: WORD_INDEX]][8*b +: 8] <= CacheWriteData[h][8*b +: 8];
         end
       // Snooping is a broadcast lookup to every bank. At most one dirty owner
       // exists and it cannot coexist with any other valid copy of that word.
@@ -268,7 +301,8 @@ module ahbmsicache import cvw::*; #(
   initial begin
     assert (NCORES >= 2 && P.AHBW == P.XLEN && (P.XLEN == 32 || P.XLEN == 64))
       else $fatal(1, "MSI requires at least two harts and XLEN-wide AHB");
-    assert (WORDS >= 2 && (WORDS & (WORDS-1)) == 0 && TAG > 0)
-      else $fatal(1, "Private cache words must be a power of two >= 2 and fit PA_BITS");
+    assert (LINE_WORDS >= 1 && (LINE_WORDS & (LINE_WORDS-1)) == 0 &&
+      WORDS >= 2*LINE_WORDS && (WORDS & (WORDS-1)) == 0 && TAG > 0)
+      else $fatal(1, "Private cache capacity must be a power of two with at least two power-of-two lines");
   end
 endmodule

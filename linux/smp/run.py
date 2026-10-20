@@ -22,6 +22,8 @@ def main():
     parser.add_argument("--timeout", type=int, default=300, help="QEMU wall time in seconds")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--cache-mode", choices=["shared", "msi"], help="Must match the image manifest")
+    parser.add_argument("--cache-line-words", type=int)
+    parser.add_argument("--icache-line-words", type=int)
     parser.add_argument("--cache-words", type=int, help="Must match the image manifest")
     parser.add_argument("--private-icache", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--icache-words", type=int)
@@ -46,6 +48,15 @@ def main():
     local_writes = manifest.get("local_dcache_writes", False) if args.local_dcache_writes is None else args.local_dcache_writes
     if (icache, iwords, local_reads, local_writes) != (manifest.get("private_icache", False), manifest.get("icache_words", 256), manifest.get("local_dcache_reads", False), manifest.get("local_dcache_writes", False)):
         parser.error("Private cache parameters differ from the image manifest; regenerate the DTB/images")
+    dline = manifest.get("cache_line_words", 1) if args.cache_line_words is None else args.cache_line_words
+    iline = manifest.get("icache_line_words", 1) if args.icache_line_words is None else args.icache_line_words
+    if (dline, iline) != (manifest.get("cache_line_words", 1), manifest.get("icache_line_words", 1)):
+        parser.error("Line geometry differs from the image manifest; regenerate the DTB/images")
+    for capacity, line in ((words, dline), (iwords, iline)):
+        if line < 1 or line & (line-1) or capacity < 2*line:
+            parser.error("Line size must be a power of two with at least two lines per cache")
+    if mode != "msi" and (dline != 1 or iline != 1):
+        parser.error("Multiword private lines require MSI mode")
     if (icache or local_reads or local_writes) and mode != "msi":
         parser.error("Private cache local paths require MSI mode")
     if iwords < 2 or iwords & (iwords - 1):
@@ -113,6 +124,8 @@ def main():
         build = Path(str(build) + f"-i{int(icache)}-{iwords}-r{int(local_reads)}")
     if local_writes:
         build = Path(str(build) + "-w1")
+    if dline != 1 or iline != 1:
+        build = Path(str(build) + f"-dl{dline}-il{iline}")
     exe = build / "Vlinux_tb"
     metadata_path = build / "model.json"
     sources = sorted(p for p in (ROOT / "src").rglob("*.sv") if p.name != "cvw.sv")
@@ -123,6 +136,7 @@ def main():
               *sorted((ROOT / "config/shared").glob("*.vh"))]
     fingerprint = {
         "cores": cores, "cache_mode": mode, "cache_words": words, "savable": True,
+        "cache_line_words": dline, "icache_line_words": iline,
         "private_icache": icache, "icache_words": iwords, "local_dcache_reads": local_reads, "local_dcache_writes": local_writes,
         "verilator": subprocess.check_output(["verilator", "--version"], text=True).strip(),
         "sources": {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs},
@@ -140,6 +154,7 @@ def main():
             "--top-module", "linux_tb", f"-GNCORES={cores}", f"-GCACHE_WORDS={words}",
             "-GPRIVATE_DCACHE=1'b1" if mode == "msi" else "-GPRIVATE_DCACHE=1'b0",
             f"-GPRIVATE_ICACHE=1'b{int(icache)}", f"-GICACHE_WORDS={iwords}",
+            f"-GPRIVATE_DCACHE_LINE_WORDS={dline}", f"-GPRIVATE_ICACHE_LINE_WORDS={iline}",
             f"-GLOCAL_DCACHE_READS=1'b{int(local_reads)}",
             f"-GLOCAL_DCACHE_WRITES=1'b{int(local_writes)}",
             "--Mdir", str(build), f"-I{ROOT / 'config/shared'}",
@@ -158,6 +173,7 @@ def main():
     checkpoint_meta = Path(str(checkpoint) + ".json")
     identity = {"model_sha256": model["binary_sha256"], "images": manifest["sha256"],
                 "cores": cores, "cache_mode": mode, "cache_words": words,
+                "cache_line_words": dline, "icache_line_words": iline,
                 "private_icache": icache, "icache_words": iwords, "local_dcache_reads": local_reads, "local_dcache_writes": local_writes}
     if args.resume:
         if not checkpoint.is_file() or not checkpoint_meta.is_file() or json.loads(checkpoint_meta.read_text()) != identity:

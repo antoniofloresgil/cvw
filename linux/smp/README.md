@@ -166,3 +166,25 @@ opción y run.py la selecciona automáticamente; `--no-local-dcache-writes`
 solo es válido si coincide con el manifiesto. Los modelos y checkpoints con
 esta opción tienen un sufijo `-w1`. Usar un directorio de trabajo nuevo para
 validar conjuntamente las mejoras 2 y 3, conservando los modelos anteriores.
+
+### Private cache line geometry
+
+For MSI, `build.py`, `devicetree.py` and `run.py` accept independent
+`--cache-line-words` and `--icache-line-words` options. They default to 1;
+four words select 32-byte lines in this RV64 Linux configuration. Keep
+`--cache-words 256 --icache-words 256` to retain 2 KiB per bank while changing
+line sizes. Each capacity must contain at least two power-of-two lines.
+For example, append these options to the existing private-cache build command:
+
+```bash
+--cache-mode msi --private-icache --local-dcache-reads --local-dcache-writes --cache-words 256 --icache-words 256 --cache-line-words 4 --icache-line-words 4
+```
+
+A geometry change requires regenerating the DTB and packed RAM image. DTS
+cache block sizes and set counts reflect the selected geometry; the total
+cache sizes stay fixed. Manifests, model/checkpoint identities and non-default
+model-directory suffixes (`-dl4-il4`) distinguish line geometry. Old manifests
+imply one-word lines. Explicit mismatches are rejected; a snapshot from a
+different model cannot be reused. Existing one-word Linux runs do not validate
+multiword RTL. See the [multiword record](../../docs/engineering/experiments/2026-10-19-multiword-lines.md)
+for the actual verification scope.

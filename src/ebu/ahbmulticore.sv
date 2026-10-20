@@ -8,6 +8,8 @@ module ahbmulticore import cvw::*; #(
   parameter int unsigned NCORES = 2,
   parameter bit PRIVATE_ICACHE = 0,
   parameter int unsigned ICACHE_WORDS = 256,
+  parameter int unsigned ICACHE_LINE_WORDS = 1,
+  parameter int unsigned DCACHE_LINE_WORDS = 1,
   parameter bit LOCAL_DCACHE_READS = 0,
   parameter bit LOCAL_DCACHE_WRITES = 0
 )(
@@ -58,11 +60,22 @@ module ahbmulticore import cvw::*; #(
   logic [NCORES-1:0][2:0] ReservationSize;
   logic LockActive;
   logic [OWNER_BITS-1:0] LockOwner;
+  localparam I_BEAT_BITS = ICACHE_LINE_WORDS > 1 ? $clog2(ICACHE_LINE_WORDS) : 1;
+  // Conservative mixed-geometry guard covers every word in either line.
+  localparam CONFLICT_BITS = GRANULE_BITS + $clog2(
+    ICACHE_LINE_WORDS > DCACHE_LINE_WORDS ? ICACHE_LINE_WORDS : DCACHE_LINE_WORDS);
+  logic IFillActive;
+  logic [I_BEAT_BITS-1:0] IBeat;
+  logic [P.AHBW-1:0] IRequestedData;
+  logic IFillRequest, IFillLast;
   logic DataPhase, Found, SCValid, FailedSC, BadAMOWrite;
   int Candidate;
   logic [NCORES-1:0] LocalReply, LocalBlocked, LocalStoreConflict;
   logic [NCORES-1:0][P.AHBW-1:0] LocalData;
   assign CacheReadAddr = Addr;
+  assign IFillRequest = PRIVATE_ICACHE && !Write[NextOwner] && !Prot[NextOwner][0] &&
+    cacheable(Addr[NextOwner]);
+  assign IFillLast = !IFillActive || int'(IBeat) == ICACHE_LINE_WORDS-1;
   assign CacheWriteData = CoreHWDATA;
   assign CacheWriteStrb = CoreHWSTRB;
   always_comb begin
@@ -70,22 +83,22 @@ module ahbmulticore import cvw::*; #(
     for (int h = 0; h < NCORES; h++)
       for (int writer = 0; writer < NCORES; writer++)
         if (CacheWriteCommit[writer] &&
-            Addr[h][P.PA_BITS-1:GRANULE_BITS] == Addr[writer][P.PA_BITS-1:GRANULE_BITS])
+            Addr[h][P.PA_BITS-1:CONFLICT_BITS] == Addr[writer][P.PA_BITS-1:CONFLICT_BITS])
           LocalStoreConflict[h] = 1'b1;
   end
   for (genvar h = 0; h < NCORES; h++) begin : readhazards
-    // Compare full physical word addresses, not bank indices or byte offsets.
+    // Compare full physical coherence/refill regions, not bank indices.
     // A write can merge/invalidate before its bus reply; matching local reads
-    // must wait through commit. Independent words have no such dependency.
-    assign LocalBlocked[h] = DataPhase && (Owner == OWNER_BITS'(h) ||
-      (Write[Owner] && Addr[h][P.PA_BITS-1:GRANULE_BITS] == Addr[Owner][P.PA_BITS-1:GRANULE_BITS]));
-    // A local store must not race ANY global access to its word: a read
+    // must wait through commit. Independent regions have no such dependency.
+    assign LocalBlocked[h] = (DataPhase || IFillActive) && (Owner == OWNER_BITS'(h) ||
+      (Write[Owner] && Addr[h][P.PA_BITS-1:CONFLICT_BITS] == Addr[Owner][P.PA_BITS-1:CONFLICT_BITS]));
+    // A local store must not race ANY global access to its line: a read
     // may already have captured modified data for a writeback/intervention.
     assign CacheWriteCommit[h] = HRESETn && LOCAL_DCACHE_WRITES &&
       State[h] == PENDING && Write[h] && Prot[h][0] && Op[h] == 0 &&
       CacheWriteHit[h] && !LockActive &&
-      !(DataPhase && (Owner == OWNER_BITS'(h) ||
-        Addr[h][P.PA_BITS-1:GRANULE_BITS] == Addr[Owner][P.PA_BITS-1:GRANULE_BITS]));
+      !((DataPhase || IFillActive) && (Owner == OWNER_BITS'(h) ||
+        Addr[h][P.PA_BITS-1:CONFLICT_BITS] == Addr[Owner][P.PA_BITS-1:CONFLICT_BITS]));
   end
 
   function automatic logic cacheable(input logic [P.PA_BITS-1:0] address);
@@ -96,49 +109,57 @@ module ahbmulticore import cvw::*; #(
 
   if (PRIVATE_ICACHE) begin : icache
     localparam OFFSET = $clog2(P.AHBW/8);
-    localparam INDEX = $clog2(ICACHE_WORDS);
-    localparam TAG = P.PA_BITS - OFFSET - INDEX;
-    logic [NCORES-1:0][ICACHE_WORDS-1:0] Valid;
-    logic [TAG-1:0] Tags[NCORES][ICACHE_WORDS];
+    localparam LINE_OFFSET = OFFSET + $clog2(ICACHE_LINE_WORDS);
+    localparam N_LINES = ICACHE_WORDS / ICACHE_LINE_WORDS;
+    localparam INDEX = $clog2(N_LINES);
+    localparam WORD_INDEX = $clog2(ICACHE_WORDS);
+    localparam TAG = P.PA_BITS - LINE_OFFSET - INDEX;
+    logic [NCORES-1:0][N_LINES-1:0] Valid;
+    logic [TAG-1:0] Tags[NCORES][N_LINES];
     logic [P.AHBW-1:0] Lines[NCORES][ICACHE_WORDS];
     always_comb begin
       for (int h = 0; h < NCORES; h++) begin
-        LocalData[h] = Prot[h][0] ? CacheReadData[h] : Lines[h][Addr[h][OFFSET +: INDEX]];
+        LocalData[h] = Prot[h][0] ? CacheReadData[h] : Lines[h][Addr[h][OFFSET +: WORD_INDEX]];
         LocalReply[h] = State[h] == PENDING && !Write[h] && Op[h] == 0 &&
           !LocalBlocked[h] && !LocalStoreConflict[h] &&
           (Prot[h][0] ? (LOCAL_DCACHE_READS && !LockActive && CacheReadHit[h]) :
-           (cacheable(Addr[h]) && Valid[h][Addr[h][OFFSET +: INDEX]] &&
-            Tags[h][Addr[h][OFFSET +: INDEX]] == Addr[h][P.PA_BITS-1:OFFSET+INDEX]));
+           (cacheable(Addr[h]) && Valid[h][Addr[h][LINE_OFFSET +: INDEX]] &&
+            Tags[h][Addr[h][LINE_OFFSET +: INDEX]] == Addr[h][P.PA_BITS-1:LINE_OFFSET+INDEX]));
       end
     end
     always_ff @(posedge HCLK) begin
       if (!HRESETn) Valid <= '0;
       else begin
         // Apply invalidations before a global I fill. A simultaneous fill is
-        // of another word and must retain its new tag/valid bit, even if the
+        // of another region and must retain its new tag/valid bit, even if the
         // victim's old tag matches a committing local store.
         for (int writer = 0; writer < NCORES; writer++)
           if (CacheWriteCommit[writer])
             for (int h = 0; h < NCORES; h++)
-              if (Tags[h][Addr[writer][OFFSET +: INDEX]] == Addr[writer][P.PA_BITS-1:OFFSET+INDEX])
-                Valid[h][Addr[writer][OFFSET +: INDEX]] <= 1'b0;
+              if (Tags[h][Addr[writer][LINE_OFFSET +: INDEX]] == Addr[writer][P.PA_BITS-1:LINE_OFFSET+INDEX])
+                Valid[h][Addr[writer][LINE_OFFSET +: INDEX]] <= 1'b0;
+        // A partial/error fill never exposes any words as a valid line.
+        if ((!DataPhase && Found && HREADY && IFillRequest) ||
+            (DataPhase && HREADY && HRESP && IFillActive))
+          Valid[AddressOwner][Addr[AddressOwner][LINE_OFFSET +: INDEX]] <= 1'b0;
         if (DataPhase && HREADY && !HRESP) begin
           if (Write[Owner]) begin
             // Invalidate all instruction copies, including the writer's. This
             // conservatively supplies coherence stronger than fence.i requires.
             for (int h = 0; h < NCORES; h++)
-              if (Tags[h][Addr[Owner][OFFSET +: INDEX]] == Addr[Owner][P.PA_BITS-1:OFFSET+INDEX])
-                Valid[h][Addr[Owner][OFFSET +: INDEX]] <= 1'b0;
+              if (Tags[h][Addr[Owner][LINE_OFFSET +: INDEX]] == Addr[Owner][P.PA_BITS-1:LINE_OFFSET+INDEX])
+                Valid[h][Addr[Owner][LINE_OFFSET +: INDEX]] <= 1'b0;
           end else if (!Prot[Owner][0] && cacheable(Addr[Owner])) begin
-            Valid[Owner][Addr[Owner][OFFSET +: INDEX]] <= 1'b1;
-            Tags[Owner][Addr[Owner][OFFSET +: INDEX]] <= Addr[Owner][P.PA_BITS-1:OFFSET+INDEX];
-            Lines[Owner][Addr[Owner][OFFSET +: INDEX]] <= HRDATA;
+            Valid[Owner][Addr[Owner][LINE_OFFSET +: INDEX]] <= IFillLast;
+            Tags[Owner][Addr[Owner][LINE_OFFSET +: INDEX]] <= Addr[Owner][P.PA_BITS-1:LINE_OFFSET+INDEX];
+            Lines[Owner][HADDR[OFFSET +: WORD_INDEX]] <= HRDATA;
           end
         end
       end
     end
     initial begin
-      assert (ICACHE_WORDS >= 2 && (ICACHE_WORDS & (ICACHE_WORDS-1)) == 0 && TAG > 0)
+      assert (ICACHE_LINE_WORDS >= 1 && (ICACHE_LINE_WORDS & (ICACHE_LINE_WORDS-1)) == 0 &&
+        ICACHE_WORDS >= 2*ICACHE_LINE_WORDS && (ICACHE_WORDS & (ICACHE_WORDS-1)) == 0 && TAG > 0)
         else $fatal(1, "Private I-cache words must be a power of two >= 2 and fit PA_BITS");
     end
   end else begin : noicache
@@ -166,6 +187,10 @@ module ahbmulticore import cvw::*; #(
         Found = 1'b1;
       end
     end
+    if (IFillActive) begin
+      NextOwner = Owner;
+      Found = 1'b1;
+    end
   end
 
   // Validate SC where all stores are ordered, never at local address issue.
@@ -178,8 +203,12 @@ module ahbmulticore import cvw::*; #(
 
   always_comb begin
     HADDR = Addr[AddressOwner];
+    if (IFillActive || (!DataPhase && Found && IFillRequest))
+      HADDR = ((Addr[AddressOwner] >> (GRANULE_BITS + $clog2(ICACHE_LINE_WORDS))) <<
+        (GRANULE_BITS + $clog2(ICACHE_LINE_WORDS))) +
+        (IFillActive ? P.PA_BITS'(IBeat) << GRANULE_BITS : '0);
     HWRITE = Write[AddressOwner];
-    HSIZE = Size[AddressOwner];
+    HSIZE = IFillActive || (!DataPhase && Found && IFillRequest) ? 3'(GRANULE_BITS) : Size[AddressOwner];
     HPROT = Prot[AddressOwner];
     HTRANS = !DataPhase && Found && !FailedSC && !BadAMOWrite && HRESETn ? 2'b10 : 2'b00;
     HBURST = 3'b000;
@@ -194,6 +223,9 @@ module ahbmulticore import cvw::*; #(
   always_ff @(posedge HCLK) begin
     if (!HRESETn) begin
       DataPhase <= 1'b0;
+      IFillActive <= 1'b0;
+      IBeat <= '0;
+      IRequestedData <= '0;
       Owner <= '0;
       First <= '0;
       Addr <= '0;
@@ -245,6 +277,10 @@ module ahbmulticore import cvw::*; #(
           First <= int'(NextOwner) == NCORES-1 ? '0 : NextOwner + 1'b1;
         end else begin
           Owner <= NextOwner;
+          if (!IFillActive && IFillRequest) begin
+            IFillActive <= 1'b1;
+            IBeat <= '0;
+          end
           DataPhase <= 1'b1;
           if (Op[NextOwner] == AMO && !Write[NextOwner]) begin
             assert (!LockActive) else $fatal(1, "Nested AMO read");
@@ -256,11 +292,21 @@ module ahbmulticore import cvw::*; #(
               else $fatal(1, "AMO write without its locked read");
         end
       end else if (DataPhase && HREADY) begin
-        CoreHRDATA[Owner] <= HRDATA;
-        CoreHRESP[Owner] <= HRESP;
-        State[Owner] <= HRESP ? ERROR_REPLY : REPLY;
         DataPhase <= 1'b0;
-        First <= int'(Owner) == NCORES-1 ? '0 : Owner + 1'b1;
+        if (IFillActive && !HRESP && !IFillLast) begin
+          IBeat <= IBeat + 1'b1;
+          if (int'(IBeat) == ((int'(Addr[Owner]) >> GRANULE_BITS) & (ICACHE_LINE_WORDS-1)))
+            IRequestedData <= HRDATA;
+        end else begin
+          CoreHRDATA[Owner] <= IFillActive && !HRESP &&
+            int'(IBeat) != ((int'(Addr[Owner]) >> GRANULE_BITS) & (ICACHE_LINE_WORDS-1)) ?
+            IRequestedData : HRDATA;
+          CoreHRESP[Owner] <= HRESP;
+          State[Owner] <= HRESP ? ERROR_REPLY : REPLY;
+          IFillActive <= 1'b0;
+          IBeat <= '0;
+          First <= int'(Owner) == NCORES-1 ? '0 : Owner + 1'b1;
+        end
         if (Op[Owner] == SC) CoreSCFail[Owner] <= HRESP;
         // Results remain sticky across IFU replies until the next SC finishes;
         // the memory stage may be waiting for an instruction fetch to retire.

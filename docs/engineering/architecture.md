@@ -112,3 +112,21 @@ invalidates reservations and I words centrally. Independent commits can
 complete in parallel, but a global access to the same word, its global owner
 or AMO exclusion blocks the local store. Coincident LR replacement and I fills
 have explicit priority. See [ADR 0006](decisions/0006-local-modified-stores.md).
+
+## Multiword private line extension
+
+The optional private caches expose independent `PRIVATE_DCACHE_LINE_WORDS`
+and `PRIVATE_ICACHE_LINE_WORDS` (default 1). Capacity parameters remain total
+AHB words. D tags/MSI state and I tags/validity are per line; selected word
+indices address flat data arrays. D fills stage all words before installation;
+dirty eviction/intervention retains M until the entire writeback succeeds.
+I fills retain global ownership across individually snooped word transactions
+and expose a valid line only after the final successful response. All transfers
+remain AHB SINGLE words; MMIO bypass retains its original size.
+
+Local access guards cover the larger I/D line to protect ongoing interventions
+and instruction refills, including transfer gaps. LR/SC retains its word
+reservation granule and AMO retains global exclusion. Entire I lines are
+invalidated on successful global/local stores. See
+[ADR 0007](decisions/0007-multiword-private-cache-lines.md) for ordering, error
+semantics and the verification record; older Linux models remain separate.

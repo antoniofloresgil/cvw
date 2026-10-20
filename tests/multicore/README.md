@@ -381,3 +381,34 @@ aciertos S, fallos y atómicos conservan el camino global. Con NCORES=1 desapare
 la mejora. El [ADR 0006](../../docs/engineering/decisions/0006-local-modified-stores.md)
 y su [registro](../../docs/engineering/experiments/2026-10-19-local-modified-stores.md)
 explican las prioridades para LR e I-fill simultáneos y las pruebas ejecutadas.
+
+### Multiword private I/D lines
+
+`PRIVATE_DCACHE_LINE_WORDS` and `PRIVATE_ICACHE_LINE_WORDS` independently
+select power-of-two AHB words per line (default 1). Total capacity remains
+`PRIVATE_DCACHE_WORDS` / `PRIVATE_ICACHE_WORDS`; each cache needs at least
+two lines. Thus 256 RV64 words give 2 KiB with either 256 eight-byte lines
+or 64 thirty-two-byte lines. RV64 uses four words per 32-byte line; RV32 uses
+eight. The one-core path removes the extra private caches/coherence as before.
+
+```bash
+source ./setup.sh
+python3 tests/multicore/run.py --private-dcache --private-icache --local-dcache-reads --local-dcache-writes --cache-words 256 --icache-words 256 --cache-line-words 4 --icache-line-words 4 --cores 1 2 3 --latency 0 3 --suite atomic --work-dir /tmp/wally-lines
+```
+
+The controller unit matrix uses the same geometry arguments, including
+RV32/RV64 cases; `4/4` means 16-byte lines on RV32. Use `8/8` for a dedicated
+32-byte RV32 comparison. Model paths include capacities and line sizes.
+Multiword directed checks cover adjacent-word hits, full-line ownership and
+dirty intervention/replacement, partial stores, LR/SC/AMO, instruction
+invalidation, local concurrency, every fill/writeback error beat, MMIO bypass
+and reset, followed by 2,000 deterministic random operations per case.
+
+Fills and writebacks use serialized aligned SINGLE word transfers, without
+requiring AHB bursts. MSI ownership is per D line and I validity is per I line;
+failed partial fills do not allocate. Local hazards conservatively cover the
+larger I/D line, including the gaps between I-fill transfers. Larger lines
+can increase false sharing and transfer cost; compare identical total byte
+capacities before choosing a non-default geometry. See
+[ADR 0007](../../docs/engineering/decisions/0007-multiword-private-cache-lines.md)
+and the [multiword results](../../docs/engineering/experiments/2026-10-19-multiword-lines.md).

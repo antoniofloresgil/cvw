@@ -44,6 +44,8 @@ def main():
     parser.add_argument("--icache-words", type=int, default=256)
     parser.add_argument("--local-dcache-writes", action="store_true", help="Concurrent M-hit stores with reservation/I invalidation; requires --private-dcache")
     parser.add_argument("--local-dcache-reads", action="store_true", help="Concurrent ordinary D-cache read hits; requires --private-dcache")
+    parser.add_argument("--cache-line-words", type=int, default=1, help="AHB words per private D line; total capacity unchanged")
+    parser.add_argument("--icache-line-words", type=int, default=1, help="AHB words per private I line")
     parser.add_argument("--cache-words", type=int, default=256, help="AHB words per private data cache; power of two >= 2")
     parser.add_argument("--work-dir", type=Path, help="Build/log directory; use native Linux storage on case-insensitive hosts")
     parser.add_argument("--unit-only", action="store_true", help="Run bus/cache/peripheral tests without full-core models")
@@ -58,6 +60,11 @@ def main():
         parser.error("--icache-words must be a power of two >= 2")
     if (args.private_icache or args.local_dcache_reads or args.local_dcache_writes) and not args.private_dcache:
         parser.error("Private cache local paths require --private-dcache")
+    for capacity, line in ((args.cache_words, args.cache_line_words), (args.icache_words, args.icache_line_words)):
+        if line < 1 or line & (line-1) or capacity < 2*line:
+            parser.error("Line size must be a power of two with at least two lines per cache")
+    if not (args.private_dcache) and (args.cache_line_words != 1 or args.icache_line_words != 1):
+        parser.error("Multiword private lines require MSI mode")
     if "WALLY" not in os.environ:
         parser.error("Source ./setup.sh from the repository root first")
     root = Path(os.environ["WALLY"])
@@ -86,10 +93,12 @@ def main():
         for config in ("rv64gc", "rv32gc"):
             for cores in (2, 3):
                 for latency in args.latency:
-                    name = f"msi-{config}-{cores}-{latency}"
+                    name = f"msi-{config}-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}"
                     executable = build_test("msi_tb", config,
                         [tests / "msi_tb.sv", root / "src/ebu/ahbmulticore.sv", root / "src/ebu/ahbmsicache.sv"],
-                        name, [f"-GNCORES={cores}", f"-GLATENCY={latency}", f"-GPRIVATE_ICACHE=1'b{int(args.private_icache)}",
+                        name, [f"-GNCORES={cores}", f"-GLATENCY={latency}",
+                               f"-GWORDS={args.cache_words}", f"-GICACHE_WORDS={args.icache_words}",
+                               f"-GLINE_WORDS={args.cache_line_words}", f"-GICACHE_LINE_WORDS={args.icache_line_words}", f"-GPRIVATE_ICACHE=1'b{int(args.private_icache)}",
                                f"-GLOCAL_DCACHE_READS=1'b{int(args.local_dcache_reads)}",
                                f"-GLOCAL_DCACHE_WRITES=1'b{int(args.local_dcache_writes)}"])
                     run([executable], work / f"{name}-run.log")
@@ -110,10 +119,11 @@ def main():
                 "soc_tb",
                 f"deriv/{config}",
                 [tests / "soc_tb.sv", tests / "dpi.cpp", *sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")],
-                f"{args.suite}-soc-{cores}-{latency}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else ""),
+                f"{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else ""),
                 [f"-GNCORES={cores}", f"-GLATENCY={latency}", "-GSHARED_CACHE=1'b1" if args.shared_cache else "-GSHARED_CACHE=1'b0",
                  "-GPRIVATE_DCACHE=1'b1" if args.private_dcache else "-GPRIVATE_DCACHE=1'b0",
                  f"-GPRIVATE_DCACHE_WORDS={args.cache_words}",
+                 f"-GPRIVATE_DCACHE_LINE_WORDS={args.cache_line_words}", f"-GPRIVATE_ICACHE_LINE_WORDS={args.icache_line_words}",
                  f"-GPRIVATE_ICACHE=1'b{int(args.private_icache)}", f"-GPRIVATE_ICACHE_WORDS={args.icache_words}",
                  f"-GLOCAL_DCACHE_READS=1'b{int(args.local_dcache_reads)}",
                                f"-GLOCAL_DCACHE_WRITES=1'b{int(args.local_dcache_writes)}"],

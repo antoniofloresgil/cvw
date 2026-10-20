@@ -30,7 +30,9 @@
 module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsigned NCORES = 1,
   parameter bit SHARED_CACHE = 0, parameter int unsigned SHARED_CACHE_WORDS = 256,
   parameter bit PRIVATE_DCACHE = 0, parameter int unsigned PRIVATE_DCACHE_WORDS = 256,
+  parameter int unsigned PRIVATE_DCACHE_LINE_WORDS = 1,
   parameter bit PRIVATE_ICACHE = 0, parameter int unsigned PRIVATE_ICACHE_WORDS = 256,
+  parameter int unsigned PRIVATE_ICACHE_LINE_WORDS = 1,
   parameter bit LOCAL_DCACHE_READS = 0, parameter bit LOCAL_DCACHE_WRITES = 0)  (
   input  logic                clk,
   input  logic                reset_ext,        // external asynchronous reset pin
@@ -144,6 +146,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   end else begin : multicore
     ahbmulticore #(.P(P), .NCORES(NCORES),
       .PRIVATE_ICACHE(MSI_ENABLED && PRIVATE_ICACHE), .ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
+      .ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS), .DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
       .LOCAL_DCACHE_READS(MSI_ENABLED && LOCAL_DCACHE_READS),
       .LOCAL_DCACHE_WRITES(MSI_ENABLED && LOCAL_DCACHE_WRITES)) bus(
       .CacheReadAddr, .CacheReadHit, .CacheReadData,
@@ -155,7 +158,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   end
 
   if (MSI_ENABLED) begin : msicache
-    ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(PRIVATE_DCACHE_WORDS),
+    ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(PRIVATE_DCACHE_WORDS), .LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
       .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
       .CacheReadAddr, .CacheReadHit, .CacheReadData,
       .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,

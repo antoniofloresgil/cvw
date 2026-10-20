@@ -5,6 +5,8 @@ module msi_tb import cvw::*; #(
     parameter int NCORES = 2,
     parameter int LATENCY = 3,
     parameter int WORDS = 4,
+    parameter int LINE_WORDS = 1,
+    parameter int ICACHE_LINE_WORDS = 1,
     parameter bit PRIVATE_ICACHE = 0,
     parameter int ICACHE_WORDS = 4,
     parameter bit LOCAL_DCACHE_READS = 0,
@@ -12,8 +14,9 @@ module msi_tb import cvw::*; #(
 );
     `include "parameter-defs.vh"
     localparam OFFSET = $clog2(P.XLEN/8);
-    localparam INDEX = $clog2(WORDS);
+    localparam INDEX = $clog2(WORDS/LINE_WORDS);
     localparam HART_BITS = $clog2(NCORES);
+    localparam CONFLICT_OFFSET = OFFSET + $clog2(LINE_WORDS > ICACHE_LINE_WORDS ? LINE_WORDS : ICACHE_LINE_WORDS);
     localparam logic [P.PA_BITS-1:0] BASE = P.PA_BITS'(P.UNCORE_RAM_BASE);
     logic HCLK = 0, HRESETn = 0;
     always #5 HCLK = ~HCLK;
@@ -38,8 +41,8 @@ module msi_tb import cvw::*; #(
     logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData;
     logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb;
     ahbmulticore #(.P(P), .NCORES(NCORES), .PRIVATE_ICACHE(PRIVATE_ICACHE),
-        .ICACHE_WORDS(ICACHE_WORDS), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) bus(.*);
-    ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(WORDS), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
+        .ICACHE_WORDS(ICACHE_WORDS), .ICACHE_LINE_WORDS(ICACHE_LINE_WORDS), .DCACHE_LINE_WORDS(LINE_WORDS), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) bus(.*);
+    ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(WORDS), .LINE_WORDS(LINE_WORDS), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
         .CacheReadAddr, .CacheReadHit, .CacheReadData,
         .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
         .HCLK, .HRESETn, .UpHOWNER(HOWNER), .UpHADDR(HADDR), .UpHWDATA(HWDATA), .UpHWSTRB(HWSTRB),
@@ -48,7 +51,7 @@ module msi_tb import cvw::*; #(
         .HADDR(downaddr), .HWDATA(downwdata), .HWSTRB(downstrb), .HWRITE(downwrite), .HMASTLOCK(downlock),
         .HSIZE(downsize), .HBURST(downburst), .HPROT(downprot), .HTRANS(downtrans),
         .HRDATA(downrdata), .HREADY(downready), .HRESP(downresp));
-    logic [P.XLEN-1:0] mem[256], reference[256];
+    logic [P.XLEN-1:0] mem[4096], reference[4096];
     logic pending = 0, writeq, errorq, error_first = 0;
     logic fault_read = 0, fault_write = 0;
     logic [P.PA_BITS-1:0] fault_addr = '1, addrq;
@@ -61,13 +64,13 @@ module msi_tb import cvw::*; #(
         if (HTRANS[1] && HREADY) global_requests <= global_requests + 1;
         if (|CacheWriteCommit) begin
             assert (!bus.LockActive) else $fatal(1, "Local M store bypassed AMO lock");
-            if (bus.DataPhase) begin
+            if (bus.DataPhase || bus.IFillActive) begin
                 if ($countones(CacheWriteCommit) > 1) parallel_stores_during_bus <= parallel_stores_during_bus + 1;
                 stores_during_bus <= stores_during_bus + 1;
                 for (int h = 0; h < NCORES; h++) if (CacheWriteCommit[h])
                     assert (bus.Owner != HART_BITS'(h) &&
-                        bus.Addr[h][P.PA_BITS-1:OFFSET] != bus.Addr[bus.Owner][P.PA_BITS-1:OFFSET])
-                        else $fatal(1, "Local M store raced a global read/write to its word");
+                        bus.Addr[h][P.PA_BITS-1:CONFLICT_OFFSET] != bus.Addr[bus.Owner][P.PA_BITS-1:CONFLICT_OFFSET])
+                        else $fatal(1, "Local M store raced a global access to its coherence/refill region");
                 if (HREADY && !HRESP && bus.Op[bus.Owner] == 1) stores_at_lr_reply <= stores_at_lr_reply + 1;
                 if (HREADY && !HRESP && !bus.Prot[bus.Owner][0]) stores_at_ifill_reply <= stores_at_ifill_reply + 1;
             end
@@ -84,7 +87,7 @@ module msi_tb import cvw::*; #(
     always @(posedge HCLK) if (HRESETn && bus.DataPhase && bus.Write[bus.Owner]) begin
         if ($countones(bus.LocalReply) > 1) simultaneous_write_replies <= simultaneous_write_replies + 1;
         for (int h = 0; h < NCORES; h++) if (bus.LocalReply[h]) begin
-            assert (bus.Addr[h][P.PA_BITS-1:OFFSET] != bus.Addr[bus.Owner][P.PA_BITS-1:OFFSET])
+            assert (bus.Addr[h][P.PA_BITS-1:CONFLICT_OFFSET] != bus.Addr[bus.Owner][P.PA_BITS-1:CONFLICT_OFFSET])
                 else $fatal(1, "Local read bypassed a write to the same physical word");
             if (bus.Prot[h][0]) data_write_overlaps <= data_write_overlaps + 1;
             else instruction_write_overlaps <= instruction_write_overlaps + 1;
@@ -93,7 +96,7 @@ module msi_tb import cvw::*; #(
     logic [31:0] rng = 32'h10c0ffee;
     assign downready = !pending || (delayq == 0 && (!errorq || error_first));
     assign downresp = pending && delayq == 0 && errorq;
-    assign downrdata = mem[addrq[OFFSET +: 8]];
+    assign downrdata = mem[addrq[OFFSET +: 12]];
     always @(posedge HCLK) begin
         if (!HRESETn) begin
             pending <= 0;
@@ -105,7 +108,7 @@ module msi_tb import cvw::*; #(
             else begin
                 if (writeq && !errorq)
                     for (int b = 0; b < P.XLEN/8; b++)
-                        if (downstrb[b]) mem[addrq[OFFSET +: 8]][8*b +: 8] <= downwdata[8*b +: 8];
+                        if (downstrb[b]) mem[addrq[OFFSET +: 12]][8*b +: 8] <= downwdata[8*b +: 8];
                 pending <= 0;
             end
         end else if (downtrans[1]) begin
@@ -324,13 +327,192 @@ module msi_tb import cvw::*; #(
         assert (local_stores == saved+1) else $fatal(1, "Queued M store did not resume after AMO");
         load(0, 192, 'h9101);
     endtask
+    task automatic multiline_checks();
+        int before_count;
+        logic [P.XLEN-1:0] value;
+        // A complete line is installed atomically, with total capacity fixed.
+        load(0, 0, reference[0]);
+        snapshot = transfers;
+        for (int w = 0; w < LINE_WORDS; w++) load(0, w, reference[w]);
+        assert (transfers == snapshot) else $fatal(1, "Adjacent D word missed after line fill");
+        for (int w = 0; w < LINE_WORDS; w++) begin
+            reference[w] = P.XLEN'(int'('h1000+w));
+            store(0, w, reference[w]);
+        end
+        before_count = writebacks;
+        load(1, LINE_WORDS-1, reference[LINE_WORDS-1]);
+        assert (writebacks-before_count == LINE_WORDS) else $fatal(1, "Dirty intervention was not a complete line");
+        for (int w = 0; w < LINE_WORDS; w++) begin
+            assert (mem[w] == reference[w]) else $fatal(1, "Dirty line lost another word");
+            load(1, w, reference[w]);
+        end
+        // Ownership/invalidation covers other words of the line (false sharing).
+        store(0, 0, 'h3000); reference[0] = 'h3000;
+        assert (cache.States[1][0] == 0) else $fatal(1, "Peer retained a different word of an invalidated line");
+        load(1, LINE_WORDS-1, reference[LINE_WORDS-1]);
+        // Byte merge on an allocating miss preserves every other word and byte.
+        value = (reference[WORDS+1] & ~P.XLEN'('hff00)) | P.XLEN'('hab00);
+        access(0, 1, BASE+(P.PA_BITS'(int'(WORDS+1)) << OFFSET)+1, 'hab00,
+            (P.XLEN/8)'(2), 0, 0, 0, 0, 0, 0);
+        reference[WORDS+1] = value;
+        load(1, WORDS+1, value);
+        load(1, WORDS, reference[WORDS]);
+        load(0, 0, reference[0], 1);
+        store(1, 0, 'h3100); reference[0] = 'h3100;
+        store(0, 0, 'hbad, 2, 1);
+        load(0, 0, reference[0], 1);
+        store(0, 0, 'h3200, 2); reference[0] = 'h3200;
+        if (LINE_WORDS > 1) begin
+            // Sharing a line is not itself a store to the LR reserved word.
+            load(0, 0, reference[0], 1);
+            store(1, 1, reference[1]);
+            store(0, 0, 'h3250, 2); reference[0] = 'h3250;
+            store(0, 0, reference[0]); // Establish M for the local-store case.
+            load(0, 0, reference[0], 1);
+            store(0, 1, reference[1]);
+            store(0, 0, 'h3260, 2); reference[0] = 'h3260;
+            load(1, 1, reference[1]);
+        end
+        // Locked AMO still excludes peer operations across whole-line transfers.
+        load(0, 0, reference[0], 3);
+        fork
+            load(1, 0, P.XLEN'('h3300));
+            begin
+                load(0, 2*WORDS, reference[2*WORDS], 0, 1);
+                store(0, 0, 'h3300, 3);
+            end
+        join
+        reference[0] = 'h3300;
+        if (PRIVATE_ICACHE) begin
+            load(0, 64+ICACHE_LINE_WORDS-1, reference[64+ICACHE_LINE_WORDS-1], 0, 1);
+            snapshot = transfers;
+            for (int w = 0; w < ICACHE_LINE_WORDS; w++) load(0, 64+w, reference[64+w], 0, 1);
+            assert (transfers == snapshot) else $fatal(1, "Adjacent I word missed after line fill");
+            // A non-first store invalidates the entire instruction line remotely.
+            store(1, 65, 'hcafe); reference[65] = 'hcafe;
+            load(0, 65, reference[65], 0, 1);
+            load(0, 64, reference[64], 0, 1);
+            // Local M stores in another word must not race an in-flight I refill.
+            store(0, 80, 'h8100); reference[80] = 'h8100;
+            fork
+                load(1, 80, P.XLEN'('h8100), 0, 1);
+                begin
+                    while (!bus.DataPhase) @(negedge HCLK);
+                    store(0, 81, 'h8200);
+                end
+            join
+            reference[81] = 'h8200;
+            load(1, 81, reference[81], 0, 1);
+        end
+        if (LOCAL_DCACHE_WRITES) begin
+            int previous;
+            store(0, 0, 'h9010); reference[0] = 'h9010;
+            store(1, 64, 'h9020); reference[64] = 'h9020;
+            store(0, 1, reference[1]);
+            store(1, 65, reference[65]);
+            previous = parallel_stores;
+            before_count = global_requests;
+            fork
+                store(0, 1, 'h9030);
+                store(1, 65, 'h9040);
+            join
+            reference[1] = 'h9030; reference[65] = 'h9040;
+            assert (parallel_stores > previous && global_requests == before_count)
+                else $fatal(1, "Independent multiline M stores lost parallel local completion");
+            if (NCORES > 2) begin
+                previous = parallel_stores_during_bus;
+                fork
+                    load(2, 224, reference[224]);
+                    begin
+                        while (!bus.DataPhase) @(negedge HCLK);
+                        fork
+                            store(0, 1, 'h9050);
+                            store(1, 65, 'h9060);
+                        join
+                    end
+                join
+                reference[1] = 'h9050; reference[65] = 'h9060;
+                assert (parallel_stores_during_bus > previous)
+                    else $fatal(1, "Parallel M stores failed to overlap an independent line miss");
+            end
+        end
+        if (LOCAL_DCACHE_READS) begin
+            int previous;
+            load(0, 0, reference[0]);
+            previous = overlapping_replies;
+            fork
+                load(1, 224, reference[224]);
+                begin
+                    repeat (4) @(negedge HCLK);
+                    load(0, 0, reference[0]);
+                end
+            join
+            assert (overlapping_replies > previous) else $fatal(1, "D hit failed to overlap line traffic");
+        end
+        if (PRIVATE_ICACHE) begin
+            int previous;
+            load(0, 192, reference[192], 0, 1);
+            previous = overlapping_replies;
+            fork
+                load(1, 160, reference[160]);
+                begin
+                    repeat (4) @(negedge HCLK);
+                    load(0, 192, reference[192], 0, 1);
+                end
+            join
+            assert (overlapping_replies > previous) else $fatal(1, "I hit failed to overlap line traffic");
+        end
+        // Fail each writeback beat. Dirty ownership/data survive partial writes.
+        for (int beat = 0; beat < LINE_WORDS; beat++) begin
+            for (int w = 0; w < LINE_WORDS; w++) begin
+                reference[w] = P.XLEN'(int'('h5000+beat*32+w));
+                store(0, w, reference[w]);
+            end
+            fault_addr = BASE+(P.PA_BITS'(beat) << OFFSET); fault_write = 1;
+            access(0, 0, BASE+(P.PA_BITS'(WORDS) << OFFSET), 0, '0, 0, 0, 0, 1);
+            assert (cache.States[0][0] == 2) else $fatal(1, "Partial eviction lost M permission");
+            for (int w = 0; w < LINE_WORDS; w++) load(0, w, reference[w]);
+            access(1, 0, BASE, 0, '0, 0, 0, 0, 1);
+            assert (cache.States[0][0] == 2) else $fatal(1, "Partial intervention lost M permission");
+            fault_write = 0;
+            load(1, 0, reference[0]);
+            for (int w = 0; w < LINE_WORDS; w++) load(1, w, reference[w]);
+        end
+        // Fail every D-fill beat; no partial line becomes visible.
+        for (int beat = 0; beat < LINE_WORDS; beat++) begin
+            load(0, 3*WORDS, reference[3*WORDS]);
+            fault_addr = BASE+(P.PA_BITS'(int'(2*WORDS+beat)) << OFFSET); fault_read = 1;
+            access(0, 0, BASE+(P.PA_BITS'(2*WORDS) << OFFSET), 0, '0, 0, 0, 0, 1);
+            fault_read = 0;
+            snapshot = transfers;
+            load(0, 2*WORDS, reference[2*WORDS]);
+            assert (transfers-snapshot == LINE_WORDS) else $fatal(1, "Partial D fill installed a line");
+        end
+        if (PRIVATE_ICACHE)
+            for (int beat = 0; beat < ICACHE_LINE_WORDS; beat++) begin
+                load(0, 128+ICACHE_WORDS, reference[128+ICACHE_WORDS], 0, 1);
+                fault_addr = BASE+(P.PA_BITS'(int'(128+beat)) << OFFSET); fault_read = 1;
+                access(0, 0, BASE+(P.PA_BITS'(128) << OFFSET), 0, '0, 0, 0, 1, 1);
+                fault_read = 0;
+                snapshot = transfers;
+                load(0, 128, reference[128], 0, 1);
+                assert (transfers-snapshot == ICACHE_LINE_WORDS) else $fatal(1, "Partial I fill installed a line");
+            end
+        // MMIO remains a single transfer, without line allocation/prefetch.
+        snapshot = transfers;
+        repeat (2) access(0, 0, P.PA_BITS'('h10000001), 0, '0, mem[0], 0, 0, 0, 0, 0);
+        assert (transfers-snapshot == 2) else $fatal(1, "MMIO was prefetched or cached");
+        $display("PASS: multiword directed D=%0d I=%0d words/line", LINE_WORDS, ICACHE_LINE_WORDS);
+    endtask
     initial begin
-        for (int w = 0; w < 256; w++) begin
+        for (int w = 0; w < 4096; w++) begin
             mem[w] = (P.XLEN'(64'h5678000012340000) + P.XLEN'(w));
             reference[w] = mem[w];
         end
         repeat (3) @(negedge HCLK);
         HRESETn = 1;
+        if (LINE_WORDS > 1 || ICACHE_LINE_WORDS > 1) multiline_checks();
+        else begin
         load(0, 0, reference[0]);
         snapshot = transfers;
         load(0, 0, reference[0]);
@@ -513,7 +695,7 @@ module msi_tb import cvw::*; #(
         // Failed snoop writeback must not expose stale memory or grant ownership.
         access(1, 0, BASE, 0, '0, 0, 0, 0, 1);
         assert (cache.States[0][0] == 2 &&
-            !(cache.States[1][0] != 0 && cache.Tags[1][0] == BASE[P.PA_BITS-1:OFFSET+INDEX]))
+            !(cache.States[1][0] != 0 && cache.Tags[1][0] == BASE[P.PA_BITS-1:OFFSET+$clog2(LINE_WORDS)+INDEX]))
             else $fatal(1, "Failed intervention changed ownership");
         fault_write = 0;
         load(1, 0, 'h71);
@@ -532,8 +714,9 @@ module msi_tb import cvw::*; #(
             store(0, 2, 'h81);
             store(1, 2, 'h82);
         join
-        assert (cache.States[0][2 % WORDS] == 2 || cache.States[1][2 % WORDS] == 2)
+        assert (cache.States[0][(2/LINE_WORDS) % (WORDS/LINE_WORDS)] == 2 || cache.States[1][(2/LINE_WORDS) % (WORDS/LINE_WORDS)] == 2)
             else $fatal(1, "Concurrent stores left no owner");
+        end
         // Establish a known reference, then randomize hits, misses, subword stores,
         // sharing, dirty conflicts and uncached instruction reads across all harts.
         for (int w = 0; w < 16; w++) begin
@@ -574,7 +757,7 @@ module msi_tb import cvw::*; #(
         repeat (2) @(negedge HCLK);
         HRESETn = 1;
         for (int h = 0; h < NCORES; h++)
-            for (int w = 0; w < WORDS; w++)
+            for (int w = 0; w < WORDS/LINE_WORDS; w++)
                 assert (cache.States[h][w] == 0) else $fatal(1, "Reset left a valid line");
         load(0, 0, mem[0]);
         if (PRIVATE_ICACHE) begin
@@ -591,7 +774,7 @@ module msi_tb import cvw::*; #(
         $finish;
     end
     initial begin
-        #2000000;
+        #10000000;
         $fatal(1, "MSI test timeout");
     end
 endmodule

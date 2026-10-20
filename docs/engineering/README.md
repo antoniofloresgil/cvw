@@ -18,6 +18,9 @@ has a [separate verification record](experiments/2026-10-19-independent-read-wri
 The [local M-store extension](decisions/0006-local-modified-stores.md) and
 [its validation](experiments/2026-10-19-local-modified-stores.md) add explicit
 commit notifications and a separate Linux test for items 2 and 3.
+The [multiword I/D-line design](decisions/0007-multiword-private-cache-lines.md)
+and [its verification](experiments/2026-10-19-multiword-lines.md) extend the
+private banks while retaining the one-word default.
 The earlier
 [main integration record](experiments/2026-10-18-upstream-integration.md) and
 source audits retain their original revision labels.
