@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 `include "config.vh"
 module csrc_tb import cvw::*; #(
-    parameter int COUNTER_COUNT = 32
+    parameter int COUNTER_COUNT = 32,
+    parameter int SSCOFPMF = 0
 );
     `include "parameter-defs.vh"
     function automatic cvw_t configuration();
         cvw_t c = P;
         c.COUNTERS = 12'(COUNTER_COUNT);
+        c.SSCOFPMF_SUPPORTED = (SSCOFPMF != 0);
         return c;
     endfunction
     localparam cvw_t C = configuration();
@@ -18,7 +20,7 @@ module csrc_tb import cvw::*; #(
     logic write_csr = 0;
     logic [11:0] address = 0;
     logic [P.XLEN-1:0] wdata = 0, rdata;
-    logic illegal;
+    logic illegal, overflow_pulse;
     logic [31:0] inhibit = '1, men = '1, sen = '1;
     logic [1:0] privilege = 3;
     csrc #(.P(C)) dut(
@@ -31,7 +33,8 @@ module csrc_tb import cvw::*; #(
         .TrapM(1'b0), .InvalidateICacheM(1'b0), .DivBusyE(1'b0), .FDivBusyE(1'b0),
         .CSRAdrM(address), .PrivilegeModeW(privilege), .CSRWriteValM(wdata),
         .MCOUNTINHIBIT_REGW(inhibit), .MCOUNTEREN_REGW(men), .SCOUNTEREN_REGW(sen),
-        .MTIME_CLINT(64'h1122334455667788), .CSRCReadValM(rdata), .IllegalCSRCAccessM(illegal));
+        .MTIME_CLINT(64'h1122334455667788), .CSRCReadValM(rdata), .IllegalCSRCAccessM(illegal),
+        .LCOFIPSetM(overflow_pulse));
     task automatic put(input int csr, input logic [P.XLEN-1:0] value);
         @(negedge clk); address = 12'(csr); wdata = value; write_csr = 1;
         @(negedge clk); write_csr = 0;
@@ -104,6 +107,70 @@ module csrc_tb import cvw::*; #(
         @(negedge clk); inhibit = '1;
         expect_csr('hb00, 0);
         if (P.XLEN == 32) expect_csr('hb80, 'h12345679);
+        if (SSCOFPMF != 0 && COUNTER_COUNT > 3) begin
+            // MINH suppresses M-mode events; S-mode still counts the same event.
+            inhibit = '1;
+            put('hb03, 0);
+            if (P.XLEN == 32) begin
+                put('h323, 0);
+                put('h723, P.XLEN'('h80000000));
+            end else put('h323, P.XLEN'(64'h8000000000000000));
+            inhibit[3] = 0;
+            stimulus(1, 1, 0);
+            inhibit = '1;
+            expect_csr('hb03, 0); // OF alone is not an event selection.
+            if (P.XLEN == 32) begin
+                put('h323, 1);
+                put('h723, 'h40000000);
+                expect_csr('h723, 'h40000000);
+            end else put('h323, P.XLEN'(64'h4000000000000001));
+            inhibit[3] = 0;
+            stimulus(1, 1, 0);
+            inhibit = '1;
+            expect_csr('hb03, 0);
+            privilege = 1;
+            inhibit[3] = 0;
+            stimulus(1, 1, 0);
+            inhibit = '1;
+            expect_csr('hc03, 1);
+            privilege = 3;
+            // A hardware increment across 64 bits sets OF and requests one interrupt.
+            if (P.XLEN == 32) begin
+                put('hb03, '1);
+                put('hb83, '1);
+                put('h723, 0);
+            end else begin
+                put('hb03, '1);
+                put('h323, 1);
+            end
+            @(negedge clk); iclass = 1; valid = 1; inhibit[3] = 0;
+            #1; assert (overflow_pulse) else $fatal(1, "missing overflow pulse");
+            @(negedge clk); iclass = 0; valid = 0; inhibit = '1;
+            #1; assert (!overflow_pulse) else $fatal(1, "overflow request must be one-shot");
+            expect_csr('hda0, 8);
+            men[3] = 0;
+            privilege = 1; expect_csr('hda0, 0);
+            privilege = 0; expect_csr('hda0, 0, 1);
+            privilege = 3; expect_csr('hda0, 8);
+            men[3] = 1;
+            @(negedge clk); address = 'hda0; write_csr = 1; #1;
+            assert (illegal) else $fatal(1, "scountovf write must fault");
+            write_csr = 0;
+            if (P.XLEN == 32) put('h723, 0);
+            else put('h323, 1);
+            expect_csr('hda0, 0);
+            // A selector write cannot hide a simultaneous hardware wrap.
+            put('hb03, '1);
+            if (P.XLEN == 32) put('hb83, '1);
+            @(negedge clk); address = 'h323; wdata = 1; write_csr = 1;
+            iclass = 1; valid = 1; inhibit[3] = 0;
+            #1; assert (overflow_pulse) else $fatal(1, "simultaneous selector write lost overflow");
+            @(negedge clk); write_csr = 0; iclass = 0; valid = 0; inhibit = '1;
+            expect_csr('hda0, 8);
+        end else begin
+            expect_csr('hda0, 0, 1);
+            if (P.XLEN == 32) expect_csr('h723, 0, 1);
+        end
         $display("PASS: RV%0d %0d counter CSR permissions, fixed events, enable/inhibit and rollover", P.XLEN, COUNTER_COUNT);
         $finish;
     end

@@ -94,6 +94,7 @@ localparam logic SSTC_SUPPORTED = 1; // Supervisor-mode timer interrupts
 // Hardware performance counters
 localparam logic ZICNTR_SUPPORTED = 1;
 localparam logic ZIHPM_SUPPORTED  = 1;
+localparam logic SSCOFPMF_SUPPORTED = 0;
 localparam COUNTERS = 12'd32;
 
 // Cache-management operation extensions

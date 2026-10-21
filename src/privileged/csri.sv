@@ -34,15 +34,17 @@ module csri import cvw::*; #(parameter cvw_t P) (
   input  logic [P.XLEN-1:0] CSRWriteValM,
   input  logic [11:0]       CSRAdrM,
   input  logic              MExtInt, SExtInt, MTimerInt, STimerInt, MSwInt,
-  input  logic [11:0]       MIDELEG_REGW,
+  input  logic              LCOFIPSetM,
+  input  logic [13:0]       MIDELEG_REGW,
   input  logic              ENVCFG_STCE,
-  output logic [11:0]       MIP_REGW, MIE_REGW,
-  output logic [11:0]       MIP_REGW_writeable // only SEIP, STIP, SSIP are actually writeable; the rest are hardwired to 0
+  output logic [13:0]       MIP_REGW, MIE_REGW,
+  output logic [13:0]       MIP_REGW_writeable // SEIP, STIP, SSIP and optional LCOFIP are writable
 );
 
-  logic [11:0]              MIP_WRITE_MASK, SIP_WRITE_MASK, MIE_WRITE_MASK, SIE_WRITE_MASK;
+  logic [13:0]              MIP_WRITE_MASK, SIP_WRITE_MASK, MIE_WRITE_MASK, SIE_WRITE_MASK;
   logic                     WriteMIPM, WriteMIEM, WriteSIPM, WriteSIEM;
   logic                     STIP;
+  logic                     LCOFIP;
 
   localparam MIE = 12'h304;
   localparam MIP = 12'h344;
@@ -61,32 +63,34 @@ module csri import cvw::*; #(parameter cvw_t P) (
   // SSIP is writable in SIP if S mode exists
   if (P.S_SUPPORTED) begin : mask
     if (P.SSTC_SUPPORTED) begin
-      assign MIP_WRITE_MASK = ENVCFG_STCE ? 12'h202 : 12'h222; // SEIP and SSIP are writable, but STIP is not writable when STIMECMP is implemented (see SSTC spec)
+      assign MIP_WRITE_MASK = (ENVCFG_STCE ? 14'h0202 : 14'h0222) | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0); // STIP is not writable when STIMECMP is implemented
       assign STIP = ENVCFG_STCE ? STimerInt : MIP_REGW_writeable[5];
     end else begin
-      assign MIP_WRITE_MASK = 12'h222; // SEIP, STIP, SSIP are writeable in MIP (20210108-draft 3.1.9)
+      assign MIP_WRITE_MASK = 14'h0222 | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0);
       assign STIP = MIP_REGW_writeable[5];
     end
-    assign SIP_WRITE_MASK = 12'h002 & MIDELEG_REGW; // SSIP is writeable in SIP (privileged 20210108-draft 4.1.3)
-    assign MIE_WRITE_MASK = 12'hAAA; // MEIE, SEIE, MTIE, STIE, MSIE, SSIE
-    assign SIE_WRITE_MASK = 12'h222 & MIDELEG_REGW; // Delegated supervisor interrupts are writable in SIE
+    assign SIP_WRITE_MASK = (14'h0002 | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0)) & MIDELEG_REGW;
+    assign MIE_WRITE_MASK = 14'h0AAA | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0);
+    assign SIE_WRITE_MASK = (14'h0222 | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0)) & MIDELEG_REGW;
   end else begin : mask
-    assign MIP_WRITE_MASK = 12'h000;
-    assign SIP_WRITE_MASK = 12'h000;
-    assign MIE_WRITE_MASK = 12'h888; // MEIE, MTIE, MSIE
-    assign SIE_WRITE_MASK = 12'h000;
+    assign MIP_WRITE_MASK = 14'h0000;
+    assign SIP_WRITE_MASK = 14'h0000;
+    assign MIE_WRITE_MASK = 14'h0888; // MEIE, MTIE, MSIE
+    assign SIE_WRITE_MASK = 14'h0000;
     assign STIP = '0;
   end
   always_ff @(posedge clk)
-    if (reset)          MIP_REGW_writeable <= 12'b0;
-    else if (WriteMIPM) MIP_REGW_writeable <= (CSRWriteValM[11:0] & MIP_WRITE_MASK);
-    else if (WriteSIPM) MIP_REGW_writeable <= (CSRWriteValM[11:0] & SIP_WRITE_MASK) | (MIP_REGW_writeable & ~SIP_WRITE_MASK);
+    if (reset)          MIP_REGW_writeable <= 14'b0;
+    else if (WriteMIPM) MIP_REGW_writeable <= (CSRWriteValM[13:0] & MIP_WRITE_MASK) | (P.SSCOFPMF_SUPPORTED ? {LCOFIPSetM, 13'b0} : 14'b0);
+    else if (WriteSIPM) MIP_REGW_writeable <= (CSRWriteValM[13:0] & SIP_WRITE_MASK) | (MIP_REGW_writeable & ~SIP_WRITE_MASK) | (P.SSCOFPMF_SUPPORTED ? {LCOFIPSetM, 13'b0} : 14'b0);
+    else if (P.SSCOFPMF_SUPPORTED & LCOFIPSetM) MIP_REGW_writeable[13] <= 1'b1;
   always_ff @(posedge clk)
-    if (reset)          MIE_REGW <= 12'b0;
-    else if (WriteMIEM) MIE_REGW <= (CSRWriteValM[11:0] & MIE_WRITE_MASK); // MIE controls M and S fields
-    else if (WriteSIEM) MIE_REGW <= (CSRWriteValM[11:0] & SIE_WRITE_MASK) | (MIE_REGW & ~SIE_WRITE_MASK); // only S fields
+    if (reset)          MIE_REGW <= 14'b0;
+    else if (WriteMIEM) MIE_REGW <= (CSRWriteValM[13:0] & MIE_WRITE_MASK); // MIE controls M and S fields
+    else if (WriteSIEM) MIE_REGW <= (CSRWriteValM[13:0] & SIE_WRITE_MASK) | (MIE_REGW & ~SIE_WRITE_MASK); // only S fields
 
-  assign MIP_REGW = {MExtInt,   1'b0, SExtInt | MIP_REGW_writeable[9], 1'b0,
+  assign LCOFIP = P.SSCOFPMF_SUPPORTED & MIP_REGW_writeable[13];
+  assign MIP_REGW = {LCOFIP, 1'b0, MExtInt,   1'b0, SExtInt | MIP_REGW_writeable[9], 1'b0,
                      MTimerInt, 1'b0, STIP,                            1'b0,
                      MSwInt,    1'b0, MIP_REGW_writeable[1],           1'b0};
 endmodule

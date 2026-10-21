@@ -25,14 +25,25 @@ def main():
         assert ("0x00005" in generate(n)) == (n > 25)
     results = []
     for rv in [32, 64]:
-        for counters in [3, 8, 32]:
-            name = f"csr-rv{rv}-{counters}"
+        for counters, sscofpmf in [(3, False), (8, False), (32, False), (8, True), (32, True)]:
+            name = f"csr-rv{rv}-{counters}" + ("-sscofpmf" if sscofpmf else "")
             build = args.work / name
-            command = ["verilator", "--binary", "--timing", "--assert", "-j", "2", "--top-module", "csrc_tb", f"-GCOUNTER_COUNT={counters}", "--Mdir", str(build), f"-I{ROOT}/config/shared", f"-I{ROOT}/config/rv{rv}gc", str(ROOT / "src/cvw.sv"), str(ROOT / "tests/pmu/csrc_tb.sv"), str(ROOT / "src/privileged/csrc.sv"), str(ROOT / "src/generic/flop/flopenrc.sv")]
+            command = ["verilator", "--binary", "--timing", "--assert", "-j", "2", "--top-module", "csrc_tb", f"-GCOUNTER_COUNT={counters}", f"-GSSCOFPMF={int(sscofpmf)}", "--Mdir", str(build), f"-I{ROOT}/config/shared", f"-I{ROOT}/config/rv{rv}gc", str(ROOT / "src/cvw.sv"), str(ROOT / "tests/pmu/csrc_tb.sv"), str(ROOT / "src/privileged/csrc.sv"), str(ROOT / "src/generic/flop/flopenrc.sv")]
             with (args.work / f"{name}-build.log").open("w") as log:
                 subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT)
             with (args.work / f"{name}-run.log").open("w") as log:
                 subprocess.run([str(build / "Vcsrc_tb")], check=True, stdout=log, stderr=subprocess.STDOUT)
+            results.append({"case": name, "verdict": "PASS", "command": command})
+            (args.work / "results.json").write_text(json.dumps(results, indent=2) + "\n")
+            print("PASS", name, flush=True)
+        for sscofpmf in [0, 1]:
+            name = f"irq-rv{rv}-sscofpmf-{sscofpmf}"
+            build = args.work / name
+            command = ["verilator", "--binary", "--timing", "--assert", "-j", "2", "--top-module", "sscofpmf_irq_tb", f"-GSSCOFPMF={sscofpmf}", "--Mdir", str(build), f"-I{ROOT}/config/shared", f"-I{ROOT}/config/rv{rv}gc", str(ROOT / "src/cvw.sv"), str(ROOT / "tests/pmu/sscofpmf_irq_tb.sv"), str(ROOT / "src/privileged/csri.sv"), str(ROOT / "src/privileged/trap.sv")]
+            with (args.work / f"{name}-build.log").open("w") as log:
+                subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT)
+            with (args.work / f"{name}-run.log").open("w") as log:
+                subprocess.run([str(build / "Vsscofpmf_irq_tb")], check=True, stdout=log, stderr=subprocess.STDOUT)
             results.append({"case": name, "verdict": "PASS", "command": command})
             (args.work / "results.json").write_text(json.dumps(results, indent=2) + "\n")
             print("PASS", name, flush=True)

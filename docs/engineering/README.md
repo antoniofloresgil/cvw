@@ -63,3 +63,6 @@ and [its experiment](experiments/2026-10-20-sbi-pmu.md) belong to
 `adding-mpu-support`, with main integrated through `4ce065926`. They do not
 integrate multicore RTL. The post-merge checks are tracked in the
 [PMU/main integration record](experiments/2026-10-21-pmu-main-integration.md).
+Optional counter overflow and filtering on this branch are tracked in
+[ADR 0014](decisions/0014-sscofpmf-counter-overflow.md) and the
+[Sscofpmf verification record](experiments/2026-10-21-sscofpmf.md).

@@ -50,6 +50,7 @@ typedef struct packed {
   logic [11:0]  COUNTERS;
   logic         ZICNTR_SUPPORTED;
   logic         ZIHPM_SUPPORTED;
+  logic         SSCOFPMF_SUPPORTED;
   logic         ZFH_SUPPORTED;
   logic         ZFA_SUPPORTED;
   logic         SSTC_SUPPORTED;

@@ -42,7 +42,7 @@ module csrs import cvw::*; #(parameter cvw_t P) (
   output logic [P.XLEN-1:0] SEPC_REGW,
   output logic [31:0]       SCOUNTEREN_REGW,
   output logic [P.XLEN-1:0] SATP_REGW,
-  input  logic [11:0]       MIP_REGW, MIE_REGW, MIDELEG_REGW,
+  input  logic [13:0]       MIP_REGW, MIE_REGW, MIDELEG_REGW,
   input  logic [63:0]       MTIME_CLINT,
   input  logic              STCE,
   output logic              WriteSSTATUSM,
@@ -154,8 +154,8 @@ module csrs import cvw::*; #(parameter cvw_t P) (
     case (CSRAdrM)
       SSTATUS:    CSRSReadValM = SSTATUS_REGW;
       STVEC:      CSRSReadValM = STVEC_REGW;
-      SIP:        CSRSReadValM = {{(P.XLEN-12){1'b0}}, MIP_REGW & 12'h222 & MIDELEG_REGW}; // only read supervisor fields
-      SIE:        CSRSReadValM = {{(P.XLEN-12){1'b0}}, MIE_REGW & 12'h222 & MIDELEG_REGW}; // only read supervisor fields
+      SIP:        CSRSReadValM = {{(P.XLEN-14){1'b0}}, MIP_REGW & (14'h0222 | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0)) & MIDELEG_REGW}; // only read supervisor fields
+      SIE:        CSRSReadValM = {{(P.XLEN-14){1'b0}}, MIE_REGW & (14'h0222 | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0)) & MIDELEG_REGW}; // only read supervisor fields
       SSCRATCH:   CSRSReadValM = SSCRATCH_REGW;
       SEPC:       CSRSReadValM = SEPC_REGW;
       SCAUSE:     CSRSReadValM = SCAUSE_REGW;

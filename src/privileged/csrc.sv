@@ -58,7 +58,8 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   input  logic [31:0]       MCOUNTINHIBIT_REGW, MCOUNTEREN_REGW, SCOUNTEREN_REGW,
   input  logic [63:0]       MTIME_CLINT,
   output logic [P.XLEN-1:0] CSRCReadValM,
-  output logic              IllegalCSRCAccessM
+  output logic              IllegalCSRCAccessM,
+  output logic              LCOFIPSetM
 );
 
   localparam MHPMCOUNTERBASE  = 12'hB00;
@@ -67,6 +68,9 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   localparam MTIMEH           = 12'hB81;               // this is a memory-mapped register; no such CSR exists, and access should fault
   localparam MHPMEVENTBASE    = 12'h323;
   localparam MHPMEVENTLAST    = 12'h33F;
+  localparam MHPMEVENTHBASE   = 12'h723;
+  localparam MHPMEVENTHLAST   = 12'h73F;
+  localparam SCOUNTOVF        = 12'hDA0;
   // SystemVerilog has no zero-width array, so keep one unused element when no hpmevents exist
   localparam HPMEVENTTOP      = P.COUNTERS > 3 ? P.COUNTERS - 1 : 3;
   localparam HPMCOUNTERBASE   = 12'hC00;
@@ -77,18 +81,22 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   logic [4:0]              CounterNumM;
   logic [P.XLEN-1:0]       HPMCOUNTER_REGW[P.COUNTERS-1:0];
   logic [P.XLEN-1:0]       HPMCOUNTERH_REGW[P.COUNTERS-1:0];
-  logic [P.XLEN-1:0]       MHPMEVENT_REGW[HPMEVENTTOP:3];
+  logic [63:0]             MHPMEVENT_REGW[HPMEVENTTOP:3];
   logic                    LoadStallE, LoadStallM;
   logic                    StoreStallE, StoreStallM;
   logic [P.COUNTERS-1:0]   WriteHPMCOUNTERM;
   logic [P.COUNTERS-1:0]   WriteHPMCOUNTERHM;
   logic [HPMEVENTTOP:3]    WriteMHPMEVENTM;
+  logic [HPMEVENTTOP:3]    WriteMHPMEVENTHM;
+  logic [31:0]             OverflowFlags;
+  logic [31:0]             VisibleOverflowFlags;
+  logic [P.COUNTERS-1:0]   CounterOverflow;
   logic [31:0]             CounterEvent; // keep all events here even if P.COUNTERS < 32
   logic [P.COUNTERS-1:0]   CounterInc;
   logic [63:0]             HPMCOUNTERPlusM[P.COUNTERS-1:0];
   logic [P.XLEN-1:0]       NextHPMCOUNTERHM[P.COUNTERS-1:0];
   logic [P.XLEN-1:0]       NextHPMCOUNTERM[P.COUNTERS-1:0];
-  logic [P.XLEN-1:0]       NextMHPMEVENTM[HPMEVENTTOP:3];
+  logic [63:0]             NextMHPMEVENTM[HPMEVENTTOP:3];
 
   genvar                   i;
 
@@ -143,7 +151,17 @@ module csrc import cvw::*; #(parameter cvw_t P) (
     assign WriteHPMCOUNTERM[i] = CSRMWriteM & (CSRAdrM == MHPMCOUNTERBASE + i); // coverage tag: MTIME traps
     assign NextHPMCOUNTERM[i][P.XLEN-1:0] = WriteHPMCOUNTERM[i] ? CSRWriteValM : HPMCOUNTERPlusM[i][P.XLEN-1:0];
     if (i < 3) assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i]; // MCYCLE, CYCLE, and MINSTRET are always incremented if not inhibited
-    else       assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i] & (MHPMEVENT_REGW[i] != 0); // user-defined counters are incremented only if the event is enabled
+    else begin
+      // Selector control bits must not turn an otherwise disabled event on.
+      assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i] &
+                             (P.SSCOFPMF_SUPPORTED ? (MHPMEVENT_REGW[i][55:0] != 0) : (MHPMEVENT_REGW[i][P.XLEN-1:0] != 0)) &
+                             (~P.SSCOFPMF_SUPPORTED | (PrivilegeModeW == P.M_MODE & ~MHPMEVENT_REGW[i][62]) |
+                             (PrivilegeModeW == P.S_MODE & ~MHPMEVENT_REGW[i][61]) |
+                             (PrivilegeModeW == P.U_MODE & ~MHPMEVENT_REGW[i][60]));
+      assign CounterOverflow[i] = P.SSCOFPMF_SUPPORTED & CounterInc[i] & (HPMCOUNTERPlusM[i] == 0) &
+                                  ~WriteHPMCOUNTERM[i] & ~WriteHPMCOUNTERHM[i];
+    end
+    if (i < 3) assign CounterOverflow[i] = 1'b0;
     always_ff @(posedge clk)
       if (reset) HPMCOUNTER_REGW[i][P.XLEN-1:0] <= '0;
       else       HPMCOUNTER_REGW[i][P.XLEN-1:0] <= NextHPMCOUNTERM[i];
@@ -158,20 +176,44 @@ module csrc import cvw::*; #(parameter cvw_t P) (
     end else begin // XLEN=64; write entire register
       assign HPMCOUNTERPlusM[i] = HPMCOUNTER_REGW[i] + {63'b0, CounterInc[i]};
       assign HPMCOUNTERH_REGW[i] = '0; // disregard for RV64
+      assign WriteHPMCOUNTERHM[i] = 1'b0;
     end
   end
+
+  assign OverflowFlags[2:0] = '0;
+  for (i = 3; i < 32; i = i + 1) begin : overflowflags
+    if (i < P.COUNTERS) assign OverflowFlags[i] = MHPMEVENT_REGW[i][63];
+    else                assign OverflowFlags[i] = 1'b0;
+  end
+  assign LCOFIPSetM = |(CounterOverflow & ~OverflowFlags[P.COUNTERS-1:0]);
+  assign VisibleOverflowFlags = OverflowFlags & ((PrivilegeModeW == P.M_MODE) ? 32'hFFFFFFFF : MCOUNTEREN_REGW);
 
   // hpmevent update and write logic
   if (P.COUNTERS > 3) begin : mhpmeventgen
     for (i = 3; i < P.COUNTERS; i = i + 1) begin : mhpmevent
       assign WriteMHPMEVENTM[i] = CSRMWriteM & (CSRAdrM == MHPMEVENTBASE + i - 3);
-      assign NextMHPMEVENTM[i] = WriteMHPMEVENTM[i] ? CSRWriteValM : MHPMEVENT_REGW[i];
+      assign WriteMHPMEVENTHM[i] = P.SSCOFPMF_SUPPORTED & (P.XLEN == 32) & CSRMWriteM & (CSRAdrM == MHPMEVENTHBASE + i - 3);
+      always_comb begin
+        NextMHPMEVENTM[i] = MHPMEVENT_REGW[i];
+        if (WriteMHPMEVENTM[i]) NextMHPMEVENTM[i][P.XLEN-1:0] = CSRWriteValM;
+        if (WriteMHPMEVENTHM[i]) NextMHPMEVENTM[i][63:32] = CSRWriteValM[31:0];
+        // OF is sticky on a hardware overflow and software-writable. VS/VU and
+        // reserved fields are hardwired zero because Wally has no H extension.
+        if (P.SSCOFPMF_SUPPORTED) begin
+          NextMHPMEVENTM[i][59:56] = '0;
+          if (!P.S_SUPPORTED) NextMHPMEVENTM[i][61] = 1'b0;
+          if (!P.U_SUPPORTED) NextMHPMEVENTM[i][60] = 1'b0;
+          // A hardware increment still wins if software writes the selector in this cycle.
+          if (CounterOverflow[i]) NextMHPMEVENTM[i][63] = 1'b1;
+        end
+      end
       always_ff @(posedge clk)
         if (reset) MHPMEVENT_REGW[i] <= '0;
         else       MHPMEVENT_REGW[i] <= NextMHPMEVENTM[i];
     end
   end else begin : mhpmeventgen // no hpmevents exist; drive the placeholder element HPMEVENTTOP reserves
     assign WriteMHPMEVENTM = '0;
+    assign WriteMHPMEVENTHM = '0;
     assign NextMHPMEVENTM[3] = '0;
     assign MHPMEVENT_REGW[3] = '0;
   end
@@ -181,9 +223,18 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   always_comb begin
     CSRCReadValM = '0; // default value
     IllegalCSRCAccessM = 1'b0;
-    if (PrivilegeModeW == P.M_MODE & (CSRAdrM >= MHPMEVENTBASE & CSRAdrM <= MHPMEVENTLAST)) begin
-      if (CSRAdrM < MHPMEVENTBASE+P.COUNTERS-3) CSRCReadValM = MHPMEVENT_REGW[CounterNumM];
+    if (P.SSCOFPMF_SUPPORTED & P.S_SUPPORTED & CSRAdrM == SCOUNTOVF) begin
+      if (CSRWriteM | PrivilegeModeW == P.U_MODE) IllegalCSRCAccessM = 1'b1;
+      else CSRCReadValM = P.XLEN'(VisibleOverflowFlags);
+    end
+    else if (PrivilegeModeW == P.M_MODE & (CSRAdrM >= MHPMEVENTBASE & CSRAdrM <= MHPMEVENTLAST)) begin
+      if (CSRAdrM < MHPMEVENTBASE+P.COUNTERS-3) CSRCReadValM = MHPMEVENT_REGW[CounterNumM][P.XLEN-1:0];
       else CSRCReadValM = '0; // unused event selectors are read-only zero
+    end
+    else if (P.SSCOFPMF_SUPPORTED & (P.XLEN == 32) & PrivilegeModeW == P.M_MODE &
+             (CSRAdrM >= MHPMEVENTHBASE & CSRAdrM <= MHPMEVENTHLAST)) begin
+      if (CSRAdrM < MHPMEVENTHBASE+P.COUNTERS-3) CSRCReadValM = P.XLEN'(MHPMEVENT_REGW[CounterNumM][63:32]);
+      else CSRCReadValM = '0;
     end
     else if (PrivilegeModeW == P.M_MODE |
       MCOUNTEREN_REGW[CounterNumM] & (!P.S_SUPPORTED | PrivilegeModeW == P.S_MODE | SCOUNTEREN_REGW[CounterNumM])) begin

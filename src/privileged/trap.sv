@@ -35,7 +35,7 @@ module trap import cvw::*; #(parameter cvw_t P) (
   input  logic                 LoadPageFaultM, StoreAmoPageFaultM,              // various trap sources
   input  logic                 WaitedM,                                         // wfi in M has waited: it retires before an interrupt
   input  logic [1:0]           PrivilegeModeW,                                  // current privilege mode
-  input  logic [11:0]          MIP_REGW, MIE_REGW, MIDELEG_REGW,                // interrupt pending, enabled, and delegate CSRs
+  input  logic [13:0]          MIP_REGW, MIE_REGW, MIDELEG_REGW,                // interrupt pending, enabled, and delegate CSRs
   input  logic [15:0]          MEDELEG_REGW,                                    // exception delegation SR
   input  logic                 STATUS_MIE, STATUS_SIE,                          // machine/supervisor interrupt enables
   input  logic                 InstrValidM,                                     // current instruction is valid, not flushed
@@ -51,7 +51,7 @@ module trap import cvw::*; #(parameter cvw_t P) (
   logic                        MIntGlobalEnM, SIntGlobalEnM;                    // Global interrupt enables
   logic                        Committed;                                       // LSU or IFU has committed to a bus operation that can't be interrupted
   logic                        BothInstrAccessFaultM, BothInstrPageFaultM;      // instruction or HPTW ITLB fill caused an Instruction Access Fault
-  logic [11:0]                 PendingIntsM, ValidIntsM, EnabledIntsM;          // interrupts are pending, valid, or enabled
+  logic [13:0]                 PendingIntsM, ValidIntsM, EnabledIntsM;          // interrupts are pending, valid, or enabled
 
   ///////////////////////////////////////////
   // Determine pending enabled interrupts
@@ -105,9 +105,11 @@ module trap import cvw::*; #(parameter cvw_t P) (
     else if (~MIDELEG_REGW[9] & ValidIntsM[9])                CauseM = 5'd9;  // not delegated Supervisor External Int
     else if (~MIDELEG_REGW[1] & ValidIntsM[1])                CauseM = 5'd1;  // not delegated Supervisor Sw Int
     else if (~MIDELEG_REGW[5] & ValidIntsM[5])                CauseM = 5'd5;  // not delegated Supervisor Timer Int
+    else if (~MIDELEG_REGW[13] & ValidIntsM[13])              CauseM = 5'd13; // not delegated counter overflow
     else if (ValidIntsM[9])                                   CauseM = 5'd9;  // delegated Supervisor External Int
     else if (ValidIntsM[1])                                   CauseM = 5'd1;  // delegated Supervisor Sw Int
     else if (ValidIntsM[5])                                   CauseM = 5'd5;  // delegated Supervisor Timer Int
+    else if (ValidIntsM[13])                                  CauseM = 5'd13; // delegated counter overflow
     else if (BothInstrPageFaultM)                             CauseM = 5'd12; // Instruction page fault
     else if (BothInstrAccessFaultM)                           CauseM = 5'd1;  // Instruction access fault
     else if (IllegalInstrFaultM)                              CauseM = 5'd2;  // Illegal instruction

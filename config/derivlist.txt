@@ -1691,3 +1691,10 @@ ICACHE_LINELENINBITS   32'd512
 # Isolated single-core SBI PMU/Linux verification, native private L1 caches.
 deriv pmu_linux buildroot
 UNCORE_RAM_RANGE 64'h07FFFFFF
+
+# Optional counter overflow and privilege filtering, kept out of existing targets.
+deriv sscofpmf_rv64gc rv64gc
+SSCOFPMF_SUPPORTED 1
+
+deriv sscofpmf_rv32gc rv32gc
+SSCOFPMF_SUPPORTED 1
