@@ -46,7 +46,7 @@ module plic_apb import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCOR
   input  logic                PENABLE,
   output logic [P.XLEN-1:0]   PRDATA,
   output logic                PREADY,
-  input  logic                UARTIntr,GPIOIntr, SPIIntr, SDCIntr,
+  input  logic                UARTIntr, GPIOIntr, SPIIntr, SDCIntr,
   input  logic [3:0]          PWMIntr,                        // one source per PWM comparator
   output logic [NCORES-1:0]   MExtInt, SExtInt
 );
@@ -79,11 +79,11 @@ module plic_apb import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCOR
 
   localparam PLIC_SRC_TOP = (P.PLIC_NUM_SRC >= 32) ? P.PLIC_NUM_SRC : 1;
   localparam PLIC_SRC_BOT = (P.PLIC_NUM_SRC >= 32) ? 32 : 1;
-  localparam PLIC_SRC_DINTOP = (P.PLIC_NUM_SRC >= 32) ? P.PLIC_NUM_SRC -32 : 0;
-  localparam PLIC_SRC_EXT = (P.PLIC_NUM_SRC >= 32) ? 63-P.PLIC_NUM_SRC : 31;
+  localparam PLIC_SRC_DINTOP = (P.PLIC_NUM_SRC >= 32) ? P.PLIC_NUM_SRC - 32 : 0;
+  localparam PLIC_SRC_EXT = (P.PLIC_NUM_SRC >= 32) ? 63 - P.PLIC_NUM_SRC : 31;
 
   // =======
-  // AHB I/O
+  // APB I/O
   // =======
 
   assign memwrite = PWRITE & PENABLE & PSEL;  // only write in access phase
@@ -149,18 +149,18 @@ module plic_apb import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCOR
   // connect sources to requests
   always_comb begin
     requests = {P.PLIC_NUM_SRC{1'b0}};
-    if(P.PLIC_GPIO_ID != 0) requests[P.PLIC_GPIO_ID] = GPIOIntr;
-    if(P.PLIC_UART_ID != 0) requests[P.PLIC_UART_ID] = UARTIntr;
-    if(P.PLIC_SPI_ID != 0)  requests[P.PLIC_SPI_ID]  = SPIIntr;
-    if(P.PLIC_SDC_ID !=0)   requests[P.PLIC_SDC_ID]  = SDCIntr;
+    if (P.PLIC_GPIO_ID != 0) requests[P.PLIC_GPIO_ID] = GPIOIntr;
+    if (P.PLIC_UART_ID != 0) requests[P.PLIC_UART_ID] = UARTIntr;
+    if (P.PLIC_SPI_ID != 0)  requests[P.PLIC_SPI_ID]  = SPIIntr;
+    if (P.PLIC_SDC_ID != 0)  requests[P.PLIC_SDC_ID]  = SDCIntr;
     // the four PWM comparators occupy a contiguous block starting at PLIC_PWM_ID
-    if(P.PLIC_PWM_ID != 0)
-      for(int i=0; i<4; i++) requests[P.PLIC_PWM_ID+i] = PWMIntr[i];
+    if (P.PLIC_PWM_ID != 0)
+      for (int i = 0; i < 4; i++) requests[P.PLIC_PWM_ID+i] = PWMIntr[i];
   end
 
   // pending interrupt request
   assign nextIntPending = (intPending | requests) & ~intInProgress;
-  flopr #(P.PLIC_NUM_SRC) intPendingFlop(PCLK,~PRESETn,nextIntPending,intPending);
+  flopr #(P.PLIC_NUM_SRC) intPendingFlop(PCLK, ~PRESETn, nextIntPending, intPending);
 
   // context-dependent signals
   genvar ctx;
@@ -172,9 +172,9 @@ module plic_apb import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCOR
     //   has priority level <pri> and has an "active" interrupt request
     //   ("active" meaning it is enabled in context <ctx> and is pending)
     genvar src, pri;
-    for (pri=1; pri<=7; pri++) begin
-      for (src=1; src<=P.PLIC_NUM_SRC; src++) begin
-        assign irqMatrix[ctx][pri][src] = (intPriority[src]==pri) & intPending[src] & intEn[ctx][src];
+    for (pri = 1; pri <= 7; pri++) begin
+      for (src = 1; src <= P.PLIC_NUM_SRC; src++) begin
+        assign irqMatrix[ctx][pri][src] = (intPriority[src] == pri) & intPending[src] & intEn[ctx][src];
       end
     end
 
@@ -217,7 +217,7 @@ module plic_apb import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCOR
     integer k;
     always_comb begin
       intClaim[ctx] = 6'b0;
-      for (k=P.PLIC_NUM_SRC; k>0; k--) begin
+      for (k = P.PLIC_NUM_SRC; k > 0; k--) begin
         if (irqs_at_max_priority[ctx][k]) intClaim[ctx] = k[5:0];
       end
     end

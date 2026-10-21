@@ -2,9 +2,11 @@
 
 Start with [AGENTS.md](../../AGENTS.md), then this index and
 [current-work.md](current-work.md). Read the remaining documents only when
-relevant to the task. Snapshot: 2026-10-19; this checkout is `multicore-support`,
-integrating `main:82d0b80f7` (including official upstream `712ee9719`) into
-`f655debae`. See the [multicore integration record](experiments/2026-10-19-multicore-main-integration.md)
+relevant to the task. Snapshot: 2026-10-20; this checkout is `multicore-support`. Integration
+of `main:4ce065926` (including official upstream `89479dd09`) into
+`f9f7a83be` passed focused and native Linux validation; see the
+[current integration record](experiments/2026-10-20-multicore-upstream-integration.md).
+Historical results below retain their original source scope. See the [multicore integration record](experiments/2026-10-19-multicore-main-integration.md)
 for validation of the combined sources. The optional private MSI data-cache
 implementation now follows [ADR 0003](decisions/0003-private-msi-data-caches.md);
 see its [working-tree validation](experiments/2026-10-19-private-msi.md).
