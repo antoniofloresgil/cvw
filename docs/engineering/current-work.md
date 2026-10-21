@@ -12,16 +12,22 @@ and atomic/protected counters 128/128. See the
 [integration record](experiments/2026-10-20-multicore-upstream-integration.md)
 for exact revisions, model/log hashes and evidence scope.
 
-The reviewed merge is committed and, on 2026-10-21, local HEAD `0533e764d`
-matches the fetched `origin/multicore-support` reference.
+Completed objective (2026-10-21): implement recommendation 1 from the
+[maintenance review](experiments/2026-10-21-multicore-maintainability-review.md)
+on parent `ce02cf1ad`, following accepted
+[ADR 0013](decisions/0013-multicore-memory-subsystem-boundary.md).
+Memory topology and capability assertions now live in `multicore_memory_system`;
+SoC parameters, hart/uncore hierarchy and clock/reset ownership are preserved.
+No CPU/peripheral/cache-engine behavior or base configuration was changed.
+
+Focused validation passed: seven standard lints, four structural checks,
+two RV32 integration lints, 40 matched before/after program comparisons
+(80 executions), and seven native RV64/RV32 directed programs. Fresh two-hart
+RTL Linux SMP passed after 339,802,249 cycles with both CPUs online and
+atomic/protected counters 128/128; see the
+[extraction record](experiments/2026-10-21-memory-subsystem-extraction.md).
+No merge into main was performed.
+Other review recommendations and proposed ADR statuses remain unchanged.
+
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.
-
-Current objective (2026-10-21): assess maintenance and configuration isolation
-before integrating multicore into main. The
-[architecture review](experiments/2026-10-21-multicore-maintainability-review.md)
-records proposed improvements and newly executed seven-configuration lint plus
-four structural elaboration checks. Single-core coherence bypass passed those
-structural checks; single-core functional equivalence is not established by them.
-No refactoring or merge into main was performed. Recommendations and proposed
-ADR statuses still require an explicit engineering decision.

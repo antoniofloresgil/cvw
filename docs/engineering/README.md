@@ -38,6 +38,7 @@ source audits retain their original revision labels.
 | Significant decisions | [ADR 0001: knowledge organization](decisions/0001-knowledge-organization.md), [ADR 0002: multicore cache](decisions/0002-shared-multicore-cache.md), [ADR 0003: private MSI](decisions/0003-private-msi-data-caches.md) |
 | Results | [Multicore/main integration](experiments/2026-10-19-multicore-main-integration.md), [upstream integration](experiments/2026-10-18-upstream-integration.md), [Linux SMP](experiments/2026-10-18-linux-smp.md), [open DDR3 bring-up](experiments/open-ddr3-bringup.md) |
 | Active work, branch boundaries, unresolved questions | [Current work](current-work.md) |
+| Extracted multicore memory boundary | [ADR 0013](decisions/0013-multicore-memory-subsystem-boundary.md), [extraction verification](experiments/2026-10-21-memory-subsystem-extraction.md) |
 | Multicore isolation and maintenance risks before merging | [2026-10-21 architecture review](experiments/2026-10-21-multicore-maintainability-review.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 

@@ -53,9 +53,9 @@ module soc_tb import cvw::*; #(
         logic [P.PA_BITS-LINE_OFFSET-CI-1:0] Tags[COHERENCE_BANKS][NCORES][DW/PRIVATE_DCACHE_LINE_WORDS];
         logic [P.AHBW-1:0] Lines[COHERENCE_BANKS][NCORES][DW];
         for (genvar b = 0; b < COHERENCE_BANKS; b++) begin : shadows
-            assign States[b] = dut.banked.fabric.banks[b].cache.States;
-            assign Tags[b] = dut.banked.fabric.banks[b].cache.Tags;
-            assign Lines[b] = dut.banked.fabric.banks[b].cache.Lines;
+            assign States[b] = dut.memory_system.banked.fabric.banks[b].cache.States;
+            assign Tags[b] = dut.memory_system.banked.fabric.banks[b].cache.Tags;
+            assign Lines[b] = dut.memory_system.banked.fabric.banks[b].cache.Lines;
         end
         function automatic logic [63:0] word(input int unsigned index);
             logic [P.PA_BITS-1:0] address;
@@ -80,9 +80,9 @@ module soc_tb import cvw::*; #(
             cache_index = address[LINE_OFFSET +: CACHE_INDEX];
             word = dut.uncoregen.uncore.ram.ram.memory.ram.RAM[index];
             for (int h = 0; h < NCORES; h++)
-                if (dut.msicache.cache.States[h][cache_index] == 2 &&
-                    dut.msicache.cache.Tags[h][cache_index] == address[P.PA_BITS-1:LINE_OFFSET+CACHE_INDEX])
-                    word = dut.msicache.cache.Lines[h][address[OFFSET +: DATA_INDEX]];
+                if (dut.memory_system.msicache.cache.States[h][cache_index] == 2 &&
+                    dut.memory_system.msicache.cache.Tags[h][cache_index] == address[P.PA_BITS-1:LINE_OFFSET+CACHE_INDEX])
+                    word = dut.memory_system.msicache.cache.Lines[h][address[OFFSET +: DATA_INDEX]];
         endfunction
     end else begin : observer
         function automatic logic [63:0] word(input int unsigned index);
@@ -96,15 +96,15 @@ module soc_tb import cvw::*; #(
     if (NCORES > 1 && PRIVATE_DCACHE && COHERENCE_BANKS > 1) begin : counters
         logic [COHERENCE_BANKS-1:0][31:0] Counts;
         for (genvar b = 0; b < COHERENCE_BANKS; b++) begin : banks
-            assign Counts[b] = 32'($countones(dut.banked.fabric.banks[b].bus.LocalReply |
-                dut.banked.fabric.banks[b].bus.CacheWriteCommit));
+            assign Counts[b] = 32'($countones(dut.memory_system.banked.fabric.banks[b].bus.LocalReply |
+                dut.memory_system.banked.fabric.banks[b].bus.CacheWriteCommit));
         end
         always @(posedge clk) if (!reset)
             for (int b = 0; b < COHERENCE_BANKS; b++)
                 LocalCompletions = LocalCompletions + Counts[b];
     end else if (NCORES > 1) begin : counters
         always @(posedge clk) if (!reset)
-            LocalCompletions <= LocalCompletions + $countones(dut.multicore.bus.LocalReply | dut.multicore.bus.CacheWriteCommit);
+            LocalCompletions <= LocalCompletions + $countones(dut.memory_system.multicore.bus.LocalReply | dut.memory_system.multicore.bus.CacheWriteCommit);
     end else begin : counters
         assign LocalCompletions = 0;
     end

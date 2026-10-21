@@ -11,6 +11,7 @@ records source boundaries and interactions that should guide future changes.
 | Concern | Implementation / existing explanation |
 | --- | --- |
 | SoC wiring | [wallypipelinedsoc.sv](../../src/wally/wallypipelinedsoc.sv): hart zero is `core`, additional harts are `harts[h].core`; one optional uncore is shared |
+| Multicore memory topology | [multicore_memory_system.sv](../../src/ebu/multicore_memory_system.sv): bypass, arbitration, optional caches/coherence banks and capability checks; per-hart requests/responses to one uncore AHB port |
 | Pipeline interfaces | [wallypipelinedcore.sv](../../src/wally/wallypipelinedcore.sv), [hazard.sv](../../src/hazard/hazard.sv): stage-aligned stall/flush coordination |
 | Configuration | [cvw_t](../../src/cvw.sv), [shared derivations](../../config/shared/config-shared.vh), [struct initialization](../../config/shared/parameter-defs.vh), [derivative recipes](../../config/derivlist.txt) |
 | Fetch, translation and memory arbitration | [ifu.sv](../../src/ifu/ifu.sv), [lsu.sv](../../src/lsu/lsu.sv), [hptw.sv](../../src/mmu/hptw.sv) |
@@ -167,3 +168,21 @@ sharers; stores still invalidate them. One and multiple address homes use the
 same rules. `MESI=0` retains MSI; NCORES=1 strips coherence. See
 [ADR 0011](decisions/0011-optional-mesi-exclusive-state.md) and the
 [separate verification record](experiments/2026-10-20-mesi.md).
+
+## Extracted memory subsystem boundary
+
+The extraction based on `multicore-support:ce02cf1ad` follows
+[ADR 0013](decisions/0013-multicore-memory-subsystem-boundary.md). The SoC's
+`memory_system` instance owns all topology generates and cache/arbiter-local
+signals. Its ports are the existing per-hart AHB vectors plus HATOMIC/SCFail
+and the uncore AHB master interface. Clocks, reset synchronization, core
+instances and interrupt/uncore wiring stay in `wallypipelinedsoc`.
+
+No state or pipeline stage is added at this boundary. Public SoC parameters
+and their defaults remain unchanged. Single-hart private-cache requests still
+bypass coherence; explicitly requested SHARED_CACHE still operates with one
+hart. Core and uncore verification probe paths remain stable. Internal memory
+probes acquire the `memory_system` prefix, including the multicore testbench's
+architectural write-back observer and traffic counters. See the
+[extraction record](experiments/2026-10-21-memory-subsystem-extraction.md) for
+verification scope; this is not a resolution of the other maintenance findings.
