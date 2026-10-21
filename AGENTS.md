@@ -1,5 +1,78 @@
 # CORE-V-Wally agent notes
 
+## Maintainability and upstream compatibility
+
+This repository tracks upstream CORE-V Wally. Implement extensions so they
+remain understandable, verifiable, and inexpensive to maintain as upstream
+evolves. Apply these rules while designing and implementing changes, not only
+during final cleanup.
+
+### Design before editing
+
+- Before a substantial change, inspect the relevant RTL, configuration,
+  verification code, and existing extension patterns.
+- Briefly identify the integration points, files that must change, and how
+  the existing configurations will retain their behavior.
+- Prefer a cohesive implementation with clear interfaces and a small,
+  justified footprint in existing upstream code.
+- When a wider refactor is necessary for correctness or maintainability,
+  explain why and keep it separate from the functional change.
+
+### Keep changes focused
+
+- Follow the naming, formatting, module structure, and coding idioms of the
+  surrounding code.
+- Do not reformat, rename, reorder, move, or clean up unrelated existing code.
+  Avoid whitespace and alignment changes to neighboring lines.
+- Keep existing module names, ports, parameters, hierarchy, and file paths
+  stable unless the feature requires a change.
+- Reuse existing helpers and configuration mechanisms when appropriate.
+  Do not introduce generic frameworks or speculative abstractions.
+- Do not copy an upstream module merely to add a feature. Prefer a shared
+  implementation or a focused extension at a clear boundary.
+- Do not sacrifice correctness or readability merely to minimize line count.
+
+### RTL extension boundaries
+
+- Put substantial new functionality in cohesive modules when it has a clear
+  hardware responsibility and interface. Keep integration edits localized.
+- Do not force logic into wrappers or new modules when doing so obscures
+  pipeline control, duplicates state, or complicates timing.
+- Use the existing elaboration-time configuration mechanism for optional
+  features. Avoid scattered preprocessor conditionals and special cases.
+- Where the feature is optional, preserve existing behavior when disabled
+  and allow unused hardware to be eliminated during elaboration/synthesis.
+- Preserve pipeline stage alignment and stall/flush/reset semantics.
+  Document interface assumptions about latency, handshakes, ordering,
+  arbitration, and ownership where relevant.
+- Document why a non-obvious integration change is necessary. Avoid comments
+  that merely repeat the RTL.
+
+### Verification
+
+- Select verification based on the affected behavior and configurations.
+  For optional features, check both enabled and disabled configurations.
+- Add or update focused tests/assertions for new behavior and relevant corner
+  cases. Verify preserved behavior after any preparatory refactor.
+- Consider synthesis and timing implications when changing critical paths,
+  fanout, arbitration, or pipeline boundaries.
+- Report the commands actually run, results, and any unverified areas.
+  Do not treat a conflict-free merge or passing lint as functional proof.
+
+### Diff and commit discipline
+
+- Review both the task diff and the cumulative feature-branch diff against
+  the appropriate upstream merge base before declaring the work complete.
+  Identify the upstream reference first; do not assume its name.
+- Remove accidental edits, unrelated cleanup, debug leftovers, and generated
+  outputs that are not intended to be versioned. Run `git diff --check`.
+- When preparing commits, keep behavior-preserving refactors separate from
+  functional changes. Each commit should represent a coherent step and
+  include the verification needed for that step.
+- Summarize the changes to existing upstream files and explain any broad
+  interface or structural changes.
+- Do not merge, rebase, rewrite history, or create commits unless requested.
+
 ## Setup and build
 
 - Run `source ./setup.sh` from the repository root before build/simulation commands. It selects `~/riscv` before `/opt/riscv`, requires `$RISCV/site-setup.sh`, and exports `$WALLY` and the `bin/` PATH. Merely exporting a custom `$RISCV` does not override this selection; see the README's toolchain configuration instructions.
