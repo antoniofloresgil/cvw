@@ -66,6 +66,13 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   localparam MTIME            = 12'hB01;               // this is a memory-mapped register; no such CSR exists, and access should fault
   localparam MHPMCOUNTERHBASE = 12'hB80;
   localparam MTIMEH           = 12'hB81;               // this is a memory-mapped register; no such CSR exists, and access should fault
+  localparam MCYCLECFG        = 12'h321;
+  localparam MINSTRETCFG      = 12'h322;
+  localparam MCYCLECFGH       = 12'h721;
+  localparam MINSTRETCFGH     = 12'h722;
+  localparam logic [63:0] MCNTRCFG_MASK = 64'h4000_0000_0000_0000 |
+                                          (P.S_SUPPORTED ? 64'h2000_0000_0000_0000 : 64'b0) |
+                                          (P.U_SUPPORTED ? 64'h1000_0000_0000_0000 : 64'b0);
   localparam MHPMEVENTBASE    = 12'h323;
   localparam MHPMEVENTLAST    = 12'h33F;
   localparam MHPMEVENTHBASE   = 12'h723;
@@ -82,6 +89,9 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   logic [P.XLEN-1:0]       HPMCOUNTER_REGW[P.COUNTERS-1:0];
   logic [P.XLEN-1:0]       HPMCOUNTERH_REGW[P.COUNTERS-1:0];
   logic [63:0]             MHPMEVENT_REGW[HPMEVENTTOP:3];
+  logic [63:0]             MCYCLECFG_REGW, MINSTRETCFG_REGW;
+  logic [63:0]             MCNTRCFGWriteValM;
+  logic                    WriteMCYCLECFGM, WriteMINSTRETCFGM;
   logic                    LoadStallE, LoadStallM;
   logic                    StoreStallE, StoreStallM;
   logic [P.COUNTERS-1:0]   WriteHPMCOUNTERM;
@@ -99,6 +109,34 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   logic [63:0]             NextMHPMEVENTM[HPMEVENTTOP:3];
 
   genvar                   i;
+
+  function automatic logic CountModeEnabled(input logic [63:0] cfg, input logic [1:0] mode);
+    return !P.SMCNTRPMF_SUPPORTED |
+           (mode == P.M_MODE & ~cfg[62]) |
+           (mode == P.S_MODE & ~cfg[61]) |
+           (mode == P.U_MODE & ~cfg[60]);
+  endfunction
+
+  // RV32 only exposes the filter bits through the high CSR half. The low
+  // halves and bit 63 are WPRI/read-only zero in this implementation.
+  assign MCNTRCFGWriteValM = (P.XLEN == 64) ? 64'(CSRWriteValM) : {CSRWriteValM[31:0], 32'b0};
+  assign WriteMCYCLECFGM = P.SMCNTRPMF_SUPPORTED & CSRMWriteM &
+                           ((P.XLEN == 64 & CSRAdrM == MCYCLECFG) | (P.XLEN == 32 & CSRAdrM == MCYCLECFGH));
+  assign WriteMINSTRETCFGM = P.SMCNTRPMF_SUPPORTED & CSRMWriteM &
+                             ((P.XLEN == 64 & CSRAdrM == MINSTRETCFG) | (P.XLEN == 32 & CSRAdrM == MINSTRETCFGH));
+  if (P.SMCNTRPMF_SUPPORTED) begin : mcntrcfg
+    always_ff @(posedge clk)
+      if (reset) begin
+        MCYCLECFG_REGW <= '0;
+        MINSTRETCFG_REGW <= '0;
+      end else begin
+        if (WriteMCYCLECFGM) MCYCLECFG_REGW <= MCNTRCFGWriteValM & MCNTRCFG_MASK;
+        if (WriteMINSTRETCFGM) MINSTRETCFG_REGW <= MCNTRCFGWriteValM & MCNTRCFG_MASK;
+      end
+  end else begin : mcntrcfg
+    assign MCYCLECFG_REGW = '0;
+    assign MINSTRETCFG_REGW = '0;
+  end
 
   // Interface signals
   flopenrc #(1) LoadStallEReg(.clk, .reset, .clear(1'b0), .en(~StallE), .d(LoadStallD), .q(LoadStallE));  // don't flush the load stall during a load stall.
@@ -150,7 +188,9 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   for (i = 0; i < P.COUNTERS; i = i + 1) begin : cntr
     assign WriteHPMCOUNTERM[i] = CSRMWriteM & (CSRAdrM == MHPMCOUNTERBASE + i); // coverage tag: MTIME traps
     assign NextHPMCOUNTERM[i][P.XLEN-1:0] = WriteHPMCOUNTERM[i] ? CSRWriteValM : HPMCOUNTERPlusM[i][P.XLEN-1:0];
-    if (i < 3) assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i]; // MCYCLE, CYCLE, and MINSTRET are always incremented if not inhibited
+    if (i == 0) assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i] & CountModeEnabled(MCYCLECFG_REGW, PrivilegeModeW);
+    else if (i == 2) assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i] & CountModeEnabled(MINSTRETCFG_REGW, PrivilegeModeW);
+    else if (i < 3) assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i];
     else begin
       // Selector control bits must not turn an otherwise disabled event on.
       assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i] &
@@ -226,6 +266,14 @@ module csrc import cvw::*; #(parameter cvw_t P) (
     if (P.SSCOFPMF_SUPPORTED & P.S_SUPPORTED & CSRAdrM == SCOUNTOVF) begin
       if (CSRWriteM | PrivilegeModeW == P.U_MODE) IllegalCSRCAccessM = 1'b1;
       else CSRCReadValM = P.XLEN'(VisibleOverflowFlags);
+    end
+    else if (P.SMCNTRPMF_SUPPORTED & PrivilegeModeW == P.M_MODE &
+             (CSRAdrM == MCYCLECFG | CSRAdrM == MINSTRETCFG)) begin
+      CSRCReadValM = (CSRAdrM == MCYCLECFG) ? MCYCLECFG_REGW[P.XLEN-1:0] : MINSTRETCFG_REGW[P.XLEN-1:0];
+    end
+    else if (P.SMCNTRPMF_SUPPORTED & (P.XLEN == 32) & PrivilegeModeW == P.M_MODE &
+             (CSRAdrM == MCYCLECFGH | CSRAdrM == MINSTRETCFGH)) begin
+      CSRCReadValM = (CSRAdrM == MCYCLECFGH) ? P.XLEN'(MCYCLECFG_REGW[63:32]) : P.XLEN'(MINSTRETCFG_REGW[63:32]);
     end
     else if (PrivilegeModeW == P.M_MODE & (CSRAdrM >= MHPMEVENTBASE & CSRAdrM <= MHPMEVENTLAST)) begin
       if (CSRAdrM < MHPMEVENTBASE+P.COUNTERS-3) CSRCReadValM = MHPMEVENT_REGW[CounterNumM][P.XLEN-1:0];

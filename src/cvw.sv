@@ -51,6 +51,7 @@ typedef struct packed {
   logic         ZICNTR_SUPPORTED;
   logic         ZIHPM_SUPPORTED;
   logic         SSCOFPMF_SUPPORTED;
+  logic         SMCNTRPMF_SUPPORTED;
   logic         ZFH_SUPPORTED;
   logic         ZFA_SUPPORTED;
   logic         SSTC_SUPPORTED;

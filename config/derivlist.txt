@@ -1698,3 +1698,16 @@ SSCOFPMF_SUPPORTED 1
 
 deriv sscofpmf_rv32gc rv32gc
 SSCOFPMF_SUPPORTED 1
+
+# Filter the fixed cycle/instret counters independently or alongside Sscofpmf.
+deriv smcntrpmf_rv64gc rv64gc
+SMCNTRPMF_SUPPORTED 1
+
+deriv smcntrpmf_rv32gc rv32gc
+SMCNTRPMF_SUPPORTED 1
+
+deriv pmf_rv64gc sscofpmf_rv64gc
+SMCNTRPMF_SUPPORTED 1
+
+deriv pmf_rv32gc sscofpmf_rv32gc
+SMCNTRPMF_SUPPORTED 1

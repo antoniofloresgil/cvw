@@ -66,3 +66,6 @@ integrate multicore RTL. The post-merge checks are tracked in the
 Optional counter overflow and filtering on this branch are tracked in
 [ADR 0014](decisions/0014-sscofpmf-counter-overflow.md) and the
 [Sscofpmf verification record](experiments/2026-10-21-sscofpmf.md).
+Fixed-counter mode filtering is tracked in
+[ADR 0015](decisions/0015-smcntrpmf-fixed-counter-filter.md) and the
+[Smcntrpmf verification record](experiments/2026-10-21-smcntrpmf.md).

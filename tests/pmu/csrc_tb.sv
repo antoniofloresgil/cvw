@@ -2,13 +2,15 @@
 `include "config.vh"
 module csrc_tb import cvw::*; #(
     parameter int COUNTER_COUNT = 32,
-    parameter int SSCOFPMF = 0
+    parameter int SSCOFPMF = 0,
+    parameter int SMCNTRPMF = 0
 );
     `include "parameter-defs.vh"
     function automatic cvw_t configuration();
         cvw_t c = P;
         c.COUNTERS = 12'(COUNTER_COUNT);
         c.SSCOFPMF_SUPPORTED = (SSCOFPMF != 0);
+        c.SMCNTRPMF_SUPPORTED = (SMCNTRPMF != 0);
         return c;
     endfunction
     localparam cvw_t C = configuration();
@@ -170,6 +172,68 @@ module csrc_tb import cvw::*; #(
         end else begin
             expect_csr('hda0, 0, 1);
             if (P.XLEN == 32) expect_csr('h723, 0, 1);
+        end
+        if (SMCNTRPMF != 0) begin
+            // The fixed counter filters are 64-bit even on RV32. OF and all
+            // unsupported/reserved fields read zero.
+            inhibit = '1;
+            privilege = 3;
+            if (P.XLEN == 32) begin
+                put('h721, P.XLEN'('hffffffff));
+                put('h722, P.XLEN'('hffffffff));
+                expect_csr('h721, P.XLEN'('h70000000));
+                expect_csr('h722, P.XLEN'('h70000000));
+                put('h321, P.XLEN'('hffffffff));
+                put('h322, P.XLEN'('hffffffff));
+                expect_csr('h321, 0);
+                expect_csr('h322, 0);
+                expect_csr('h721, P.XLEN'('h70000000));
+                expect_csr('h722, P.XLEN'('h70000000));
+                put('h721, P.XLEN'('h60000000));
+                put('h722, P.XLEN'('h60000000));
+            end else begin
+                put('h321, '1);
+                put('h322, '1);
+                expect_csr('h321, P.XLEN'(64'h7000000000000000));
+                expect_csr('h322, P.XLEN'(64'h7000000000000000));
+                put('h321, P.XLEN'(64'h6000000000000000));
+                put('h322, P.XLEN'(64'h6000000000000000));
+            end
+            put('hb00, 0); put('hb02, 0);
+            if (P.XLEN == 32) begin put('hb80, 0); put('hb82, 0); end
+            @(negedge clk); valid = 1; inhibit[0] = 0; inhibit[2] = 0;
+            repeat (3) @(negedge clk); // M-mode excluded
+            privilege = 1;
+            repeat (2) @(negedge clk); // S-mode excluded
+            privilege = 0;
+            repeat (4) @(negedge clk); // U-mode included
+            valid = 0; inhibit = '1;
+            expect_csr('hc00, 4);
+            expect_csr('hc02, 4);
+            privilege = 3;
+            // Filters are independent: U increments cycle, M increments instret.
+            if (P.XLEN == 32) put('h722, P.XLEN'('h10000000));
+            else put('h322, P.XLEN'(64'h1000000000000000));
+            put('hb00, 0); put('hb02, 0);
+            @(negedge clk); privilege = 0; valid = 1; inhibit[0] = 0; inhibit[2] = 0;
+            repeat (2) @(negedge clk);
+            privilege = 3;
+            repeat (2) @(negedge clk);
+            valid = 0; inhibit = '1;
+            expect_csr('hb00, 2);
+            expect_csr('hb02, 2);
+            privilege = 1;
+            expect_csr('h321, 0, 1);
+            expect_csr('h322, 0, 1);
+            if (P.XLEN == 32) expect_csr('h721, 0, 1);
+            privilege = 3;
+        end else begin
+            expect_csr('h321, 0, 1);
+            expect_csr('h322, 0, 1);
+            if (P.XLEN == 32) begin
+                expect_csr('h721, 0, 1);
+                expect_csr('h722, 0, 1);
+            end
         end
         $display("PASS: RV%0d %0d counter CSR permissions, fixed events, enable/inhibit and rollover", P.XLEN, COUNTER_COUNT);
         $finish;

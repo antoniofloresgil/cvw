@@ -15,6 +15,11 @@ coverage uses tests/coverage/hpmcounters.S.
 configs. Their `SSCOFPMF_SUPPORTED` parameter is set, while all base targets
 keep it clear. Select a matching firmware device tree before advertising
 `sscofpmf` to an OS; the existing board DTBs describe the base targets.
+
+`smcntrpmf_rv64gc` and `smcntrpmf_rv32gc` enable mode filtering for
+`mcycle`/`minstret`; `pmf_rv64gc` and `pmf_rv32gc` enable both extensions.
+The directed suite checks the independent filters and RV32 high CSR halves.
+`smcntrpmf.S` exercises a real M-to-U-to-M transition on the RV64 core.
 Linux/OpenSBI and actual perf stat integration are documented in
 [linux/pmu](../../linux/pmu/README.md). Counter RTL is synthesizable; these
 fixtures are simulation verification, not a synthesized-board verdict.
