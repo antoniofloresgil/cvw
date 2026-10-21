@@ -11,36 +11,35 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from build import ROOT, HERE, hexfile, run
-
+from build import HERE, ROOT, hexfile, run
 
 PROBE = r'''
 /* Temporary integration probe: kernel perf still configures counters through SBI. */
 static void __init wally_smcdeleg_probe(void)
 {
-	unsigned long select, inhibit, value, event, got, stopped;
-	bool ok;
+    unsigned long select, inhibit, value, event, got, stopped;
+    bool ok;
 
-	select = csr_read(0x150);      /* siselect */
-	inhibit = csr_read(0x120);     /* scountinhibit */
-	csr_write(0x150, 0x43);       /* delegated mhpmcounter3 */
-	value = csr_read(0x151);      /* sireg */
-	event = csr_read(0x152);      /* sireg2 = mhpmevent3 */
-	csr_write(0x120, inhibit | BIT(3));
-	csr_write(0x152, 1);
-	csr_write(0x151, 17);
-	got = csr_read(0x151);
-	stopped = csr_read(0x120);
-	ok = got == 17 && csr_read(0x152) == 1 && (stopped & BIT(3));
-	csr_write(0x152, event);
-	csr_write(0x151, value);
-	csr_write(0x120, inhibit);
-	csr_write(0x150, select);
-	if (ok)
-		pr_info("WALLY_SMCDELEG_PASS direct_smode_counter_access\n");
-	else
-		pr_err("WALLY_SMCDELEG_FAIL direct_smode_counter_access got=%lu inhibit=%lu\n",
-		       got, stopped);
+    select = csr_read(0x150);      /* siselect */
+    inhibit = csr_read(0x120);     /* scountinhibit */
+    csr_write(0x150, 0x43);       /* delegated mhpmcounter3 */
+    value = csr_read(0x151);      /* sireg */
+    event = csr_read(0x152);      /* sireg2 = mhpmevent3 */
+    csr_write(0x120, inhibit | BIT(3));
+    csr_write(0x152, 1);
+    csr_write(0x151, 17);
+    got = csr_read(0x151);
+    stopped = csr_read(0x120);
+    ok = got == 17 && csr_read(0x152) == 1 && (stopped & BIT(3));
+    csr_write(0x152, event);
+    csr_write(0x151, value);
+    csr_write(0x120, inhibit);
+    csr_write(0x150, select);
+    if (ok)
+        pr_info("WALLY_SMCDELEG_PASS direct_smode_counter_access\n");
+    else
+        pr_err("WALLY_SMCDELEG_FAIL direct_smode_counter_access got=%lu inhibit=%lu\n",
+               got, stopped);
 }
 
 '''
@@ -81,8 +80,9 @@ def main():
         'pr_info("SBI PMU extension is available\\n");\n\twally_smcdeleg_probe();',
         1,
     )
-    driver.unlink()
-    driver.write_text(patched)
+    if driver.is_symlink() or driver.read_text() != patched:
+        driver.unlink()
+        driver.write_text(patched)
 
     for name, source_path in [
         ("init", base / "init"),
@@ -100,7 +100,9 @@ def main():
     )
     kout = work / "kernel"
     kout.mkdir(exist_ok=True)
-    (kout / ".config").write_text((HERE / "kernel.config").read_text() + f'\nCONFIG_INITRAMFS_SOURCE="{cpio}"\n')
+    config_text = (HERE / "kernel.config").read_text() + f'\nCONFIG_INITRAMFS_SOURCE="{cpio}"\n'
+    if not (kout / ".config").exists() or (kout / ".config").read_text() != config_text:
+        (kout / ".config").write_text(config_text)
     env = {k: v for k, v in os.environ.items() if k not in ("LD_LIBRARY_PATH", "DEBUG")}
     command = ["make", "-C", source, f"O={kout}", "ARCH=riscv", f"CROSS_COMPILE={args.cross_prefix}"]
     run([*command, "olddefconfig"], env=env)
@@ -111,7 +113,8 @@ def main():
 
     dts = (ROOT / "linux/devicetree/wally-virt.dts").read_text()
     dts = re.sub(r'    linux,initrd-(?:end|start) = .*;\n', '', dts)
-    dts = dts.replace('bootargs = "root=/dev/vda ro";', 'bootargs = "earlycon=uart8250,mmio,0x10000000 console=ttyS0,115200 loglevel=6 rdinit=/init";')
+    # Kernel pr_info() messages use level 6 and need a console threshold > 6.
+    dts = dts.replace('bootargs = "root=/dev/vda ro";', 'bootargs = "earlycon=uart8250,mmio,0x10000000 console=ttyS0,115200 loglevel=7 rdinit=/init";')
     dts = dts.replace('0x00 0x10000000>;', '0x00 0x08000000>;')
     dts = dts.replace('"zihpm";', '"zihpm", "sscofpmf", "smcntrpmf", "smcdeleg", "ssccfg", "sscsrind";')
     (work / "wally-pmu.dts").write_text(dts)

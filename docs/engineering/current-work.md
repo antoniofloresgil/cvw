@@ -27,13 +27,15 @@ privilege-filtered counters, FPGA synthesis/timing and physical-board behavior
 remain unverified. Multicore RTL and coherence remain on `multicore-support`
 and are not part of this branch.
 
-Smcdeleg/Ssccfg counter delegation is implemented in the working tree above
-`776ae473b`, with one configuration switch for the required pair. The
+Smcdeleg/Ssccfg counter delegation is committed as `45911b806`, with one
+configuration switch for the required pair. The
 directed RV32/RV64 CSR suite, six RTL lint elaborations and the RV64
 full-core M/S/M test have passed. A separate `pmu_deleg_linux` Linux image
-and kernel S-mode direct-CSR probe were prepared. Linux completed at
-121,759,290 cycles and the existing `perf stat` integration passed, but the
-direct probe marker was absent, so Linux direct access remains unverified.
-The run record documents this distinction. FPGA timing and board operation
-also remain unverified. See [ADR 0016](decisions/0016-smcdeleg-ssccfg-counter-delegation.md)
+and kernel S-mode direct-CSR probe passed in a Linux RTL boot at
+123,214,564 cycles, followed by the existing `perf stat` integration.
+The first image used `loglevel=6`, which suppressed the probe's `pr_info`
+message; a `loglevel=7` rerun made the direct-access PASS marker visible.
+Normal Linux `perf` still programs counters through SBI, so no performance
+benefit from direct programming has been measured. FPGA timing and board
+operation remain unverified. See [ADR 0016](decisions/0016-smcdeleg-ssccfg-counter-delegation.md)
 and the [experiment](experiments/2026-10-21-smcdeleg-ssccfg.md).

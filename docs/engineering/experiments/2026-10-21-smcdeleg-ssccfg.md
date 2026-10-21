@@ -1,7 +1,7 @@
 # Smcdeleg/Ssccfg counter delegation check
 
-Date: 2026-10-21. Branch: `adding-mpu-support`, working tree above
-`776ae473b`. Configurations: RV32/RV64 base and derived
+Date: 2026-10-21. Branch: `adding-mpu-support`, feature commit
+`45911b806`. Configurations: RV32/RV64 base and derived
 `smcdeleg_*`/`pmu_deleg_*` targets. Question: do delegated supervisor
 aliases and `scountinhibit` work without changing the base PMU behavior?
 
@@ -61,13 +61,30 @@ The resumed Linux run completed at 121,759,290 cycles. The existing Linux
 branch misses, cache references and cache misses. However, the expected
 `WALLY_SMCDELEG_PASS` marker did not appear, and the run harness correctly
 records `FAIL` because the direct probe was not confirmed. The log also lacks
-the SBI PMU driver's probe message; why the injected probe did not run remains
-unresolved. Thus this is a Linux boot and ordinary PMU/perf pass, not evidence
-that Linux directly accessed delegated CSRs. See `/tmp/wally-smcdeleg-linux/rtl.log`
-and `rtl-result.json` for raw evidence.
+the SBI PMU driver's probe message. Investigation found that the image used
+`loglevel=6`, while both messages use `pr_info` (level 6). Linux prints to
+the console only messages with a level *smaller* than `console_loglevel`, so
+these messages were suppressed. The old evidence is preserved in
+`/tmp/wally-smcdeleg-linux/previous-run/`.
+
+**PASS:** The image rebuilt with `loglevel=7` completed on 2026-10-21 at
+123,214,564 RTL cycles. At roughly 36 million cycles Linux printed
+`riscv-pmu-sbi: WALLY_SMCDELEG_PASS direct_smode_counter_access`; later the
+existing `perf_event_open` and `perf stat` workload printed
+`WALLY_PMU_PASS perf_event_open_and_perf_stat`. The harness result is `PASS`
+with exit code 0. The RTL revision is `45911b806`; the image builder uses
+the `loglevel=7` correction recorded in this follow-up change. The model SHA-256 is
+`89fc76d3ae02da988f2de8725e2a7448a5887f0ae860515ad5cee65386a9a9f1`,
+the image manifest SHA-256 is
+`fb14be53b3a7b3c470a6f467cd64fff988b41408d51c521918f187a727edbd5f`,
+and the RTL log SHA-256 is
+`26059c2270364222d40c4304e1613664278160b5b259d58a52049cc509e3bcb1`.
+The artifacts are in `/tmp/wally-smcdeleg-linux/`; the build command is the
+`delegation_build.py` invocation used above with `--work` set to that path,
+followed by `python3 linux/pmu/run.py --work /tmp/wally-smcdeleg-linux --reuse --cycles 150000000`.
 
 The Linux driver still uses SBI for normal `perf stat`; the added kernel probe
-tests direct CSR access only if it executes. No measured reduction in `perf`
-programming cost exists. FPGA synthesis/timing and board behavior are also
-unverified. The passing full-core test is specific to this single-core branch
-and RV64 target.
+confirms direct CSR access only. No measured reduction in `perf` programming
+cost exists. FPGA synthesis/timing and board behavior are also unverified.
+The passing full-core test is specific to this single-core branch and RV64
+target.
