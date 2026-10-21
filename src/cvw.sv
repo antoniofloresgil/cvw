@@ -52,6 +52,7 @@ typedef struct packed {
   logic         ZIHPM_SUPPORTED;
   logic         SSCOFPMF_SUPPORTED;
   logic         SMCNTRPMF_SUPPORTED;
+  logic         SMCDELEG_SUPPORTED; // Smcdeleg and Ssccfg are implemented together
   logic         ZFH_SUPPORTED;
   logic         ZFA_SUPPORTED;
   logic         SSTC_SUPPORTED;

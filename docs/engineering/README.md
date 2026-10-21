@@ -69,3 +69,6 @@ Optional counter overflow and filtering on this branch are tracked in
 Fixed-counter mode filtering is tracked in
 [ADR 0015](decisions/0015-smcntrpmf-fixed-counter-filter.md) and the
 [Smcntrpmf verification record](experiments/2026-10-21-smcntrpmf.md).
+Counter delegation is tracked in
+[ADR 0016](decisions/0016-smcdeleg-ssccfg-counter-delegation.md) and the
+[Smcdeleg/Ssccfg experiment](experiments/2026-10-21-smcdeleg-ssccfg.md).

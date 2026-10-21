@@ -33,7 +33,7 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   input  logic              StallE, StallM, StallW,
   input  logic              FlushM,
   input  logic              InstrValidNotFlushedM, LoadStallD, StoreStallD,
-  input  logic              CSRMWriteM, CSRWriteM,
+  input  logic              CSRMWriteM, CSRSWriteM, CSRWriteM,
   input  logic              BPDirWrongM,
   input  logic              BTAWrongM,
   input  logic              RASPredPCWrongM,
@@ -56,6 +56,8 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   input  logic [1:0]        PrivilegeModeW,
   input  logic [P.XLEN-1:0] CSRWriteValM,
   input  logic [31:0]       MCOUNTINHIBIT_REGW, MCOUNTEREN_REGW, SCOUNTEREN_REGW,
+  input  logic [P.XLEN-1:0] SISELECT_REGW,
+  input  logic              CounterDelegationEnabled,
   input  logic [63:0]       MTIME_CLINT,
   output logic [P.XLEN-1:0] CSRCReadValM,
   output logic              IllegalCSRCAccessM,
@@ -78,6 +80,12 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   localparam MHPMEVENTHBASE   = 12'h723;
   localparam MHPMEVENTHLAST   = 12'h73F;
   localparam SCOUNTOVF        = 12'hDA0;
+  localparam SIREG            = 12'h151;
+  localparam SIREG2           = 12'h152;
+  localparam SIREG3           = 12'h153;
+  localparam SIREG4           = 12'h155;
+  localparam SIREG5           = 12'h156;
+  localparam SIREG6           = 12'h157;
   // SystemVerilog has no zero-width array, so keep one unused element when no hpmevents exist
   localparam HPMEVENTTOP      = P.COUNTERS > 3 ? P.COUNTERS - 1 : 3;
   localparam HPMCOUNTERBASE   = 12'hC00;
@@ -86,11 +94,14 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   localparam TIMEH            = 12'hC81;
 
   logic [4:0]              CounterNumM;
+  logic [4:0]              SelectedCounterM;
+  logic                    DelegatedCounterM, WriteSIREGM, WriteSIREG2M, WriteSIREG4M, WriteSIREG5M;
   logic [P.XLEN-1:0]       HPMCOUNTER_REGW[P.COUNTERS-1:0];
   logic [P.XLEN-1:0]       HPMCOUNTERH_REGW[P.COUNTERS-1:0];
   logic [63:0]             MHPMEVENT_REGW[HPMEVENTTOP:3];
   logic [63:0]             MCYCLECFG_REGW, MINSTRETCFG_REGW;
   logic [63:0]             MCNTRCFGWriteValM;
+  logic [63:0]             MCYCLECFGNextM, MINSTRETCFGNextM;
   logic                    WriteMCYCLECFGM, WriteMINSTRETCFGM;
   logic                    LoadStallE, LoadStallM;
   logic                    StoreStallE, StoreStallM;
@@ -120,18 +131,41 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   // RV32 only exposes the filter bits through the high CSR half. The low
   // halves and bit 63 are WPRI/read-only zero in this implementation.
   assign MCNTRCFGWriteValM = (P.XLEN == 64) ? 64'(CSRWriteValM) : {CSRWriteValM[31:0], 32'b0};
+  assign SelectedCounterM = SISELECT_REGW[4:0];
+  assign DelegatedCounterM = P.SMCDELEG_SUPPORTED & CounterDelegationEnabled &
+      (SISELECT_REGW >= P.XLEN'('h40)) & (SISELECT_REGW <= P.XLEN'('h5f)) &
+      (SelectedCounterM != 5'd1) & (12'(SelectedCounterM) < P.COUNTERS) &
+      MCOUNTEREN_REGW[SelectedCounterM] &
+      ((SelectedCounterM < 3) ? P.ZICNTR_SUPPORTED : P.ZIHPM_SUPPORTED);
+  assign WriteSIREGM  = CSRSWriteM & DelegatedCounterM & CSRAdrM == SIREG;
+  assign WriteSIREG2M = CSRSWriteM & DelegatedCounterM & CSRAdrM == SIREG2 &
+                         (SelectedCounterM >= 3 | P.SMCNTRPMF_SUPPORTED);
+  assign WriteSIREG4M = CSRSWriteM & DelegatedCounterM & (P.XLEN == 32) & CSRAdrM == SIREG4;
+  assign WriteSIREG5M = CSRSWriteM & DelegatedCounterM & (P.XLEN == 32) & CSRAdrM == SIREG5 &
+                         ((SelectedCounterM >= 3 & P.SSCOFPMF_SUPPORTED) |
+                          (SelectedCounterM < 3 & P.SMCNTRPMF_SUPPORTED));
+  always_comb begin
+    MCYCLECFGNextM = MCNTRCFGWriteValM & MCNTRCFG_MASK;
+    MINSTRETCFGNextM = MCNTRCFGWriteValM & MCNTRCFG_MASK;
+    if (WriteSIREG2M | WriteSIREG5M) begin
+      MCYCLECFGNextM[62] = MCYCLECFG_REGW[62];
+      MINSTRETCFGNextM[62] = MINSTRETCFG_REGW[62];
+    end
+  end
   assign WriteMCYCLECFGM = P.SMCNTRPMF_SUPPORTED & CSRMWriteM &
-                           ((P.XLEN == 64 & CSRAdrM == MCYCLECFG) | (P.XLEN == 32 & CSRAdrM == MCYCLECFGH));
+                           ((P.XLEN == 64 & CSRAdrM == MCYCLECFG) | (P.XLEN == 32 & CSRAdrM == MCYCLECFGH)) |
+                           (((P.XLEN == 64 & WriteSIREG2M) | WriteSIREG5M) & SelectedCounterM == 0);
   assign WriteMINSTRETCFGM = P.SMCNTRPMF_SUPPORTED & CSRMWriteM &
-                             ((P.XLEN == 64 & CSRAdrM == MINSTRETCFG) | (P.XLEN == 32 & CSRAdrM == MINSTRETCFGH));
+                             ((P.XLEN == 64 & CSRAdrM == MINSTRETCFG) | (P.XLEN == 32 & CSRAdrM == MINSTRETCFGH)) |
+                             (((P.XLEN == 64 & WriteSIREG2M) | WriteSIREG5M) & SelectedCounterM == 2);
   if (P.SMCNTRPMF_SUPPORTED) begin : mcntrcfg
     always_ff @(posedge clk)
       if (reset) begin
         MCYCLECFG_REGW <= '0;
         MINSTRETCFG_REGW <= '0;
       end else begin
-        if (WriteMCYCLECFGM) MCYCLECFG_REGW <= MCNTRCFGWriteValM & MCNTRCFG_MASK;
-        if (WriteMINSTRETCFGM) MINSTRETCFG_REGW <= MCNTRCFGWriteValM & MCNTRCFG_MASK;
+        if (WriteMCYCLECFGM) MCYCLECFG_REGW <= MCYCLECFGNextM;
+        if (WriteMINSTRETCFGM) MINSTRETCFG_REGW <= MINSTRETCFGNextM;
       end
   end else begin : mcntrcfg
     assign MCYCLECFG_REGW = '0;
@@ -186,7 +220,8 @@ module csrc import cvw::*; #(parameter cvw_t P) (
 
   // Counter update and write logic
   for (i = 0; i < P.COUNTERS; i = i + 1) begin : cntr
-    assign WriteHPMCOUNTERM[i] = CSRMWriteM & (CSRAdrM == MHPMCOUNTERBASE + i); // coverage tag: MTIME traps
+    assign WriteHPMCOUNTERM[i] = (CSRMWriteM & (CSRAdrM == MHPMCOUNTERBASE + i)) |
+                                 (WriteSIREGM & SelectedCounterM == i); // coverage tag: MTIME traps
     assign NextHPMCOUNTERM[i][P.XLEN-1:0] = WriteHPMCOUNTERM[i] ? CSRWriteValM : HPMCOUNTERPlusM[i][P.XLEN-1:0];
     if (i == 0) assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i] & CountModeEnabled(MCYCLECFG_REGW, PrivilegeModeW);
     else if (i == 2) assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i] & CountModeEnabled(MINSTRETCFG_REGW, PrivilegeModeW);
@@ -208,7 +243,8 @@ module csrc import cvw::*; #(parameter cvw_t P) (
 
     if (P.XLEN == 32) begin // write high and low separately
       assign HPMCOUNTERPlusM[i] = {HPMCOUNTERH_REGW[i], HPMCOUNTER_REGW[i]} + {63'b0, CounterInc[i]};
-      assign WriteHPMCOUNTERHM[i] = CSRMWriteM & (CSRAdrM == MHPMCOUNTERHBASE + i);
+      assign WriteHPMCOUNTERHM[i] = (CSRMWriteM & (CSRAdrM == MHPMCOUNTERHBASE + i)) |
+                                    (WriteSIREG4M & SelectedCounterM == i);
       assign NextHPMCOUNTERHM[i] = WriteHPMCOUNTERHM[i] ? CSRWriteValM : HPMCOUNTERPlusM[i][63:32];
       always_ff @(posedge clk)
         if (reset) HPMCOUNTERH_REGW[i][P.XLEN-1:0] <= '0;
@@ -231,12 +267,17 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   // hpmevent update and write logic
   if (P.COUNTERS > 3) begin : mhpmeventgen
     for (i = 3; i < P.COUNTERS; i = i + 1) begin : mhpmevent
-      assign WriteMHPMEVENTM[i] = CSRMWriteM & (CSRAdrM == MHPMEVENTBASE + i - 3);
-      assign WriteMHPMEVENTHM[i] = P.SSCOFPMF_SUPPORTED & (P.XLEN == 32) & CSRMWriteM & (CSRAdrM == MHPMEVENTHBASE + i - 3);
+      assign WriteMHPMEVENTM[i] = (CSRMWriteM & (CSRAdrM == MHPMEVENTBASE + i - 3)) |
+                                  (WriteSIREG2M & SelectedCounterM == i);
+      assign WriteMHPMEVENTHM[i] = P.SSCOFPMF_SUPPORTED & (P.XLEN == 32) &
+                                   ((CSRMWriteM & (CSRAdrM == MHPMEVENTHBASE + i - 3)) |
+                                    (WriteSIREG5M & SelectedCounterM == i));
       always_comb begin
         NextMHPMEVENTM[i] = MHPMEVENT_REGW[i];
         if (WriteMHPMEVENTM[i]) NextMHPMEVENTM[i][P.XLEN-1:0] = CSRWriteValM;
         if (WriteMHPMEVENTHM[i]) NextMHPMEVENTM[i][63:32] = CSRWriteValM[31:0];
+        if (WriteSIREG2M | WriteSIREG5M)
+          NextMHPMEVENTM[i][62] = MHPMEVENT_REGW[i][62]; // S-mode cannot change MINH
         // OF is sticky on a hardware overflow and software-writable. VS/VU and
         // reserved fields are hardwired zero because Wally has no H extension.
         if (P.SSCOFPMF_SUPPORTED) begin
@@ -266,6 +307,33 @@ module csrc import cvw::*; #(parameter cvw_t P) (
     if (P.SSCOFPMF_SUPPORTED & P.S_SUPPORTED & CSRAdrM == SCOUNTOVF) begin
       if (CSRWriteM | PrivilegeModeW == P.U_MODE) IllegalCSRCAccessM = 1'b1;
       else CSRCReadValM = P.XLEN'(VisibleOverflowFlags);
+    end
+    else if (P.SMCDELEG_SUPPORTED &
+             (CSRAdrM == SIREG | CSRAdrM == SIREG2 | CSRAdrM == SIREG3 |
+              CSRAdrM == SIREG4 | CSRAdrM == SIREG5 | CSRAdrM == SIREG6)) begin
+      IllegalCSRCAccessM = 1'b1;
+      if (DelegatedCounterM & (CSRAdrM == SIREG |
+          (CSRAdrM == SIREG2 & (SelectedCounterM >= 3 | P.SMCNTRPMF_SUPPORTED)) |
+          (P.XLEN == 32 & CSRAdrM == SIREG4) |
+          (P.XLEN == 32 & CSRAdrM == SIREG5 &
+           ((SelectedCounterM >= 3 & P.SSCOFPMF_SUPPORTED) |
+            (SelectedCounterM < 3 & P.SMCNTRPMF_SUPPORTED))))) begin
+        IllegalCSRCAccessM = 1'b0;
+        /* verilator lint_off WIDTH */
+        if (CSRAdrM == SIREG) CSRCReadValM = HPMCOUNTER_REGW[SelectedCounterM];
+        else if (CSRAdrM == SIREG4) CSRCReadValM = HPMCOUNTERH_REGW[SelectedCounterM];
+        else if (SelectedCounterM >= 3) begin
+          if (CSRAdrM == SIREG2)
+            CSRCReadValM = MHPMEVENT_REGW[SelectedCounterM][P.XLEN-1:0] &
+                            ~(P.XLEN'(1) << 62);
+          else CSRCReadValM = P.XLEN'(MHPMEVENT_REGW[SelectedCounterM][63:32] & 32'hBFFFFFFF);
+        end else if (CSRAdrM == SIREG2)
+          CSRCReadValM = (SelectedCounterM == 0 ? MCYCLECFG_REGW[P.XLEN-1:0] :
+                          MINSTRETCFG_REGW[P.XLEN-1:0]) & ~(P.XLEN'(1) << 62);
+        else CSRCReadValM = P.XLEN'((SelectedCounterM == 0 ?
+                            MCYCLECFG_REGW[63:32] : MINSTRETCFG_REGW[63:32]) & 32'hBFFFFFFF);
+        /* verilator lint_on WIDTH */
+      end
     end
     else if (P.SMCNTRPMF_SUPPORTED & PrivilegeModeW == P.M_MODE &
              (CSRAdrM == MCYCLECFG | CSRAdrM == MINSTRETCFG)) begin

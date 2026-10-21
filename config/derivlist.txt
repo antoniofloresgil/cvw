@@ -1711,3 +1711,22 @@ SMCNTRPMF_SUPPORTED 1
 
 deriv pmf_rv32gc sscofpmf_rv32gc
 SMCNTRPMF_SUPPORTED 1
+
+# Counter delegation and its supervisor indirect CSR interface.
+deriv smcdeleg_rv64gc rv64gc
+SMCDELEG_SUPPORTED 1
+
+deriv smcdeleg_rv32gc rv32gc
+SMCDELEG_SUPPORTED 1
+
+deriv pmu_deleg_rv64gc pmf_rv64gc
+SMCDELEG_SUPPORTED 1
+
+deriv pmu_deleg_rv32gc pmf_rv32gc
+SMCDELEG_SUPPORTED 1
+
+# Same 128 MiB native-cache SoC used by the Linux PMU integration image.
+deriv pmu_deleg_linux pmu_linux
+SSCOFPMF_SUPPORTED 1
+SMCNTRPMF_SUPPORTED 1
+SMCDELEG_SUPPORTED 1

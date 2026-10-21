@@ -96,6 +96,7 @@ localparam logic ZICNTR_SUPPORTED = 1;
 localparam logic ZIHPM_SUPPORTED  = 1;
 localparam logic SSCOFPMF_SUPPORTED = 0;
 localparam logic SMCNTRPMF_SUPPORTED = 0;
+localparam logic SMCDELEG_SUPPORTED = 0;
 localparam COUNTERS = 12'd32;
 
 // Cache-management operation extensions

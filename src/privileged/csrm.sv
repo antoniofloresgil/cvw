@@ -39,6 +39,7 @@ module csrm import cvw::*; #(parameter cvw_t P) (
   input  logic [P.XLEN-1:0]        NextEPCM, NextXtvalM, MSTATUS_REGW, MSTATUSH_REGW,
   input  logic [5:0]               NextCauseM,
   input  logic [P.XLEN-1:0]        CSRWriteValM,
+  input  logic                     CSRSWriteM,
   input  logic [13:0]              MIP_REGW, MIE_REGW,
   output logic [P.XLEN-1:0]        CSRMReadValM, MTVEC_REGW,
   output logic [P.XLEN-1:0]        MEPC_REGW,
@@ -61,7 +62,8 @@ module csrm import cvw::*; #(parameter cvw_t P) (
   logic [P.XLEN-1:0]               TVECWriteValM;
   logic                            WriteMTVECM, WriteMEDELEGM, WriteMIDELEGM;
   logic                            WriteMSCRATCHM, WriteMEPCM, WriteMCAUSEM, WriteMTVALM;
-  logic                            WriteMCOUNTERENM, WriteMCOUNTINHIBITM;
+  logic                            WriteMCOUNTERENM, WriteMCOUNTINHIBITM, WriteSCOUNTINHIBITM;
+  logic [31:0]                     CounterInhibitWriteValM;
 
   // Machine CSRs
   localparam MVENDORID     = 12'hF11;
@@ -80,6 +82,7 @@ module csrm import cvw::*; #(parameter cvw_t P) (
   localparam MSTATUSH      = 12'h310;
   localparam MENVCFGH      = 12'h31A;
   localparam MCOUNTINHIBIT = 12'h320;
+  localparam SCOUNTINHIBIT = 12'h120;
   localparam MSCRATCH      = 12'h340;
   localparam MEPC          = 12'h341;
   localparam MCAUSE        = 12'h342;
@@ -170,6 +173,11 @@ module csrm import cvw::*; #(parameter cvw_t P) (
   assign WriteMTVALM         = MTrapM | (CSRMWriteM & (CSRAdrM == MTVAL));
   assign WriteMCOUNTERENM    = CSRMWriteM & (CSRAdrM == MCOUNTEREN);
   assign WriteMCOUNTINHIBITM = CSRMWriteM & (CSRAdrM == MCOUNTINHIBIT);
+  assign WriteSCOUNTINHIBITM = P.SMCDELEG_SUPPORTED & MENVCFG_REGW[60] &
+                               CSRSWriteM & (CSRAdrM == SCOUNTINHIBIT);
+  assign CounterInhibitWriteValM = WriteSCOUNTINHIBITM ?
+      ((MCOUNTINHIBIT_REGW & ~MCOUNTEREN_REGW) | (CSRWriteValM[31:0] & MCOUNTEREN_REGW)) :
+      CSRWriteValM[31:0];
 
   assign IllegalCSRMWriteReadonlyM = UngatedCSRMWriteM & (CSRAdrM == MVENDORID | CSRAdrM == MARCHID | CSRAdrM == MIMPID | CSRAdrM == MHARTID | CSRAdrM == MCONFIGPTR);
 
@@ -186,7 +194,8 @@ module csrm import cvw::*; #(parameter cvw_t P) (
   flopenr #(P.XLEN) MEPCreg(clk, reset, WriteMEPCM, NextEPCM, MEPC_REGW);
   flopenr #(P.XLEN) MCAUSEreg(clk, reset, WriteMCAUSEM, {NextCauseM[5], {(P.XLEN-6){1'b0}}, NextCauseM[4:0]}, MCAUSE_REGW);
   flopenr #(P.XLEN) MTVALreg(clk, reset, WriteMTVALM, NextXtvalM, MTVAL_REGW);
-  flopenr #(32)     MCOUNTINHIBITreg(clk, reset, WriteMCOUNTINHIBITM, CSRWriteValM[31:0] & COUNTERINHIBIT_MASK, MCOUNTINHIBIT_REGW);
+  flopenr #(32)     MCOUNTINHIBITreg(clk, reset, WriteMCOUNTINHIBITM | WriteSCOUNTINHIBITM,
+                                    CounterInhibitWriteValM & COUNTERINHIBIT_MASK, MCOUNTINHIBIT_REGW);
   if (P.U_SUPPORTED & P.ZICNTR_SUPPORTED) begin : mcounteren // MCOUNTEREN only writable when user mode and Zicntr are supported
     flopenr #(32)   MCOUNTERENreg(clk, reset, WriteMCOUNTERENM, CSRWriteValM[31:0] & COUNTEREN_MASK, MCOUNTEREN_REGW);
   end else assign MCOUNTEREN_REGW = '0;
@@ -203,7 +212,8 @@ module csrm import cvw::*; #(parameter cvw_t P) (
       MENVCFG_PreWriteValM[63]  & P.SSTC_SUPPORTED,
       MENVCFG_PreWriteValM[62]  & P.SVPBMT_SUPPORTED,
       MENVCFG_PreWriteValM[61]  & P.SVADU_SUPPORTED,
-      53'b0,
+      MENVCFG_PreWriteValM[60]  & P.SMCDELEG_SUPPORTED & P.S_SUPPORTED,
+      52'b0,
       MENVCFG_PreWriteValM[7]   & P.ZICBOZ_SUPPORTED,
       MENVCFG_PreWriteValM[6]   & P.ZICBOM_SUPPORTED,
       LegalizedCBIE             & {2{P.ZICBOM_SUPPORTED}},

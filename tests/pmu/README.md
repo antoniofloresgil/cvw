@@ -23,3 +23,11 @@ The directed suite checks the independent filters and RV32 high CSR halves.
 Linux/OpenSBI and actual perf stat integration are documented in
 [linux/pmu](../../linux/pmu/README.md). Counter RTL is synthesizable; these
 fixtures are simulation verification, not a synthesized-board verdict.
+
+`smcdeleg_rv64gc`/`smcdeleg_rv32gc` enable Smcdeleg and Ssccfg together.
+`pmu_deleg_rv64gc`/`pmu_deleg_rv32gc` also enable Sscofpmf and
+Smcntrpmf. The directed suite checks S-mode counter/selector access, M-mode
+MINH preservation, unsupported alias traps and delegation permission gates.
+The RV64 full-core `smcdeleg.S` program checks `menvcfg.CDE`,
+`siselect`, `sireg*` and `scountinhibit` across an M-to-S-to-M
+transition.

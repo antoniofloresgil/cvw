@@ -39,6 +39,9 @@ def main():
     manifest = json.loads((work / "manifest.json").read_text())
     if manifest["kind"] != "wally-native-single-core-pmu" or manifest["counters"] != 32:
         parser.error("Wrong PMU image configuration")
+    config = manifest.get("config", "pmu_linux")
+    if config not in ("pmu_linux", "pmu_deleg_linux"):
+        parser.error(f"Unsupported PMU configuration: {config}")
     for rel, digest in manifest["sha256"].items():
         if sha(work / rel) != digest:
             parser.error(f"Image digest mismatch: {rel}")
@@ -49,8 +52,8 @@ def main():
         parser.error("PMU model already building/running")
     if not args.reuse:
         subprocess.run(["perl", str(ROOT / "bin/derivgen.pl")], cwd=ROOT, check=True)
-    sources = [ROOT / "src/cvw.sv", *sorted(p for p in (ROOT / "src").rglob("*.sv") if p.name != "cvw.sv"), HERE / "pmu_tb.sv", HERE / "sim_main.cpp", HERE / "dpi.cpp", ROOT / "config/deriv/pmu_linux/config.vh", *sorted((ROOT / "config/shared").glob("*.vh"))]
-    inputs = {"config": "pmu_linux", "savable": True, "verilator": subprocess.check_output(["verilator", "--version"], text=True).strip(), "sources": {str(p.relative_to(ROOT)): sha(p) for p in sources}}
+    sources = [ROOT / "src/cvw.sv", *sorted(p for p in (ROOT / "src").rglob("*.sv") if p.name != "cvw.sv"), HERE / "pmu_tb.sv", HERE / "sim_main.cpp", HERE / "dpi.cpp", ROOT / f"config/deriv/{config}/config.vh", *sorted((ROOT / "config/shared").glob("*.vh"))]
+    inputs = {"config": config, "savable": True, "verilator": subprocess.check_output(["verilator", "--version"], text=True).strip(), "sources": {str(p.relative_to(ROOT)): sha(p) for p in sources}}
     build = work / "rtl"
     model_path = build / "model.json"
     exe = build / "Vpmu_tb"
@@ -60,7 +63,7 @@ def main():
             parser.error("Model differs from current sources; rebuild")
     else:
         # Headers/config participate in the fingerprint, not compilation units.
-        command = ["verilator", "--cc", "--exe", "--build", "--assert", "--savable", "-CFLAGS", "-O3", "-MAKEFLAGS", "OPT_FAST=-O3", "-j", str(args.jobs), "--top-module", "pmu_tb", "--Mdir", str(build), f"-I{ROOT}/config/shared", f"-I{ROOT}/config/deriv/pmu_linux", *[str(p) for p in sources if p.suffix in (".sv", ".cpp")]]
+        command = ["verilator", "--cc", "--exe", "--build", "--assert", "--savable", "-CFLAGS", "-O3", "-MAKEFLAGS", "OPT_FAST=-O3", "-j", str(args.jobs), "--top-module", "pmu_tb", "--Mdir", str(build), f"-I{ROOT}/config/shared", f"-I{ROOT}/config/deriv/{config}", *[str(p) for p in sources if p.suffix in (".sv", ".cpp")]]
         with (work / "rtl-build.log").open("w") as log:
             subprocess.run(command, cwd=ROOT, check=True, stdout=log, stderr=subprocess.STDOUT)
         model = {"inputs": inputs, "binary_sha256": sha(exe), "command": command}
@@ -86,8 +89,9 @@ def main():
     with (work / "rtl.log").open("a" if args.resume else "w") as log:
         code = subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT).returncode
     output = (work / "rtl.log").read_text(errors="replace")
-    bad = re.search(r"WALLY_PMU_FAIL|Kernel panic|%Error|%Fatal|Assertion failed", output)
-    ok = code == 0 and "WALLY_PMU_PASS perf_event_open_and_perf_stat" in output and not bad
+    bad = re.search(r"WALLY_PMU_FAIL|WALLY_SMCDELEG_FAIL|Kernel panic|%Error|%Fatal|Assertion failed", output)
+    delegated = not manifest.get("delegation_probe") or "WALLY_SMCDELEG_PASS" in output
+    ok = code == 0 and "WALLY_PMU_PASS perf_event_open_and_perf_stat" in output and delegated and not bad
     result = {"verdict": "PASS" if ok else "INCOMPLETE" if code == 75 and not bad else "FAIL", "exit_code": code, **identity, "log_sha256": sha(work / "rtl.log")}
     (work / "rtl-result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(result, flush=True)

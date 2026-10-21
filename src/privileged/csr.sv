@@ -127,6 +127,8 @@ module csr import cvw::*; #(parameter cvw_t P) (
   logic                    InstrValidNotFlushedM;
   logic                    STimerInt;
   logic [63:0]             MENVCFG_REGW;
+  logic [P.XLEN-1:0]       SISELECT_REGW;
+  logic                    CounterDelegationEnabled;
   logic [P.XLEN-1:0]       SENVCFG_REGW;
   logic                    ENVCFG_STCE; // supervisor timer counter enable
   logic                    ENVCFG_FIOM; // fence implies io (presently not used)
@@ -232,7 +234,7 @@ module csr import cvw::*; #(parameter cvw_t P) (
     .STATUS_FS, .BigEndianM);
 
   csrm #(P) csrm(.clk, .reset,
-    .UngatedCSRMWriteM, .CSRMWriteM, .MTrapM, .CSRAdrM,
+    .UngatedCSRMWriteM, .CSRMWriteM, .CSRSWriteM, .MTrapM, .CSRAdrM,
     .NextEPCM, .NextCauseM, .NextXtvalM, .MSTATUS_REGW, .MSTATUSH_REGW,
     .CSRWriteValM, .CSRMReadValM, .MTVEC_REGW,
     .MEPC_REGW, .MCOUNTEREN_REGW, .MCOUNTINHIBIT_REGW,
@@ -249,6 +251,7 @@ module csr import cvw::*; #(parameter cvw_t P) (
       .NextEPCM, .NextCauseM, .NextXtvalM, .SSTATUS_REGW,
       .STATUS_TVM,
       .CSRWriteValM, .PrivilegeModeW,
+      .MCOUNTEREN_REGW, .MCOUNTINHIBIT_REGW, .CounterDelegationEnabled, .SISELECT_REGW,
       .CSRSReadValM, .STVEC_REGW, .SEPC_REGW,
       .SCOUNTEREN_REGW,
       .SATP_REGW, .MIP_REGW, .MIE_REGW, .MIDELEG_REGW, .MTIME_CLINT, .STCE,
@@ -263,6 +266,7 @@ module csr import cvw::*; #(parameter cvw_t P) (
     assign IllegalCSRSAccessM = 1'b1;
     assign STimerInt = '0;
     assign SENVCFG_REGW = '0;
+    assign SISELECT_REGW = '0;
   end
 
   // Floating Point CSRs in User Mode only needed if Floating Point is supported
@@ -281,16 +285,18 @@ module csr import cvw::*; #(parameter cvw_t P) (
 
   // counters are always instantiated but may read as zero if not supported
   csrc #(P) counters(.clk, .reset, .StallE, .StallM, .StallW, .FlushM,
-    .InstrValidNotFlushedM, .LoadStallD, .StoreStallD, .CSRWriteM, .CSRMWriteM,
+    .InstrValidNotFlushedM, .LoadStallD, .StoreStallD, .CSRWriteM, .CSRMWriteM, .CSRSWriteM,
     .BPDirWrongM, .BTAWrongM, .RASPredPCWrongM, .IClassWrongM, .BPWrongM,
     .IClassM, .DCacheMiss, .DCacheAccess, .ICacheMiss, .ICacheAccess, .sfencevmaM,
     .InterruptM, .TrapM, .InvalidateICacheM, .ICacheStallF, .DCacheStallM, .DivBusyE, .FDivBusyE,
     .CSRAdrM, .PrivilegeModeW, .CSRWriteValM,
     .MCOUNTINHIBIT_REGW, .MCOUNTEREN_REGW, .SCOUNTEREN_REGW,
+    .SISELECT_REGW, .CounterDelegationEnabled,
     .MTIME_CLINT, .CSRCReadValM, .IllegalCSRCAccessM, .LCOFIPSetM);
 
   // Broadcast appropriate environment configuration based on privilege mode
   assign ENVCFG_STCE =  MENVCFG_REGW[63]; // supervisor timer counter enable
+  assign CounterDelegationEnabled = P.SMCDELEG_SUPPORTED & MENVCFG_REGW[60];
   assign ENVCFG_PBMTE = MENVCFG_REGW[62]; // page-based memory types enable
   assign ENVCFG_ADUE  = MENVCFG_REGW[61]; // Hardware A/D Update enable
   assign ENVCFG_CBE =   (PrivilegeModeW == P.M_MODE) ? 4'b1111 :

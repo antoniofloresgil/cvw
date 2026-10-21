@@ -46,6 +46,14 @@ configuration regenerate the node and verify which event sources exist:
 python3 linux/pmu/events.py --counters 32 --output linux/devicetree/wally-pmu.dtsi
 ```
 
+The optional `smcdeleg_*` and `pmu_deleg_*` derivatives implement the
+Smcdeleg/Ssccfg CSR path in RTL. This Linux recipe still selects
+`pmu_linux`, whose delegation switch is off. To use direct S-mode
+programming, firmware must enable `menvcfg.CDE` and delegate the intended
+`mcounteren` bits, the device tree must report the actual extensions,
+and the kernel must select that path. The present `perf stat` result
+therefore does not measure a delegation speedup.
+
 ## Reproducible checks
 
 From the repository root after `source ./setup.sh`:

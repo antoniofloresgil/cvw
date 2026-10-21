@@ -3,7 +3,8 @@
 module csrc_tb import cvw::*; #(
     parameter int COUNTER_COUNT = 32,
     parameter int SSCOFPMF = 0,
-    parameter int SMCNTRPMF = 0
+    parameter int SMCNTRPMF = 0,
+    parameter int SMCDELEG = 0
 );
     `include "parameter-defs.vh"
     function automatic cvw_t configuration();
@@ -11,6 +12,7 @@ module csrc_tb import cvw::*; #(
         c.COUNTERS = 12'(COUNTER_COUNT);
         c.SSCOFPMF_SUPPORTED = (SSCOFPMF != 0);
         c.SMCNTRPMF_SUPPORTED = (SMCNTRPMF != 0);
+        c.SMCDELEG_SUPPORTED = (SMCDELEG != 0);
         return c;
     endfunction
     localparam cvw_t C = configuration();
@@ -19,7 +21,8 @@ module csrc_tb import cvw::*; #(
     logic valid = 0, wrong = 0;
     logic [3:0] iclass = 0;
     logic daccess = 0, dmiss = 0, iaccess = 0, imiss = 0;
-    logic write_csr = 0;
+    logic write_csr = 0, write_supervisor = 0, cde = 0;
+    logic [P.XLEN-1:0] selected = 0;
     logic [11:0] address = 0;
     logic [P.XLEN-1:0] wdata = 0, rdata;
     logic illegal, overflow_pulse;
@@ -28,18 +31,25 @@ module csrc_tb import cvw::*; #(
     csrc #(.P(C)) dut(
         .clk, .reset, .StallE(1'b0), .StallM(1'b0), .StallW(1'b0), .FlushM(1'b0),
         .InstrValidNotFlushedM(valid), .LoadStallD(1'b0), .StoreStallD(1'b0),
-        .CSRMWriteM(write_csr), .CSRWriteM(write_csr), .BPDirWrongM(1'b0), .BTAWrongM(1'b0),
+        .CSRMWriteM(write_csr & ~write_supervisor), .CSRSWriteM(write_csr & write_supervisor),
+        .CSRWriteM(write_csr), .BPDirWrongM(1'b0), .BTAWrongM(1'b0),
         .RASPredPCWrongM(1'b0), .IClassWrongM(1'b0), .BPWrongM(wrong), .IClassM(iclass),
         .DCacheMiss(dmiss), .DCacheAccess(daccess), .ICacheMiss(imiss), .ICacheAccess(iaccess),
         .ICacheStallF(1'b0), .DCacheStallM(1'b0), .sfencevmaM(1'b0), .InterruptM(1'b0),
         .TrapM(1'b0), .InvalidateICacheM(1'b0), .DivBusyE(1'b0), .FDivBusyE(1'b0),
         .CSRAdrM(address), .PrivilegeModeW(privilege), .CSRWriteValM(wdata),
         .MCOUNTINHIBIT_REGW(inhibit), .MCOUNTEREN_REGW(men), .SCOUNTEREN_REGW(sen),
+        .SISELECT_REGW(selected), .CounterDelegationEnabled(cde),
         .MTIME_CLINT(64'h1122334455667788), .CSRCReadValM(rdata), .IllegalCSRCAccessM(illegal),
         .LCOFIPSetM(overflow_pulse));
     task automatic put(input int csr, input logic [P.XLEN-1:0] value);
         @(negedge clk); address = 12'(csr); wdata = value; write_csr = 1;
         @(negedge clk); write_csr = 0;
+    endtask
+    task automatic put_s(input int csr, input logic [P.XLEN-1:0] value);
+        @(negedge clk); address = 12'(csr); wdata = value; write_supervisor = 1; write_csr = 1;
+        #1; assert (!illegal) else $fatal(1, "delegated write to %h was illegal", csr);
+        @(negedge clk); write_csr = 0; write_supervisor = 0;
     endtask
     task automatic expect_csr(input int csr, input logic [P.XLEN-1:0] value, input bit bad = 0);
         @(negedge clk); address = 12'(csr); #1;
@@ -235,6 +245,75 @@ module csrc_tb import cvw::*; #(
                 expect_csr('h722, 0, 1);
             end
         end
+        // Select values 0x40-0x5f are reserved for delegated counter state.
+        if (SMCDELEG != 0) begin
+            privilege = 1; cde = 1;
+            selected = 'h43;
+            men[3] = 0; expect_csr('h151, 0, 1);
+            men[3] = 1;
+            put_s('h151, 55); expect_csr('h151, 55);
+            put_s('h152, 1); expect_csr('h152, 1);
+            privilege = 3; expect_csr('hb03, 55); expect_csr('h323, 1);
+            privilege = 1;
+            selected = 'h41; expect_csr('h151, 0, 1);
+            selected = 'h43; expect_csr('h153, 0, 1); expect_csr('h157, 0, 1);
+            if (P.XLEN == 64) begin
+                expect_csr('h155, 0, 1); expect_csr('h156, 0, 1);
+            end else begin
+                put_s('h155, 'h11223344); expect_csr('h155, 'h11223344);
+                if (SSCOFPMF != 0) put_s('h156, 'h20000000);
+                else expect_csr('h156, 0, 1);
+            end
+            if (SSCOFPMF != 0) begin
+                privilege = 3;
+                if (P.XLEN == 64) put('h323, P.XLEN'(64'h4000000000000001));
+                else put('h723, 'h40000000);
+                privilege = 1;
+                if (P.XLEN == 64) begin
+                    expect_csr('h152, 1); put_s('h152, P.XLEN'(64'hffffffffffffffff));
+                    expect_csr('h152, P.XLEN'(64'hb0ffffffffffffff));
+                end else begin
+                    put_s('h152, P.XLEN'('hffffffff));
+                    expect_csr('h156, 0);
+                    put_s('h156, P.XLEN'('hffffffff)); expect_csr('h156, P.XLEN'('hb0ffffff));
+                end
+                privilege = 3;
+                if (P.XLEN == 64) expect_csr('h323, P.XLEN'(64'hf0ffffffffffffff));
+                else expect_csr('h723, P.XLEN'('hf0ffffff));
+                privilege = 1;
+            end
+            selected = 'h40; put_s('h151, 77); expect_csr('h151, 77);
+            selected = 'h42; put_s('h151, 88); expect_csr('h151, 88);
+            if (SMCNTRPMF != 0) begin
+                privilege = 3;
+                if (P.XLEN == 64) put('h321, P.XLEN'(64'h4000000000000000));
+                else put('h721, 'h40000000);
+                privilege = 1; selected = 'h40;
+                if (P.XLEN == 64) begin
+                    expect_csr('h152, 0);
+                    put_s('h152, P.XLEN'(64'hffffffffffffffff));
+                    expect_csr('h152, P.XLEN'(64'h3000000000000000));
+                end else begin
+                    expect_csr('h156, 0);
+                    put_s('h156, P.XLEN'('hffffffff));
+                    expect_csr('h156, 'h30000000);
+                end
+                privilege = 3;
+                if (P.XLEN == 64) expect_csr('h321, P.XLEN'(64'h7000000000000000));
+                else expect_csr('h721, 'h70000000);
+                privilege = 1;
+            end else expect_csr('h152, 0, 1);
+            cde = 0; expect_csr('h151, 0, 1);
+            cde = 1; selected = 'h40; men[0] = 0; expect_csr('h151, 0, 1);
+            men[0] = 1;
+            selected = 'h5f;
+            if (COUNTER_COUNT < 32) expect_csr('h151, 0, 1);
+            else begin
+                @(negedge clk); address = 'h151; #1;
+                assert (!illegal) else $fatal(1, "counter 31 must be delegated");
+            end
+            privilege = 3;
+        end else expect_csr('h151, 0, 1);
         $display("PASS: RV%0d %0d counter CSR permissions, fixed events, enable/inhibit and rollover", P.XLEN, COUNTER_COUNT);
         $finish;
     end

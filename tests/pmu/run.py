@@ -25,12 +25,13 @@ def main():
         assert ("0x00005" in generate(n)) == (n > 25)
     results = []
     for rv in [32, 64]:
-        for counters, sscofpmf, smcntrpmf in [(3, False, False), (8, False, False), (32, False, False),
-                                               (8, True, False), (32, True, False),
-                                               (3, False, True), (32, True, True)]:
-            name = f"csr-rv{rv}-{counters}" + ("-sscofpmf" if sscofpmf else "") + ("-smcntrpmf" if smcntrpmf else "")
+        for counters, sscofpmf, smcntrpmf, smcdeleg in [(3, False, False, False), (8, False, False, False), (32, False, False, False),
+                                                         (8, True, False, False), (32, True, False, False),
+                                                         (3, False, True, False), (32, True, True, False),
+                                                         (8, False, False, True), (32, True, True, True)]:
+            name = f"csr-rv{rv}-{counters}" + ("-sscofpmf" if sscofpmf else "") + ("-smcntrpmf" if smcntrpmf else "") + ("-smcdeleg" if smcdeleg else "")
             build = args.work / name
-            command = ["verilator", "--binary", "--timing", "--assert", "-j", "2", "--top-module", "csrc_tb", f"-GCOUNTER_COUNT={counters}", f"-GSSCOFPMF={int(sscofpmf)}", f"-GSMCNTRPMF={int(smcntrpmf)}", "--Mdir", str(build), f"-I{ROOT}/config/shared", f"-I{ROOT}/config/rv{rv}gc", str(ROOT / "src/cvw.sv"), str(ROOT / "tests/pmu/csrc_tb.sv"), str(ROOT / "src/privileged/csrc.sv"), str(ROOT / "src/generic/flop/flopenrc.sv")]
+            command = ["verilator", "--binary", "--timing", "--assert", "-j", "2", "--top-module", "csrc_tb", f"-GCOUNTER_COUNT={counters}", f"-GSSCOFPMF={int(sscofpmf)}", f"-GSMCNTRPMF={int(smcntrpmf)}", f"-GSMCDELEG={int(smcdeleg)}", "--Mdir", str(build), f"-I{ROOT}/config/shared", f"-I{ROOT}/config/rv{rv}gc", str(ROOT / "src/cvw.sv"), str(ROOT / "tests/pmu/csrc_tb.sv"), str(ROOT / "src/privileged/csrc.sv"), str(ROOT / "src/generic/flop/flopenrc.sv")]
             with (args.work / f"{name}-build.log").open("w") as log:
                 subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT)
             with (args.work / f"{name}-run.log").open("w") as log:
