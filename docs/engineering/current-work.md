@@ -1,18 +1,17 @@
 # Current work
 
-Branch: adding-mpu-support, based on main 82d0b80f7. Synthesizable fixed-function
-Zicntr/Zihpm counters, the standard OpenSBI PMU map and Linux perf stat
-integration are implemented. Focused checks PASS: six RV32/RV64 CSR/event
-cases, seven board DTBs, eight lint configs and full-core HPM coverage.
-The real perf/kernel/OpenSBI build and byte-identical checkpoint comparison
-also passed. Native Linux PMU **PASS at 121,617,639 cycles**:
-all seven counter read/stop checks and actual perf stat succeeded. See the
-[experiment](experiments/2026-10-20-sbi-pmu.md) and
-[ADR 0013](decisions/0013-sbi-pmu-perf-stat.md) for source/model/log scope.
+Branch: `adding-mpu-support`. Main `4ce065926` (official upstream through
+`89479dd09`) is integrated into PMU feature parent `8cb89bab9`. Synthesizable
+Zicntr/Zihpm counters, the OpenSBI event map and Linux `perf stat` support are
+preserved. `csrc.sv` kept the PMU parent's non-comment RTL tokens.
 
-Hardware is synthesizable; FPGA area/timing and real-board perf remain
-untested. Sscofpmf, sampling and privilege filtering are later work. This
-branch is separate from multicore-support and its private/coherence event
-wiring. Original multicore simulations/capacity work continue independently.
-Implementation prepared for commit and publication to origin/adding-mpu-support
-after successful native Linux validation.
+Combined-source checks PASS: six PMU CSR/event configurations, eight board
+DTS, ten RTL lints and the full-core HPM test. A fresh single-core Linux PMU
+run also passed at 121,617,639 cycles with seven counter checks and actual
+`perf stat`. See the
+[PMU/main integration record](experiments/2026-10-21-pmu-main-integration.md)
+for parent revisions, model and image hashes, commands and evidence limits.
+
+FPGA synthesis/timing and physical-board `perf` remain unverified for the PMU.
+Sscofpmf, sampling and privilege filtering are later work. Multicore RTL and
+coherence remain on `multicore-support` and are not part of this branch.
