@@ -12,6 +12,16 @@ and atomic/protected counters 128/128. See the
 [integration record](experiments/2026-10-20-multicore-upstream-integration.md)
 for exact revisions, model/log hashes and evidence scope.
 
-The merge is committed locally; push has not been requested for this merge.
+The reviewed merge is committed and, on 2026-10-21, local HEAD `0533e764d`
+matches the fetched `origin/multicore-support` reference.
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.
+
+Current objective (2026-10-21): assess maintenance and configuration isolation
+before integrating multicore into main. The
+[architecture review](experiments/2026-10-21-multicore-maintainability-review.md)
+records proposed improvements and newly executed seven-configuration lint plus
+four structural elaboration checks. Single-core coherence bypass passed those
+structural checks; single-core functional equivalence is not established by them.
+No refactoring or merge into main was performed. Recommendations and proposed
+ADR statuses still require an explicit engineering decision.
