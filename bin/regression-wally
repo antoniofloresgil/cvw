@@ -717,6 +717,7 @@ def parse_args():
     parser.add_argument("--dryrun", help="Print commands invoked to console without running regression", action="store_true")
     parser.add_argument("--benchmark", help="Check for performance changes or discrepancies in embench and coremark", action="store_true")
     parser.add_argument("--cache", help="Run cache performance validation tests", action="store_true")
+    parser.add_argument("--multicore", help="Run only the bounded Verilator single-core/multicore CI matrix (no ACT or Linux)", action="store_true")
     return parser.parse_args()
 
 
@@ -795,7 +796,16 @@ def selectTests(args, sims, coverStr):
     # Directories of more than 25 ELFs are split so that the largest ones do not set the length of the
     # run: one simulation per ELF finishes no sooner on a large host and takes far longer on a small one.
     if not(args.testfloat or args.ccov or args.fcov or args.cache or args.branch or args.benchmark or args.breker):
-        buildTests()
+        buildTests(deriv=True)
+        # Derivatives are generated once before the worker pool starts. Each case
+        # gets its own work directory and must not regenerate config/deriv in parallel.
+        for case in ("single-default", "bus", "msi", "mesi-banked"):
+            configs.append(TestCase(
+                name="multicore", variant=case,
+                cmd=[sys.executable, f"{WALLY}/tests/multicore/ci.py", "--case", case, "--skip-deriv",
+                     "--work-dir", f"{regressionDir}/verilator/wkdir/multicore-ci"],
+                log=f"{regressionDir}/verilator/logs/multicore-{case}.log",
+                grepstr="SUCCESS! Multicore CI matrix passed", stderrToLog=True))
         for sim in sims:
             if not (args.buildroot and sim == lockstepsim):  # skip short buildroot sim if running long one
                 addTests(tests_buildrootshort, sim, coverStr, configs)
@@ -891,6 +901,15 @@ def makeDirs(sims):
 
 
 def main(args):
+    if args.multicore:
+        if any(getattr(args, mode) for mode in ("ccov", "fcov", "nightly", "buildroot", "testfloat", "branch", "breker", "benchmark", "cache")):
+            print("--multicore runs independently of other regression modes", file=sys.stderr)
+            return 1
+        cmd = [sys.executable, f"{WALLY}/tests/multicore/ci.py"]
+        if args.dryrun:
+            print(shlex.join(cmd))
+            return 0
+        return subprocess.call(cmd)
     unmigrated = [f"--{mode} ({what})" for mode, what in unmigratedModes.items() if getattr(args, mode)]
     if unmigrated:
         print(f"{bcolors.FAIL}Error: {', '.join(unmigrated)} not available yet: migration of these tests "

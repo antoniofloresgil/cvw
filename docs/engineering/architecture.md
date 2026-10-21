@@ -18,6 +18,15 @@ records source boundaries and interactions that should guide future changes.
 | Instruction/data cache implementation | [src/cache](../../src/cache), instantiated through IFU/LSU; shared implementation code does not imply a coherent inter-hart cache |
 | External bus and peripherals | [ebu.sv](../../src/ebu/ebu.sv), [uncore.sv](../../src/uncore/uncore.sv) |
 
+In the working tree on `multicore-support:67ec3d991`, uncore selects the
+upstream-shaped `clint_apb`/`plic_apb` for one hart, and the separate
+`clint_multicore_apb`/`plic_multicore_apb` for multiple harts, retaining existing
+instance paths. Generic peripheral corrections and no-bus clock/reset behavior
+are scoped in proposed [ADR 0014](decisions/0014-single-hart-peripheral-isolation.md).
+The cached LSU bus atomic flag follows LSUAtomicM so CPU AMO decode cannot tag
+a walker PTE request. See the [compatibility record](experiments/2026-10-21-singlecore-compatibility.md)
+for the executed checks and intentional upstream differences.
+
 ## Walker / memory-access ownership
 
 The existing [HPTW sequencing design](../hptw_sequencing_design.md) explains

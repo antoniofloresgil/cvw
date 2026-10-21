@@ -360,7 +360,8 @@ module lsu import cvw::*;  #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0
       else                    assign BusCMOZero = 1'b0;
       if (P.ZICBOM_SUPPORTED | P.ZICBOZ_SUPPORTED) assign CacheCMOpM = (CacheableM & ~SelHPTW & ~HoldAccessM) ? CMOpM : '0;
       else                                         assign CacheCMOpM = '0;
-      if (P.ZAAMO_SUPPORTED) assign BusAtomic = AtomicM[1] & ~CacheableM;
+      // Atomic metadata follows the selected LSU request, including page-table walks.
+      if (P.ZAAMO_SUPPORTED) assign BusAtomic = LSUAtomicM[1] & ~CacheableM;
       else                   assign BusAtomic = 1'b0;
       assign BusRW = (~CacheableM & ~SelDTIM & ~HoldAccessM) ? LSURWM : '0;
       assign CacheableOrFlushCacheM = CacheableM | FlushDCacheM;

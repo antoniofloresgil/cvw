@@ -8,6 +8,30 @@ coherentes, arranque OpenSBI y Linux SMP quedan para las etapas siguientes.
 
 ## Configuración y simulación
 
+La matriz automática por cambio se ejecuta con:
+
+```bash
+source ./setup.sh
+regression-wally --multicore
+# Para investigar solo un caso:
+python3 tests/multicore/ci.py --case mesi-banked
+```
+
+Los casos son `single-default`, `bus`, `msi` y `mesi-banked`. La regresión
+ordinaria también los incluye y el workflow `Multicore` los ejecuta en pushes
+y PR que afectan al RTL, configuración o verificación. Incluyen lint explícito
+con dos/tres harts, periféricos, esperas/errores de bus, coherencia con una/dos
+homes y programas completos de atómicos y smoke con latencias 0/3. El caso de
+un hart incluye comparación con el ancestro upstream fijo `4ce065926` (se
+necesita su objeto Git), reloj/reset y AMO traducida con/sin acceso cacheable.
+Linux sigue siendo una comprobación independiente.
+
+Logs, comandos y resúmenes con hashes quedan en
+`sim/verilator/wkdir/multicore-ci/`. Un fallo devuelve código distinto de cero
+y elimina los PASS anteriores de los casos seleccionados. El workflow conserva
+logs y JSON incluso si falla. Véase la
+[matriz detallada](../../docs/engineering/verification.md#automated-multicore-matrix).
+
 Desde la raíz, en Bash, con el toolchain de Wally y Verilator instalado:
 
 ```bash
@@ -26,6 +50,24 @@ Para una comprobación dual core:
 ```bash
 python3 tests/multicore/run.py --cores 2 --latency 0 3
 ```
+
+Para comprobar la compatibilidad de un núcleo con una revisión local de
+upstream y las correcciones explícitas de CLINT/PLIC:
+
+```bash
+python3 tests/multicore/check_singlecore.py --upstream-ref 4ce065926 \
+  --work-dir /tmp/cvw-singlecore --atomic-walker
+```
+
+Compara RV32/RV64 con 14 y 63 fuentes PLIC y los motores multicore configurados
+con un hart. Comprueba también reloj/reset del SoC con y sin bus. La opción
+`--atomic-walker` ejecuta una AMO traducida, actualización A/D y LR/SC en RV64gc,
+forzando los accesos de datos por la vía no cacheable y verificando que las
+peticiones PTE no se etiquetan como AMO. Conserva las cachés del perfil porque
+el banco oficial las exige con memoria virtual. Los comandos, logs y hashes
+quedan en el directorio indicado; `results.json` solo se escribe si pasa todo.
+Véanse las diferencias intencionadas y los límites en el
+[registro de compatibilidad](../../docs/engineering/experiments/2026-10-21-singlecore-compatibility.md).
 
 Por defecto comprueba 1, 2 y 3 harts con latencias de RAM de 0 y 3. El programa
 de prueba reserva pilas para un máximo de cuatro harts. Los productos,

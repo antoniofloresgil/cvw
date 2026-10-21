@@ -52,6 +52,44 @@ configuration ownership is explained in CLAUDE.md and `config/<cfg>/act/`.
 Do not initialize/update submodules just to read these notes. The two existing
 untracked addins directories are not evidence of which test generation was used.
 
+## Automated multicore matrix
+
+On the working tree based on `multicore-support:67ec3d991`, ordinary
+`regression-wally` and the dedicated Multicore GitHub Actions workflow select
+the same four cases in [ci.py](../../tests/multicore/ci.py). After setup:
+
+```bash
+regression-wally --multicore           # Only the bounded matrix; no ACT/Linux
+python3 tests/multicore/ci.py --case msi # One case for diagnosis
+```
+
+| Case | Lint and functional scope |
+| --- | --- |
+| single-default | Default one-hart RV64gc lint; RV32/RV64 differential single-hart CLINT/PLIC checks against fixed upstream ancestor 4ce065926 and SMP(1); RV32i/RV64gc clock/reset with and without bus; RV64 translated AMO/PTE A/D/LR-SC with ordinary and forced-uncacheable data |
+| bus | Two/three-hart wrapper lint; RV32/RV64 peripheral checks and bus wait/error/atomic-ordering units; atomic and smoke programs with 1/2/3 harts and latency 0/3 |
+| msi | Two/three-hart lint, one home, MSI private I/D, forwarding and local reads/writes, 32-word banks, four-word lines; RV32/RV64 controller wait/error/coherence checks and RV64 atomic/smoke with 2/3 harts, latency 0/3 |
+| mesi-banked | Two/three-hart lint, two homes, MESI private I/D, local reads/writes, four-word burst transfers, 32-word total banks; RV32/RV64 burst and banked-controller checks and RV64 atomic/smoke with 2/3 harts, latency 0/3 |
+
+All simulations enable assertions. These are small eviction-stress profiles,
+not deployment capacity changes. Explicit topology lint uses the same warning
+policy as lint-wally. The ordinary standard/nightly regression adds the matrix;
+special coverage/benchmark modes retain their existing selection.
+
+The standalone runner generates derivatives once; enclosing regression passes
+`--skip-deriv` after generating them before worker startup. Do not regenerate
+config/deriv concurrently with simulations. Each case has separate builds,
+commands and logs under `sim/verilator/wkdir/multicore-ci/`; `results-<case>.json`
+or `results-all.json` records tool/source/configuration hashes and verdicts.
+CI retains logs and JSON on failure and limits each job to 30 minutes.
+
+The single-hart comparison requires Git object
+`4ce065926c8096f34c77867c358f044ec1ea777e` (an ancestor of this feature branch).
+CI fetches full history; shallow local checkouts must supply that object.
+There is no licensed simulator, ACT generation or Linux image requirement for
+the dedicated matrix. Keep long RTL Linux checks in their existing separate
+procedures. Execution results and current limits are in the
+[matrix record](experiments/2026-10-21-multicore-ci.md).
+
 ## Result vocabulary and preservation
 
 | State | Required interpretation |

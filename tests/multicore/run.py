@@ -3,12 +3,15 @@
 """Run multicore tests after sourcing setup.sh; no commercial simulator."""
 
 import argparse
+import json
 import os
 import subprocess
 from pathlib import Path
 
 
 def run(command, log=None):
+    if log is not None:
+        log.with_suffix(".command.json").write_text(json.dumps(list(map(str, command)), indent=2) + "\n")
     try:
         if log is None:
             subprocess.run([str(x) for x in command], check=True)
@@ -52,6 +55,7 @@ def main():
     parser.add_argument("--icache-line-words", type=int, default=1, help="AHB words per private I line")
     parser.add_argument("--cache-words", type=int, default=256, help="AHB words per private data cache; power of two >= 2")
     parser.add_argument("--work-dir", type=Path, help="Build/log directory; use native Linux storage on case-insensitive hosts")
+    parser.add_argument("--skip-deriv", action="store_true", help="Use already generated configurations; for an enclosing regression that builds them once")
     parser.add_argument("--unit-only", action="store_true", help="Run bus/cache/peripheral tests without full-core models")
     args = parser.parse_args()
     if any(not 1 <= n <= 4 for n in args.cores):
@@ -82,16 +86,20 @@ def main():
     tests = root / "tests/multicore"
     work = args.work_dir.resolve() if args.work_dir else root / "sim/verilator/wkdir/multicore"
     work.mkdir(parents=True, exist_ok=True)
-    run(["perl", root / "bin/derivgen.pl"], work / "deriv.log")
+    if not args.skip_deriv:
+        run(["perl", root / "bin/derivgen.pl"], work / "deriv.log")
 
     def build_test(top, config, sources, name, parameters=()):
         build = work / name
         print(f"Building {name}", flush=True)
-        run(["verilator", "--binary", "--timing", "--assert", "-j", "2", "--top-module", top, *parameters, "--Mdir", build, f"-I{root / 'config/shared'}", f"-I{tests}", f"-I{root / 'config' / config}", root / "src/cvw.sv", *sources], work / f"{name}.log")
+        # Verilator 5.036 can emit an undeclared fork sync in split coroutine
+        # code for these benches. Keep their generated C++ together; all
+        # concurrent stimuli and assertions remain enabled.
+        run(["verilator", "--binary", "--timing", "--assert", "-j", "2", "--top-module", top, *(["--output-split", "0"] if top in ("msi_tb", "msifabric_tb") else []), *parameters, "--Mdir", build, f"-I{root / 'config/shared'}", f"-I{tests}", f"-I{root / 'config' / config}", root / "src/cvw.sv", *sources], work / f"{name}.log")
         return build / f"V{top}"
 
     for config in ("rv64gc", "rv32gc"):
-        executable = build_test("peripherals_tb", config, [tests / "peripherals_tb.sv", root / "src/uncore/clint_apb.sv", root / "src/uncore/plic_apb.sv", root / "src/generic/flop/flopr.sv"], f"peripherals-{config}")
+        executable = build_test("peripherals_tb", config, [tests / "peripherals_tb.sv", root / "src/uncore/clint_multicore_apb.sv", root / "src/uncore/plic_multicore_apb.sv", root / "src/generic/flop/flopr.sv"], f"peripherals-{config}")
         run([executable])
     executable = build_test("bus_tb", "rv64gc", [tests / "bus_tb.sv", root / "src/ebu/ahbmulticore.sv"], "bus")
     run([executable])

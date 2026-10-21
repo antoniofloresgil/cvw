@@ -94,9 +94,9 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   logic [NCORES-1:0][3:0] CoreHPROT;
   logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC;
 
-  // All harts and the uncore use the same clock and synchronized reset.
-  assign HCLK = clk;
-  assign HRESETn = ~reset;
+  // Preserve the upstream no-bus outputs; bus-enabled harts share clock/reset.
+  assign HCLK = P.BUS_SUPPORTED ? clk : 1'b0;
+  assign HRESETn = P.BUS_SUPPORTED ? ~reset : 1'b0;
   wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset,
     .SCFail(CoreSCFail[0]), .HATOMIC(CoreHATOMIC[0]),
     .MTimerInt(MTimerInt[0]), .MExtInt(MExtInt[0]), .SExtInt(SExtInt[0]), .MSwInt(MSwInt[0]), .MTIME_CLINT,

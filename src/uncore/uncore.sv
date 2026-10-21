@@ -122,16 +122,22 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   end else assign {HREADBootRom, HRESPBootRom, HREADYBootRom} = '0;
 
   // memory-mapped I/O peripherals
-  if (P.CLINT_SUPPORTED == 1) begin : clint
-    clint_apb #(.P(P), .NCORES(NCORES)) clint(.PCLK, .PRESETn, .PSEL(PSEL[1]), .PADDR(PADDR[15:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+  if (P.CLINT_SUPPORTED == 1 && NCORES == 1) begin : clint
+    clint_apb #(P) clint(.PCLK, .PRESETn, .PSEL(PSEL[1]), .PADDR(PADDR[15:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+      .PRDATA(PRDATA[1]), .PREADY(PREADY[1]), .MTIME(MTIME_CLINT), .MTimerInt, .MSwInt);
+  end else if (P.CLINT_SUPPORTED == 1) begin : clint
+    clint_multicore_apb #(.P(P), .NCORES(NCORES)) clint(.PCLK, .PRESETn, .PSEL(PSEL[1]), .PADDR(PADDR[15:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[1]), .PREADY(PREADY[1]), .MTIME(MTIME_CLINT), .MTimerInt, .MSwInt);
   end else begin : clint
     assign MTIME_CLINT = '0;
     assign MTimerInt = '0; assign MSwInt = '0;
   end
 
-  if (P.PLIC_SUPPORTED == 1) begin : plic
-    plic_apb #(.P(P), .NCORES(NCORES)) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+  if (P.PLIC_SUPPORTED == 1 && NCORES == 1) begin : plic
+    plic_apb #(P) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+      .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MExtInt, .SExtInt);
+  end else if (P.PLIC_SUPPORTED == 1) begin : plic
+    plic_multicore_apb #(.P(P), .NCORES(NCORES)) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MExtInt, .SExtInt);
   end else begin : plic
     assign MExtInt = '0;

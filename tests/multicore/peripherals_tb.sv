@@ -13,10 +13,10 @@ module peripherals_tb import cvw::*;();
     logic [63:0] mtime;
     logic uart = 0;
     logic clintsel = 0;
-    clint_apb #(.P(P), .NCORES(N)) clint(.PCLK(clk), .PRESETn(rstn), .PSEL(sel && clintsel),
+    clint_multicore_apb #(.P(P), .NCORES(N)) clint(.PCLK(clk), .PRESETn(rstn), .PSEL(sel && clintsel),
         .PADDR(addr[15:0]), .PWDATA(data), .PSTRB(strb), .PWRITE(write), .PENABLE(enable),
         .PRDATA(crdata), .PREADY(), .MTIME(mtime), .MTimerInt(mtip), .MSwInt(msip));
-    plic_apb #(.P(P), .NCORES(N)) plic(.PCLK(clk), .PRESETn(rstn), .PSEL(sel && !clintsel),
+    plic_multicore_apb #(.P(P), .NCORES(N)) plic(.PCLK(clk), .PRESETn(rstn), .PSEL(sel && !clintsel),
         .PADDR(addr), .PWDATA(data), .PSTRB(strb), .PWRITE(write), .PENABLE(enable),
         .PRDATA(prdata), .PREADY(), .UARTIntr(uart), .GPIOIntr(1'b0), .SPIIntr(1'b0), .SDCIntr(1'b0),
         .PWMIntr('0), .MExtInt(meip), .SExtInt(seip));
