@@ -57,7 +57,11 @@ def main():
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--sampling", action="store_true", help="Boot the Sscofpmf perf record workload")
+    parser.add_argument("--fixed-filter", action="store_true",
+                        help="Also verify Smcntrpmf cycles/instructions filters in Linux")
     args = parser.parse_args()
+    if args.fixed_filter and not args.sampling:
+        parser.error("--fixed-filter requires --sampling")
     base = args.base_work.resolve()
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
@@ -93,8 +97,11 @@ def main():
         shutil.copy2(source_path, work / name)
     if args.sampling:
         for name, source_name in (("init", "sampling_init.c"), ("workload", "branch_workload.c")):
-            run([args.cross_prefix + "gcc", "-O2", "-static", "-march=rv64imafdc_zicsr_zifencei",
-                 "-mabi=lp64d", HERE / source_name, "-o", work / name])
+            command = [args.cross_prefix + "gcc", "-O2", "-static", "-march=rv64imafdc_zicsr_zifencei",
+                       "-mabi=lp64d"]
+            if args.fixed_filter and name == "init":
+                command.append("-DWALLY_FIXED_FILTER_CHECK")
+            run([*command, HERE / source_name, "-o", work / name])
     else:
         for name, source_path in (("init", base / "init"), ("workload", base / "workload")):
             shutil.copy2(source_path, work / name)
@@ -138,6 +145,7 @@ def main():
         "config": "pmu_deleg_linux",
         "counters": 32,
         "sampling": args.sampling,
+        "fixed_filter": args.fixed_filter,
         "delegation_probe": True,
         "sha256": {str(p.relative_to(work)): sha(p) for p in files},
         "kernel_release": subprocess.check_output([*map(str, command), "-s", "kernelrelease"], env=env, text=True).strip(),

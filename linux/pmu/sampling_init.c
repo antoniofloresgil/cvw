@@ -63,6 +63,55 @@ static uint64_t filtered_branches(int exclude_kernel, int exclude_user) {
     return count;
 }
 
+#ifdef WALLY_FIXED_FILTER_CHECK
+static int run_perf(char *const argv[]);
+
+static uint64_t filtered_fixed(uint64_t event, int exclude_kernel, int exclude_user) {
+    struct perf_event_attr attr = {0};
+    attr.size = sizeof(attr);
+    attr.type = PERF_TYPE_HARDWARE;
+    attr.config = event;
+    attr.disabled = 1;
+    attr.exclude_kernel = exclude_kernel;
+    attr.exclude_user = exclude_user;
+    attr.exclude_hv = 1;
+    int fd = event_open(&attr);
+    if (ioctl(fd, PERF_EVENT_IOC_RESET, 0) || ioctl(fd, PERF_EVENT_IOC_ENABLE, 0))
+        fail("fixed-filter-start");
+    work(60000);
+    if (ioctl(fd, PERF_EVENT_IOC_DISABLE, 0)) fail("fixed-filter-stop");
+    uint64_t count = 0;
+    if (read(fd, &count, sizeof(count)) != sizeof(count)) fail("fixed-filter-read");
+    close(fd);
+    return count;
+}
+
+static void check_fixed_filters(void) {
+    uint64_t cycles_user = filtered_fixed(PERF_COUNT_HW_CPU_CYCLES, 1, 0);
+    uint64_t cycles_kernel = filtered_fixed(PERF_COUNT_HW_CPU_CYCLES, 0, 1);
+    uint64_t instructions_user = filtered_fixed(PERF_COUNT_HW_INSTRUCTIONS, 1, 0);
+    uint64_t instructions_kernel = filtered_fixed(PERF_COUNT_HW_INSTRUCTIONS, 0, 1);
+    printf("WALLY_PMU_FIXED_FILTER cycles:u=%" PRIu64 " cycles:k=%" PRIu64
+           " instructions:u=%" PRIu64 " instructions:k=%" PRIu64 "\n",
+           cycles_user, cycles_kernel, instructions_user, instructions_kernel);
+    fflush(stdout);
+    if (cycles_kernel == 0 || instructions_kernel == 0 ||
+        cycles_user <= 1000 || instructions_user <= 1000 ||
+        cycles_user <= cycles_kernel * 4 ||
+        instructions_user <= instructions_kernel * 4)
+        fail("fixed-mode-filter");
+
+    char *user_args[] = {"/perf", "stat", "-e", "cycles:u,instructions:u",
+                         "--", "/workload", NULL};
+    char *kernel_args[] = {"/perf", "stat", "-e", "cycles:k,instructions:k",
+                           "--", "/workload", NULL};
+    run_perf(user_args);
+    run_perf(kernel_args);
+    puts("WALLY_PMU_FIXED_FILTER_PASS cycles_and_instructions");
+    fflush(stdout);
+}
+#endif
+
 static void ring_copy(void *dst, const char *ring, size_t ring_size, uint64_t pos, size_t len) {
     size_t offset = pos % ring_size;
     size_t first = ring_size - offset;
@@ -173,6 +222,10 @@ int main(void) {
     if (user <= 1000 || user <= kernel * 8) fail("mode-filter");
     puts("WALLY_PMU_FILTER_PASS user_vs_kernel");
     fflush(stdout);
+
+#ifdef WALLY_FIXED_FILTER_CHECK
+    check_fixed_filters();
+#endif
 
     unsigned samples = direct_samples();
     printf("WALLY_PMU_SAMPLE samples=%u\n", samples);

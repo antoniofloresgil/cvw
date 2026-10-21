@@ -69,7 +69,8 @@ Optional counter overflow and filtering on this branch are tracked in
 [Sscofpmf verification record](experiments/2026-10-21-sscofpmf.md).
 Fixed-counter mode filtering is tracked in
 [ADR 0015](decisions/0015-smcntrpmf-fixed-counter-filter.md) and the
-[Smcntrpmf verification record](experiments/2026-10-21-smcntrpmf.md).
+[Smcntrpmf verification record](experiments/2026-10-21-smcntrpmf.md), with a
+separate [Linux perf integration result](experiments/2026-10-21-smcntrpmf-linux.md).
 Counter delegation is tracked in
 [ADR 0016](decisions/0016-smcdeleg-ssccfg-counter-delegation.md) and the
 [Smcdeleg/Ssccfg experiment](experiments/2026-10-21-smcdeleg-ssccfg.md).

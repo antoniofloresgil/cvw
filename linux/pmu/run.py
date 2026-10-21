@@ -97,6 +97,8 @@ def main():
             "WALLY_PMU_SAMPLING_PASS samples=",
             "WALLY_PMU_PASS sampling_and_filtering",
         ))
+        if manifest.get("fixed_filter"):
+            workload_ok = workload_ok and "WALLY_PMU_FIXED_FILTER_PASS" in output
     else:
         workload_ok = "WALLY_PMU_PASS perf_event_open_and_perf_stat" in output
     ok = code == 0 and workload_ok and delegated and not bad

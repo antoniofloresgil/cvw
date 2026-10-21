@@ -1,6 +1,7 @@
 # PMU software compatibility on `adding-mpu-support`
 
-Checked at Wally `4fcd9257a` on 2026-10-21. These are **examined versions**, not
+RTL checked at Wally `2184dc91c` with the subsequent harness-only Smcntrpmf
+Linux test on 2026-10-21. These are **examined versions**, not
 claims about the earliest release with support. The Linux source is
 `linux-6.19.14` from `/home/cad/wally-smp-work/sources/`; OpenSBI is `1.7`
 from `/home/cad/wally-buildroot/output/build/`. The image built by
@@ -14,7 +15,7 @@ integration run.
 | Zicntr/Zihpm and SBI PMU counting | Discovers counters and uses the device-tree event map | `riscv_pmu_sbi.c` exposes events to `perf stat` | PASS with actual `perf stat`; see [PMU integration](experiments/2026-10-21-pmu-main-integration.md) |
 | Sscofpmf overflow and sampling | Detects `scountovf`; configures `mhpmeventN.OF` and the overflow interrupt | Detects Sscofpmf, installs the overflow IRQ, and services samples through the SBI PMU driver | See [Sscofpmf integration](experiments/2026-10-21-sscofpmf-linux.md) for the separate `perf record` result |
 | Sscofpmf programmable-counter mode filtering | Translates SBI PMU filter flags into `mhpmeventN.{MINH,SINH,UINH}` | Sends `exclude_kernel`/`exclude_user` flags for event modifiers such as `:u`/`:k` | See [Sscofpmf integration](experiments/2026-10-21-sscofpmf-linux.md) |
-| Smcntrpmf fixed-counter filtering | Detects `mcyclecfg` and configures fixed-counter inhibit bits | Can request SBI PMU privilege filters, but does not explicitly advertise Smcntrpmf | RTL-directed tests pass; Linux fixed-counter filtering has not been measured |
+| Smcntrpmf fixed-counter filtering | Detects `mcyclecfg` and configures fixed-counter inhibit bits | Requests SBI PMU privilege filters for `cycles:u/k` and `instructions:u/k`; does not explicitly advertise Smcntrpmf | PASS on fixed counters 0 and 2 with actual Linux `perf stat`; see [Smcntrpmf integration](experiments/2026-10-21-smcntrpmf-linux.md) |
 | Smcdeleg + Ssccfg | Detects Smcdeleg and enables `menvcfg.CDE` | The standard SBI PMU driver still configures, starts, and stops counters through SBI calls; it does not use the delegated CSR fast path | A custom S-mode kernel probe passed; stock `perf` direct programming remains unsupported by this kernel. See [delegation experiment](experiments/2026-10-21-smcdeleg-ssccfg.md) |
 
 The extensions must also be enabled in the elaborated Wally configuration and

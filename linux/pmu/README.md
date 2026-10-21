@@ -111,3 +111,12 @@ checks that `perf.data` contains sample records. A PASS requires the
 [sampling experiment](../../docs/engineering/experiments/2026-10-21-sscofpmf-linux.md)
 and [software compatibility](../../docs/engineering/pmu-software-compatibility.md)
 for results and the exact Linux/OpenSBI support boundary.
+
+To check the Smcntrpmf filters on fixed counter 0 (`cycles`) and counter 2
+(`instructions`), add `--fixed-filter` to the image-build command above and
+use a new work directory. The test reads user-only and kernel-only counts via
+`perf_event_open`, rejects missing or ineffective filtering, and runs actual
+`perf stat` for both modifiers. The runner then also requires
+`WALLY_PMU_FIXED_FILTER_PASS`. See the
+[fixed-counter experiment](../../docs/engineering/experiments/2026-10-21-smcntrpmf-linux.md)
+for the result.

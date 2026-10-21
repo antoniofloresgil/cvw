@@ -23,8 +23,10 @@ Eighteen directed cases, 13 RTL lint elaborations and the
 full-core M/U/M transition and HPM regression checks pass. See
 [ADR 0015](decisions/0015-smcntrpmf-fixed-counter-filter.md) and its
 [verification record](experiments/2026-10-21-smcntrpmf.md). Linux `perf` with
-privilege-filtered counters, FPGA synthesis/timing and physical-board behavior
-remain unverified. Multicore RTL and coherence remain on `multicore-support`
+fixed-counter privilege filters subsequently passed at 163,215,722 RTL
+cycles; see the [Linux experiment](experiments/2026-10-21-smcntrpmf-linux.md).
+FPGA synthesis/timing and physical-board behavior remain unverified.
+Multicore RTL and coherence remain on `multicore-support`
 and are not part of this branch.
 
 Smcdeleg/Ssccfg counter delegation is committed as `45911b806`, with one
