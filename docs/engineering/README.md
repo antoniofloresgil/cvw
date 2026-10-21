@@ -17,6 +17,7 @@ was verified before this merge, at `82d0b80f7`.
 | Architecture overview and source layout | [CLAUDE.md](../../CLAUDE.md), [architecture pointers](architecture.md) |
 | Verification scope | [Existing test plan](../testplans/testplan.md), [revision-specific verification notes](verification.md) |
 | FPGA, Linux, ASIC flows | [Implementation notes](implementation.md), linking the existing flow documentation |
+| PMU kernel and OpenSBI versions | [PMU software compatibility](pmu-software-compatibility.md) |
 | Significant decisions | [ADR 0001: knowledge organization](decisions/0001-knowledge-organization.md), [ADR 0002: multicore cache](decisions/0002-shared-multicore-cache.md) |
 | Results | [Latest upstream integration](experiments/2026-10-20-upstream-integration.md), [Nexys Video hardware boot](experiments/2026-10-20-nexysvideo-vivado.md), [Linux SMP](experiments/2026-10-18-linux-smp.md), [open DDR3 bring-up](experiments/open-ddr3-bringup.md) |
 | Active work, branch boundaries, unresolved questions | [Current work](current-work.md) |

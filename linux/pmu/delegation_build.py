@@ -56,6 +56,7 @@ def main():
     parser.add_argument("--cross-prefix", required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--jobs", type=int, default=2)
+    parser.add_argument("--sampling", action="store_true", help="Boot the Sscofpmf perf record workload")
     args = parser.parse_args()
     base = args.base_work.resolve()
     work = args.work.resolve()
@@ -85,16 +86,22 @@ def main():
         driver.write_text(patched)
 
     for name, source_path in [
-        ("init", base / "init"),
-        ("workload", base / "workload"),
         ("perf", base / "perf-build/perf"),
         ("fw_jump.bin", base / "opensbi/platform/generic/firmware/fw_jump.bin"),
         ("boot.memfile", base / "boot.memfile"),
     ]:
         shutil.copy2(source_path, work / name)
+    if args.sampling:
+        for name, source_name in (("init", "sampling_init.c"), ("workload", "branch_workload.c")):
+            run([args.cross_prefix + "gcc", "-O2", "-static", "-march=rv64imafdc_zicsr_zifencei",
+                 "-mabi=lp64d", HERE / source_name, "-o", work / name])
+    else:
+        for name, source_path in (("init", base / "init"), ("workload", base / "workload")):
+            shutil.copy2(source_path, work / name)
     cpio = work / "initramfs.list"
     cpio.write_text(
         "dir /dev 0755 0 0\ndir /proc 0755 0 0\ndir /sys 0755 0 0\n"
+        "dir /tmp 1777 0 0\n"
         "nod /dev/console 0600 0 0 c 5 1\n"
         + "".join(f"file /{name} {work / name} 0755 0 0\n" for name in ("init", "workload", "perf"))
     )
@@ -130,7 +137,7 @@ def main():
         "kind": "wally-native-single-core-pmu",
         "config": "pmu_deleg_linux",
         "counters": 32,
-        "sampling": False,
+        "sampling": args.sampling,
         "delegation_probe": True,
         "sha256": {str(p.relative_to(work)): sha(p) for p in files},
         "kernel_release": subprocess.check_output([*map(str, command), "-s", "kernelrelease"], env=env, text=True).strip(),

@@ -91,7 +91,15 @@ def main():
     output = (work / "rtl.log").read_text(errors="replace")
     bad = re.search(r"WALLY_PMU_FAIL|WALLY_SMCDELEG_FAIL|Kernel panic|%Error|%Fatal|Assertion failed", output)
     delegated = not manifest.get("delegation_probe") or "WALLY_SMCDELEG_PASS" in output
-    ok = code == 0 and "WALLY_PMU_PASS perf_event_open_and_perf_stat" in output and delegated and not bad
+    if manifest.get("sampling"):
+        workload_ok = all(marker in output for marker in (
+            "WALLY_PMU_FILTER_PASS user_vs_kernel",
+            "WALLY_PMU_SAMPLING_PASS samples=",
+            "WALLY_PMU_PASS sampling_and_filtering",
+        ))
+    else:
+        workload_ok = "WALLY_PMU_PASS perf_event_open_and_perf_stat" in output
+    ok = code == 0 and workload_ok and delegated and not bad
     result = {"verdict": "PASS" if ok else "INCOMPLETE" if code == 75 and not bad else "FAIL", "exit_code": code, **identity, "log_sha256": sha(work / "rtl.log")}
     (work / "rtl-result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(result, flush=True)

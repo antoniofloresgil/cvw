@@ -35,10 +35,12 @@ Raw event n is fixed counter n, for 3-26. The hexadecimal perf spelling matters:
 definitions. Counter aliases can conflict in one group; count them separately
 or allow multiplexing. No L1D read/write split is advertised.
 
-No overflow interrupt/sampling or mode filtering is implemented here. Counts
-include M/S/U execution; use unqualified events, without :u/:k or exclusion
-flags. `perf record` is later work. This is distinct from Linux's legacy PMU,
-which exposes only cycles/instructions. A node for events 25/26 requires the
+The base `pmu_linux` recipe below does not enable overflow interrupt or mode
+filtering. Counts include M/S/U execution in that image; use unqualified events
+without :u/:k modifiers. The optional `pmu_deleg_linux` configuration enables
+Sscofpmf and is exercised by the separate sampling image described below. This
+is distinct from Linux's legacy PMU, which exposes only cycles/instructions. A
+node for events 25/26 requires the
 updated RTL; do not pair it with an older bitstream. For a reduced COUNTERS
 configuration regenerate the node and verify which event sources exist:
 
@@ -87,3 +89,25 @@ frozen model/image fingerprints and 5M-cycle checkpoints. Exit 75 means a
 bounded/interrupted run is incomplete. See the
 [experiment](../../docs/engineering/experiments/2026-10-20-sbi-pmu.md) for actual
 results, tool adaptations and missing FPGA evidence.
+
+## Sscofpmf sampling image
+
+With the same base PMU image, Linux source, and cross-toolchain, build an
+isolated `pmu_deleg_linux` image using the versioned workload and init:
+
+```bash
+python3 linux/pmu/delegation_build.py --base-work /tmp/wally-pmu-linux \
+    --kernel-source /path/to/linux-6.19.14 \
+    --cross-prefix /path/to/riscv64-buildroot-linux-gnu- \
+    --work /tmp/wally-sscofpmf-linux --sampling
+python3 linux/pmu/run.py --work /tmp/wally-sscofpmf-linux
+```
+
+The init compares `branches:u` with `branches:k`, collects overflow samples
+through `perf_event_open`, then runs actual `perf stat` and `perf record`. It
+checks that `perf.data` contains sample records. A PASS requires the
+`WALLY_PMU_FILTER_PASS`, `WALLY_PMU_SAMPLING_PASS`, and final
+`WALLY_PMU_PASS sampling_and_filtering` markers. See the
+[sampling experiment](../../docs/engineering/experiments/2026-10-21-sscofpmf-linux.md)
+and [software compatibility](../../docs/engineering/pmu-software-compatibility.md)
+for results and the exact Linux/OpenSBI support boundary.

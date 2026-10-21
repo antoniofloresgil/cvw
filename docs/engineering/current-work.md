@@ -39,3 +39,12 @@ Normal Linux `perf` still programs counters through SBI, so no performance
 benefit from direct programming has been measured. FPGA timing and board
 operation remain unverified. See [ADR 0016](decisions/0016-smcdeleg-ssccfg-counter-delegation.md)
 and the [experiment](experiments/2026-10-21-smcdeleg-ssccfg.md).
+
+An Sscofpmf Linux sampling image using Linux 6.19.14 and OpenSBI 1.7 has
+passed on `pmu_deleg_linux` RTL at 143,791,780 cycles. Privilege-filtered
+branch counts, direct overflow samples, actual `perf stat`, and actual
+`perf record` with 147 sample records all passed. See the
+[sampling experiment](experiments/2026-10-21-sscofpmf-linux.md) and the
+[software compatibility matrix](pmu-software-compatibility.md). The latter
+also records that this Linux PMU driver still uses SBI for programming,
+despite hardware support for Smcdeleg/Ssccfg.
