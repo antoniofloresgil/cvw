@@ -1,17 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 `include "config.vh"
-module linux_tb import cvw::*; #(
-    parameter int NCORES = 2,
-    parameter int CACHE_WORDS = 256,
-    parameter int PRIVATE_DCACHE_LINE_WORDS = 1,
-    parameter int PRIVATE_ICACHE_LINE_WORDS = 1,
-    parameter bit PRIVATE_DCACHE = 0,
-    parameter bit PRIVATE_ICACHE = 0,
-    parameter int ICACHE_WORDS = 256,
-    parameter bit CACHE_TO_CACHE = 0, parameter bit CACHE_BURSTS = 0,
-    parameter bit MESI = 0, parameter int unsigned COHERENCE_BANKS = 1,
-  parameter bit LOCAL_DCACHE_READS = 0,
-    parameter bit LOCAL_DCACHE_WRITES = 0
+module linux_tb import cvw::*; #(`CVW_MULTICORE_PARAMS(AHBW)
 )(
     input logic clk, reset_ext,
     output logic ConsoleValid,
@@ -21,12 +10,7 @@ module linux_tb import cvw::*; #(
 );
     `include "parameter-defs.vh"
     string ram_image, rom_image;
-    wallypipelinedsoc #(.P(P), .NCORES(NCORES), .SHARED_CACHE(!PRIVATE_DCACHE), .SHARED_CACHE_WORDS(CACHE_WORDS),
-        .PRIVATE_DCACHE(PRIVATE_DCACHE), .PRIVATE_DCACHE_WORDS(CACHE_WORDS),
-        .PRIVATE_ICACHE(PRIVATE_ICACHE), .PRIVATE_ICACHE_WORDS(ICACHE_WORDS),
-        .PRIVATE_DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
-        .PRIVATE_ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS),
-        .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI), .COHERENCE_BANKS(COHERENCE_BANKS), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(
+    wallypipelinedsoc #(.P(P), `CVW_MULTICORE_CONNECT) dut(
         .clk, .reset_ext, .reset(), .ExternalStall(1'b0),
         .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(),
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),

@@ -11,23 +11,16 @@ import sys
 import time
 from pathlib import Path
 
-# Small banks deliberately stress eviction; these are test capacities, not SoC defaults.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'config/multicore'))
+import profiles
+
 UPSTREAM_REF = "4ce065926c8096f34c77867c358f044ec1ea777e"
-PRIVATE = ["--private-dcache", "--private-icache", "--cache-words", "32", "--icache-words", "32",
-           "--cache-line-words", "4", "--icache-line-words", "4", "--local-dcache-reads", "--local-dcache-writes"]
+# Stress capacities are named in schema.json, separate from deployment defaults.
 CASES = {
-    "single-default": ("rv64gc", [], []),
-    "bus": ("deriv/multicore_atomic", ["--cores", "1", "2", "3"], []),
-    "msi": ("deriv/multicore_msi", ["--cores", "2", "3", *PRIVATE, "--cache-to-cache"],
-            ["-GPRIVATE_DCACHE=1'b1", "-GPRIVATE_ICACHE=1'b1", "-GCACHE_TO_CACHE=1'b1",
-             "-GLOCAL_DCACHE_READS=1'b1", "-GLOCAL_DCACHE_WRITES=1'b1",
-             "-GPRIVATE_DCACHE_WORDS=32", "-GPRIVATE_ICACHE_WORDS=32",
-             "-GPRIVATE_DCACHE_LINE_WORDS=4", "-GPRIVATE_ICACHE_LINE_WORDS=4"]),
-    "mesi-banked": ("deriv/multicore_msi", ["--cores", "2", "3", *PRIVATE, "--mesi", "--coherence-banks", "2", "--cache-bursts"],
-                    ["-GPRIVATE_DCACHE=1'b1", "-GPRIVATE_ICACHE=1'b1", "-GMESI=1'b1", "-GCOHERENCE_BANKS=2", "-GCACHE_BURSTS=1'b1",
-                     "-GLOCAL_DCACHE_READS=1'b1", "-GLOCAL_DCACHE_WRITES=1'b1",
-                     "-GPRIVATE_DCACHE_WORDS=32", "-GPRIVATE_ICACHE_WORDS=32",
-                     "-GPRIVATE_DCACHE_LINE_WORDS=4", "-GPRIVATE_ICACHE_LINE_WORDS=4"]),
+    'single-default': ('rv64gc', 'default', [1]),
+    'bus': ('deriv/multicore_atomic', 'stress', [1, 2, 3]),
+    'msi': ('deriv/multicore_msi', 'ci-msi', [2, 3]),
+    'mesi-banked': ('deriv/multicore_msi', 'ci-mesi-banked', [2, 3]),
 }
 
 
@@ -65,12 +58,13 @@ def main():
     summary.unlink(missing_ok=True)
     for name in selected:
         (work / name / "results.json").unlink(missing_ok=True)
-    sources = [p for directory in ("src", "config", "testbench", "tests/multicore", "tests/coverage")
+    sources = [p for directory in ("src", "config", "testbench", "tests/multicore", "tests/coverage", "linux/smp")
                for p in (root / directory).rglob("*") if p.is_file() and p.suffix in (".sv", ".svh", ".vh", ".py", ".S", ".h", ".cpp", ".ld") and "deriv" not in p.parts]
     sources.extend(root / name for name in ("bin/regression-wally", "bin/lint-wally", "bin/derivgen.pl", "config/derivlist.txt",
-                                           ".github/workflows/multicore.yml", "setup.sh", "sim/verilator/wrapper.c", "examples/link/link.ld"))
+                                           ".github/workflows/multicore.yml", "config/multicore/schema.json", "setup.sh", "sim/verilator/wrapper.c", "examples/link/link.ld"))
     manifest = {"results": []}
     try:
+        profiles.check_generated()
         manifest.update({"source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
                          "verilator": subprocess.check_output(["verilator", "--version"], text=True).strip(),
                          "compiler": subprocess.check_output(["riscv64-unknown-elf-gcc", "--version"], text=True).splitlines()[0],
@@ -81,8 +75,14 @@ def main():
             started = time.monotonic()
             casework = work / name
             casework.mkdir(exist_ok=True)
-            config, options, params = CASES[name]
+            config, profile, core_counts = CASES[name]
+            options = ['--profile', profile, '--cores', *map(str, core_counts)]
+            values = profiles.resolve(profile)
+            params = [arg for arg in profiles.verilator_args(values) if not arg.startswith('-GNCORES=')]
             print(f"Starting multicore CI case {name}", flush=True)
+            if name == 'single-default':
+                execute([sys.executable, str(root / 'tests/multicore/check_profiles.py'),
+                         '--work-dir', str(casework / 'policy')], casework / 'policy.log')
             for cores in ([1] if name == "single-default" else [2, 3]):
                 lint(root, casework, config, params, cores)
             if name == "single-default":
@@ -102,7 +102,8 @@ def main():
                              "--work-dir", str(casework / "adapter")], casework / "adapter.log")
                 execute([sys.executable, str(root / "tests/multicore/run.py"), "--skip-deriv", "--suite", "atomic",
                          "--latency", "0", "3", *options, "--work-dir", str(casework)], casework / "run.log")
-            result = {"case": name, "config": config, "options": options, "lint_parameters": params,
+            effective = [profiles.probe(config, {**values, 'NCORES': n}, casework / f'config-{n}') for n in core_counts]
+            result = {"effective_configurations": effective, "case": name, "config": config, "options": options, "lint_parameters": params,
                       "config_sha256": hashlib.sha256((root / "config" / config / "config.vh").read_bytes()).hexdigest(),
                       "suite": "translated AMO, cached and uncacheable" if name == "single-default" else "atomic and smoke",
                       "latencies": [] if name == "single-default" else [0, 3],
@@ -110,7 +111,7 @@ def main():
             (casework / "results.json").write_text(json.dumps(result, indent=2) + "\n")
             manifest["results"].append(result)
             print(f"PASS: multicore CI case {name} ({result['elapsed_seconds']} s)", flush=True)
-    except (subprocess.CalledProcessError, OSError, SystemExit) as error:
+    except (subprocess.CalledProcessError, OSError, SystemExit, ValueError) as error:
         manifest["verdict"] = "FAIL"
         manifest["error"] = str(error)
         summary.write_text(json.dumps(manifest, indent=2) + "\n")

@@ -27,15 +27,7 @@
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsigned NCORES = 1,
-  parameter bit SHARED_CACHE = 0, parameter int unsigned SHARED_CACHE_WORDS = 256,
-  parameter bit PRIVATE_DCACHE = 0, parameter int unsigned PRIVATE_DCACHE_WORDS = 8192/(P.AHBW/8),
-  parameter int unsigned PRIVATE_DCACHE_LINE_WORDS = 1,
-  parameter bit PRIVATE_ICACHE = 0, parameter int unsigned PRIVATE_ICACHE_WORDS = 8192/(P.AHBW/8),
-  parameter int unsigned PRIVATE_ICACHE_LINE_WORDS = 1,
-  parameter bit CACHE_TO_CACHE = 0, parameter bit CACHE_BURSTS = 0,
-  parameter bit MESI = 0, parameter int unsigned COHERENCE_BANKS = 1,
-  parameter bit LOCAL_DCACHE_READS = 0, parameter bit LOCAL_DCACHE_WRITES = 0)  (
+module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARAMS(P.AHBW))  (
   input  logic                clk,
   input  logic                reset_ext,        // external asynchronous reset pin
   output logic                reset,            // reset synchronized to clk to prevent races on release
@@ -116,23 +108,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, parameter int unsig
   end
 
   // Memory topology and capability checks are owned by the optional subsystem.
-  multicore_memory_system #(
-    .P(P),
-    .NCORES(NCORES),
-    .SHARED_CACHE(SHARED_CACHE),
-    .SHARED_CACHE_WORDS(SHARED_CACHE_WORDS),
-    .PRIVATE_DCACHE(PRIVATE_DCACHE),
-    .PRIVATE_DCACHE_WORDS(PRIVATE_DCACHE_WORDS),
-    .PRIVATE_DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
-    .PRIVATE_ICACHE(PRIVATE_ICACHE),
-    .PRIVATE_ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
-    .PRIVATE_ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS),
-    .CACHE_TO_CACHE(CACHE_TO_CACHE),
-    .CACHE_BURSTS(CACHE_BURSTS),
-    .MESI(MESI),
-    .COHERENCE_BANKS(COHERENCE_BANKS),
-    .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS),
-    .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) memory_system(
+  multicore_memory_system #(.P(P), `CVW_MULTICORE_CONNECT) memory_system(
     .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHMASTLOCK,
     .CoreHSIZE, .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHATOMIC,
     .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,

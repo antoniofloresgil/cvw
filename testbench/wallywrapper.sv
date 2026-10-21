@@ -28,14 +28,7 @@
 
 
 
-module wallywrapper import cvw::*; #(parameter int unsigned NCORES = 1, parameter bit SHARED_CACHE = 0,
-  parameter bit PRIVATE_DCACHE = 0, parameter int unsigned PRIVATE_DCACHE_WORDS = 8192/(AHBW/8),
-  parameter int unsigned PRIVATE_DCACHE_LINE_WORDS = 1,
-  parameter bit PRIVATE_ICACHE = 0, parameter int unsigned PRIVATE_ICACHE_WORDS = 8192/(AHBW/8),
-  parameter int unsigned PRIVATE_ICACHE_LINE_WORDS = 1,
-  parameter bit CACHE_TO_CACHE = 0, parameter bit CACHE_BURSTS = 0,
-  parameter bit MESI = 0, parameter int unsigned COHERENCE_BANKS = 1,
-  parameter bit LOCAL_DCACHE_READS = 0, parameter bit LOCAL_DCACHE_WRITES = 0) (
+module wallywrapper import cvw::*; #(`CVW_MULTICORE_PARAMS(AHBW)) (
   input logic clk,
   input logic reset_ext,
   input logic SPIIn,
@@ -85,12 +78,7 @@ module wallywrapper import cvw::*; #(parameter int unsigned NCORES = 1, paramete
 
   assign ExternalStall = '0;
 
-  wallypipelinedsoc #(.P(P), .NCORES(NCORES), .SHARED_CACHE(SHARED_CACHE),
-    .PRIVATE_DCACHE(PRIVATE_DCACHE), .PRIVATE_DCACHE_WORDS(PRIVATE_DCACHE_WORDS),
-        .PRIVATE_ICACHE(PRIVATE_ICACHE), .PRIVATE_ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
-        .PRIVATE_DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
-        .PRIVATE_ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS),
-        .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI), .COHERENCE_BANKS(COHERENCE_BANKS), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(.clk, .reset_ext, .reset, .ExternalStall, .HRDATAEXT,.HREADYEXT, .HRESPEXT,.HSELEXT,
+  wallypipelinedsoc #(.P(P), `CVW_MULTICORE_CONNECT) dut(.clk, .reset_ext, .reset, .ExternalStall, .HRDATAEXT,.HREADYEXT, .HRESPEXT,.HSELEXT,
                         .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
                         .HTRANS, .HMASTLOCK, .HREADY, .TIMECLK(1'b0), .GPIOIN, .GPIOOUT, .GPIOEN,
                         .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO);

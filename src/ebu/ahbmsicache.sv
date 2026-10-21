@@ -140,8 +140,7 @@ module ahbmsicache import cvw::*; #(
     always_comb begin
       for (int h = 0; h < NCORES; h++) begin
         ProbeHit[h] = HRESETn &&
-          ((P.UNCORE_RAM_SUPPORTED && ((64'(CacheReadAddr[h]) & ~P.UNCORE_RAM_RANGE) == P.UNCORE_RAM_BASE)) ||
-           (P.EXT_MEM_SUPPORTED && ((64'(CacheReadAddr[h]) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE))) &&
+          multicore_cacheable(P, 64'(CacheReadAddr[h])) &&
           States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] != I &&
           Tags[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == CacheReadAddr[h][P.PA_BITS-1:LINE_OFFSET+INDEX];
         CacheReadHit[h] = LOCAL_READS && ProbeHit[h];
@@ -160,9 +159,7 @@ module ahbmsicache import cvw::*; #(
   assign Index = Addr[LINE_OFFSET +: INDEX];
   assign WordIndex = Addr[OFFSET +: WORD_INDEX];
   assign Tag = Addr[P.PA_BITS-1:LINE_OFFSET+INDEX];
-  assign Cacheable = (P.UNCORE_RAM_SUPPORTED &&
-    ((64'(Addr) & ~P.UNCORE_RAM_RANGE) == P.UNCORE_RAM_BASE)) ||
-    (P.EXT_MEM_SUPPORTED && ((64'(Addr) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE));
+  assign Cacheable = multicore_cacheable(P, 64'(Addr));
   always_comb begin
     DirtyPeer = 1'b0;
     AnyHit = 1'b0;

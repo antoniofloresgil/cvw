@@ -6,10 +6,16 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = ROOT / "linux/smp"
+
+
+sys.path.insert(0, str(ROOT / 'config/multicore'))
+import profiles  # noqa: E402 -- repository-local scripts share the policy module
+from devicetree import generate  # noqa: E402
 
 
 def run(command, **kwargs):
@@ -29,44 +35,28 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--buildroot", type=Path, required=True)
     parser.add_argument("--work", type=Path, default=Path.home() / "wally-smp-work")
-    parser.add_argument("--cores", type=int, default=2)
-    parser.add_argument("--cache-mode", choices=["shared", "msi"], default="shared")
-    parser.add_argument("--private-icache", action="store_true")
-    parser.add_argument("--icache-words", type=int, default=1024)
-    parser.add_argument("--coherence-banks", type=int, default=1)
-    parser.add_argument("--mesi", action="store_true", help="Enable exclusive clean state in private data caches")
-    parser.add_argument("--cache-bursts", action="store_true", help="Pipeline private-cache line transfers on AHB")
-    parser.add_argument("--cache-to-cache", action="store_true", help="Direct private-cache data supply; MSI mode only")
-    parser.add_argument("--local-dcache-writes", action="store_true")
-    parser.add_argument("--local-dcache-reads", action="store_true")
-    parser.add_argument("--cache-line-words", type=int, default=1, help="AHB words per private D line; total capacity unchanged")
-    parser.add_argument("--icache-line-words", type=int, default=1, help="AHB words per private I line")
-    parser.add_argument("--cache-words", type=int)
+    profiles.add_arguments(parser, default='linux-shared', linux=True)
     parser.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args()
-    if args.cache_words is None:
-        args.cache_words = 1024 if args.cache_mode == "msi" else 256
-    if not 1 <= args.cores <= 8:
-        parser.error("Expected 1..8 cores")
-    if (args.mesi or args.private_icache or args.cache_bursts or args.cache_to_cache or args.local_dcache_reads or args.local_dcache_writes) and args.cache_mode != "msi":
-        parser.error("Private cache local paths require MSI mode")
-    if args.icache_words < 2 or args.icache_words & (args.icache_words - 1):
-        parser.error("--icache-words must be a power of two >= 2")
-    if args.cache_words < 2 or args.cache_words & (args.cache_words - 1):
-        parser.error("--cache-words must be a power of two >= 2")
-    for capacity, line in ((args.cache_words, args.cache_line_words), (args.icache_words, args.icache_line_words)):
-        if line < 1 or line & (line-1) or capacity < 2*line:
-            parser.error("Line size must be a power of two with at least two lines per cache")
-    if not (args.cache_mode == "msi") and (args.cache_line_words != 1 or args.icache_line_words != 1):
-        parser.error("Multiword private lines require MSI mode")
-    if args.coherence_banks < 1 or args.coherence_banks & (args.coherence_banks-1):
-        parser.error("Coherence banks must be a power of two >= 1")
-    if args.coherence_banks > 1 and args.cache_mode != "msi":
-        parser.error("Multiple coherence banks require MSI")
-    if args.cores > 1 and (args.cache_words < 2*args.coherence_banks*args.cache_line_words or args.icache_words < 2*args.coherence_banks*args.icache_line_words):
-        parser.error("Each coherence bank needs at least two I/D lines")
+    if 'WALLY' not in os.environ:
+        parser.error('Source ./setup.sh first')
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
+    try:
+        topology = profiles.from_args(args, linux=True)
+        options = profiles.legacy_options(topology)
+        for key, value in options.items():
+            setattr(args, key, value)
+        run(['perl', ROOT / 'bin/derivgen.pl'])
+        effective = profiles.probe('deriv/multicore_linux', topology, work / 'configuration')
+        dts = generate(**options, effective=effective)
+        # Boot shim/image placement are intentionally a fixed platform recipe.
+        core = effective['core']
+        if (core['UNCORE_RAM_BASE'], core['BOOTROM_BASE'], core['RESET_VECTOR']) != (profiles.LINUX['ram_base'], profiles.LINUX['bootrom_base'], profiles.LINUX['bootrom_base']):
+            raise ValueError('Boot recipe requires RAM 0x80000000 and reset/ROM 0x1000')
+        (work / 'wally-smp.dts').write_text(dts)
+    except ValueError as error:
+        parser.error(str(error))
     br = args.buildroot.resolve()
     cross = str(br / "output/host/bin/riscv64-buildroot-linux-gnu-")
     sources = work / "sources"
@@ -101,16 +91,6 @@ def main():
         run([*sbi_command, "clean"], env=env)
     run([*sbi_command, f"-j{args.jobs}"], env=env)
     marker.write_text(recipe)
-    run(["python3", HERE / "devicetree.py", "--cores", args.cores, "--cache-mode", args.cache_mode,
-         "--cache-line-words", args.cache_line_words, "--icache-line-words", args.icache_line_words,
-         "--cache-words", args.cache_words, "--icache-words", args.icache_words,
-         "--coherence-banks", str(args.coherence_banks),
-         *(["--cache-bursts"] if args.cache_bursts else []),
-         *(["--mesi"] if args.mesi else []),
-         *(["--cache-to-cache"] if args.cache_to_cache else []),
-         *(["--private-icache"] if args.private_icache else []),
-         *(["--local-dcache-reads"] if args.local_dcache_reads else []),
-         *(["--local-dcache-writes"] if args.local_dcache_writes else []), "--output", work / "wally-smp.dts"])
     run(["dtc", "-I", "dts", "-O", "dtb", "-o", work / "wally-smp.dtb", work / "wally-smp.dts"])
     run([cross + "gcc", "-nostdlib", "-nostartfiles", "-march=rv64i_zicsr", "-mabi=lp64", "-Wl,-Ttext=0x1000", "-Wl,--build-id=none", "-Wl,--no-relax", HERE / "boot.S", "-o", work / "boot.elf"])
     run([cross + "objcopy", "-O", "binary", work / "boot.elf", work / "boot.bin"])
@@ -128,21 +108,13 @@ def main():
     hexfile(sout / "platform/generic/firmware/fw_jump.bin", ram)
     hexfile(kout / "arch/riscv/boot/Image", ram, 0x200000)
     hexfile(work / "wally-smp.dtb", ram, 0x7000000)
-    artifacts = [rom, ram, work / "wally-smp.dtb", kout / "arch/riscv/boot/Image", sout / "platform/generic/firmware/fw_jump.bin", kout / ".config", work / "init"]
+    artifacts = [rom, ram, work / "wally-smp.dts", work / "wally-smp.dtb", kout / "arch/riscv/boot/Image", sout / "platform/generic/firmware/fw_jump.bin", kout / ".config", work / "init"]
     manifest = {
-        "cores": args.cores,
-        "cache_mode": args.cache_mode,
-        "cache_words": args.cache_words,
-        "cache_line_words": args.cache_line_words,
-        "icache_line_words": args.icache_line_words,
-        "private_icache": args.private_icache,
-        "icache_words": args.icache_words,
-        "local_dcache_reads": args.local_dcache_reads,
-        "local_dcache_writes": args.local_dcache_writes,
-        "cache_to_cache": args.cache_to_cache, "coherence_banks": args.coherence_banks, "cache_bursts": args.cache_bursts, "mesi": args.mesi,
+        "effective_configuration": effective,
+        **options,
         "linux": "6.19.14",
         "opensbi": "1.7",
-        "ram_mb": 128,
+        "ram_mb": profiles.LINUX["ram_mb"],
         "compiler": subprocess.check_output([cross + "gcc", "--version"], text=True, env=env).splitlines()[0],
         "sha256": {str(p.relative_to(work)): hashlib.sha256(p.read_bytes()).hexdigest() for p in artifacts},
     }

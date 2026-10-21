@@ -90,8 +90,7 @@ module ahbmsifabric import cvw::*; #(
 
   function automatic logic [BB-1:0] home(input logic [P.PA_BITS-1:0] a);
     // Keep every complete line within one bank; peripherals have one home.
-    if ((P.UNCORE_RAM_SUPPORTED && ((64'(a) & ~P.UNCORE_RAM_RANGE) == P.UNCORE_RAM_BASE)) ||
-        (P.EXT_MEM_SUPPORTED && ((64'(a) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE)))
+    if (multicore_cacheable(P, 64'(a)))
       return BB'(a >> HOME_OFFSET);
     return '0;
   endfunction

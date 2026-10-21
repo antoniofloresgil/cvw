@@ -8,6 +8,7 @@ on:
       - 'config/**'
       - 'testbench/**'
       - 'tests/multicore/**'
+      - 'linux/smp/**'
       - 'tests/coverage/**'
       - 'bin/regression-wally'
       - 'bin/lint-wally'
@@ -22,6 +23,7 @@ on:
       - 'config/**'
       - 'testbench/**'
       - 'tests/multicore/**'
+      - 'linux/smp/**'
       - 'tests/coverage/**'
       - 'bin/regression-wally'
       - 'bin/lint-wally'
@@ -57,7 +59,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf bison flex g++ make help2man libfl-dev \
-            gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf python3-venv
+            gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf python3-venv device-tree-compiler
           python3 -m venv "$RUNNER_TEMP/hooks"
           "$RUNNER_TEMP/hooks/bin/pip" install pre-commit
           "$RUNNER_TEMP/hooks/bin/pre-commit" install

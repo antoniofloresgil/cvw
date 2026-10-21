@@ -40,6 +40,8 @@ source audits retain their original revision labels.
 | Active work, branch boundaries, unresolved questions | [Current work](current-work.md) |
 | Extracted multicore memory boundary | [ADR 0013](decisions/0013-multicore-memory-subsystem-boundary.md), [extraction verification](experiments/2026-10-21-memory-subsystem-extraction.md) |
 | Multicore isolation and maintenance risks before merging | [2026-10-21 architecture review](experiments/2026-10-21-multicore-maintainability-review.md) |
+| Remaining maintenance work after recommendations 1–4 | [Post-refactor review and additional recommendations 9–12](experiments/2026-10-21-multicore-post-refactor-review.md) |
+| Multicore profile/default ownership and RTL/DT consistency | [Profile definition](../../config/multicore/README.md), [proposed ADR 0017](decisions/0017-multicore-configuration-policy.md), [execution record](experiments/2026-10-21-multicore-configuration-policy.md) |
 | Single-hart compatibility and peripheral isolation | [Proposed ADR 0014](decisions/0014-single-hart-peripheral-isolation.md), [compatibility checks](experiments/2026-10-21-singlecore-compatibility.md) |
 | Automated single-core/multicore CI and regression | [Proposed ADR 0015](decisions/0015-automated-multicore-verification.md), [procedure](verification.md#automated-multicore-matrix), [execution record](experiments/2026-10-21-multicore-ci.md) |
 | Buffered CPU/bus timing, atomic sideband and abort contract | [Interface](interfaces/core-bus.md), [proposed ADR 0016](decisions/0016-core-bus-temporal-contract.md), [boundary checks](experiments/2026-10-21-core-bus-contract.md) |

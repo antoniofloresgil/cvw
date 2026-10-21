@@ -109,9 +109,7 @@ module ahbmulticore import cvw::*; #(
   end
 
   function automatic logic cacheable(input logic [P.PA_BITS-1:0] address);
-    return (P.UNCORE_RAM_SUPPORTED &&
-      ((64'(address) & ~P.UNCORE_RAM_RANGE) == P.UNCORE_RAM_BASE)) ||
-      (P.EXT_MEM_SUPPORTED && ((64'(address) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE));
+    return multicore_cacheable(P, 64'(address));
   endfunction
 
   if (PRIVATE_ICACHE) begin : icache

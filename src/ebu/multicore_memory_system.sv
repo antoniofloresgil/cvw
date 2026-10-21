@@ -2,15 +2,7 @@
 // Optional multicore memory topology between hart ports and the uncore AHB bus.
 // The single-hart default is a combinational bypass; no protocol or latency is added.
 
-module multicore_memory_system import cvw::*; #(parameter cvw_t P, parameter int unsigned NCORES = 1,
-  parameter bit SHARED_CACHE = 0, parameter int unsigned SHARED_CACHE_WORDS = 256,
-  parameter bit PRIVATE_DCACHE = 0, parameter int unsigned PRIVATE_DCACHE_WORDS = 8192/(P.AHBW/8),
-  parameter int unsigned PRIVATE_DCACHE_LINE_WORDS = 1,
-  parameter bit PRIVATE_ICACHE = 0, parameter int unsigned PRIVATE_ICACHE_WORDS = 8192/(P.AHBW/8),
-  parameter int unsigned PRIVATE_ICACHE_LINE_WORDS = 1,
-  parameter bit CACHE_TO_CACHE = 0, parameter bit CACHE_BURSTS = 0,
-  parameter bit MESI = 0, parameter int unsigned COHERENCE_BANKS = 1,
-  parameter bit LOCAL_DCACHE_READS = 0, parameter bit LOCAL_DCACHE_WRITES = 0)  (
+module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARAMS(P.AHBW))  (
   input  logic HCLK, HRESETn,
   // Hart-side AHB requests and shared-atomic sideband.
   input  logic [NCORES-1:0][P.PA_BITS-1:0] CoreHADDR,
@@ -128,31 +120,10 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, parameter int
     assign CacheReadData = '0;
   end
 
+  localparam multicore_t M = `CVW_MULTICORE_VALUE;
   initial begin
-    assert (COHERENCE_BANKS >= 1 && (COHERENCE_BANKS & (COHERENCE_BANKS-1)) == 0 &&
-      (NCORES == 1 || COHERENCE_BANKS == 1 || MSI_ENABLED))
-      else $fatal(1, "Coherence banks require private MSI and a power-of-two count");
-    assert (NCORES >= 1 && NCORES <= 4095)
-      else $fatal(1, "NCORES outside the supported CLINT register range");
-    if (NCORES > 1 || SHARED_CACHE) begin
-      assert (P.BUS_SUPPORTED && !P.DTIM_SUPPORTED && !P.IROM_SUPPORTED &&
-              !P.DCACHE_SUPPORTED && !P.ICACHE_SUPPORTED && !P.BURST_EN)
-        else $fatal(1, "Multicore requires a shared bus with no private memories/caches or bursts");
-    end
-    assert (NCORES == 1 || (!(PRIVATE_ICACHE || CACHE_TO_CACHE || CACHE_BURSTS || MESI || LOCAL_DCACHE_READS || LOCAL_DCACHE_WRITES) || MSI_ENABLED))
-      else $fatal(1, "Private I-cache/local D reads require private MSI data caches");
-    assert (!(MSI_ENABLED && SHARED_CACHE))
-      else $fatal(1, "Select private MSI data caches or the shared cache, not both");
-    if (MSI_ENABLED) begin
-      assert (!P.ZICBOM_SUPPORTED && !P.ZICBOZ_SUPPORTED && !P.ZICBOP_SUPPORTED)
-        else $fatal(1, "MSI baseline does not implement cache-maintenance operations");
-    end
-    if (MSI_ENABLED || SHARED_CACHE) begin
-      assert (!P.SVADU_SUPPORTED)
-        else $fatal(1, "Cached SMP uses software PTE A/D updates (Svade)");
-      assert (!P.SVPBMT_SUPPORTED)
-        else $fatal(1, "Multicore caches use physical RAM attributes; Svpbmt must be disabled");
-    end
+    assert (multicore_config_error(P, M) == 0)
+      else $fatal(1, "%s", multicore_config_message(multicore_config_error(P, M)));
   end
 
 endmodule

@@ -6,7 +6,11 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'config/multicore'))
+import profiles
 
 
 def run(command, log=None):
@@ -37,55 +41,33 @@ def build_image(source, elf, march, cores, linker):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cores", type=int, nargs="+", default=[1, 2, 3])
+    profiles.add_arguments(parser, multiple_cores=True)
     parser.add_argument("--latency", type=int, nargs="+", default=[0, 3])
     parser.add_argument("--suite", choices=["smoke", "atomic", "uart", "exclusive"], default="smoke")
-    caches = parser.add_mutually_exclusive_group()
-    caches.add_argument("--shared-cache", action="store_true", help="Use the shared coherent physical cache")
-    caches.add_argument("--private-dcache", action="store_true", help="Use private MSI data caches (automatically bypassed with one hart)")
-    parser.add_argument("--private-icache", action="store_true", help="Private coherent instruction banks; requires --private-dcache")
-    parser.add_argument("--icache-words", type=int, default=256)
-    parser.add_argument("--coherence-banks", type=int, default=1, help="Independent MSI address homes; power of two, default 1")
-    parser.add_argument("--mesi", action="store_true", help="Enable exclusive clean state in private data caches")
-    parser.add_argument("--cache-bursts", action="store_true", help="Pipeline private-cache line transfers on AHB")
-    parser.add_argument("--cache-to-cache", action="store_true", help="Direct private-cache data supply; MSI mode only")
-    parser.add_argument("--local-dcache-writes", action="store_true", help="Concurrent M-hit stores with reservation/I invalidation; requires --private-dcache")
-    parser.add_argument("--local-dcache-reads", action="store_true", help="Concurrent ordinary D-cache read hits; requires --private-dcache")
-    parser.add_argument("--cache-line-words", type=int, default=1, help="AHB words per private D line; total capacity unchanged")
-    parser.add_argument("--icache-line-words", type=int, default=1, help="AHB words per private I line")
-    parser.add_argument("--cache-words", type=int, default=256, help="AHB words per private data cache; power of two >= 2")
     parser.add_argument("--work-dir", type=Path, help="Build/log directory; use native Linux storage on case-insensitive hosts")
     parser.add_argument("--skip-deriv", action="store_true", help="Use already generated configurations; for an enclosing regression that builds them once")
     parser.add_argument("--unit-only", action="store_true", help="Run bus/cache/peripheral tests without full-core models")
     args = parser.parse_args()
+    args.cores = args.cores or [1, 2, 3]
     if any(not 1 <= n <= 4 for n in args.cores):
         parser.error("The smoke program reserves stacks for 1..4 harts")
     if any(not 0 <= latency <= 255 for latency in args.latency):
         parser.error("RAM latency must be in the range 0..255")
-    if args.cache_words < 2 or args.cache_words & (args.cache_words - 1):
-        parser.error("--cache-words must be a power of two >= 2")
-    if args.icache_words < 2 or args.icache_words & (args.icache_words - 1):
-        parser.error("--icache-words must be a power of two >= 2")
-    if (args.mesi or args.private_icache or args.cache_bursts or args.cache_to_cache or args.local_dcache_reads or args.local_dcache_writes) and not args.private_dcache:
-        parser.error("Private cache local paths require --private-dcache")
-    for capacity, line in ((args.cache_words, args.cache_line_words), (args.icache_words, args.icache_line_words)):
-        if line < 1 or line & (line-1) or capacity < 2*line:
-            parser.error("Line size must be a power of two with at least two lines per cache")
-    if not (args.private_dcache) and (args.cache_line_words != 1 or args.icache_line_words != 1):
-        parser.error("Multiword private lines require MSI mode")
-    if args.coherence_banks < 1 or args.coherence_banks & (args.coherence_banks-1):
-        parser.error("Coherence banks must be a power of two >= 1")
-    if args.coherence_banks > 1:
-        if not args.private_dcache:
-            parser.error("Multiple coherence banks require private MSI")
-        if args.cache_words < 2*args.coherence_banks*args.cache_line_words or args.icache_words < 2*args.coherence_banks*args.icache_line_words:
-            parser.error("Each coherence bank needs at least two I/D lines")
+    try:
+        topology = profiles.from_args(args, cores=max(args.cores))
+    except ValueError as error:
+        parser.error(str(error))
+    for key, value in topology.items():
+        alias = next((a for a, k in profiles.ALIASES.items() if k == key), key.lower())
+        if key != 'NCORES':
+            setattr(args, alias, value)
     if "WALLY" not in os.environ:
         parser.error("Source ./setup.sh from the repository root first")
     root = Path(os.environ["WALLY"])
     tests = root / "tests/multicore"
     work = args.work_dir.resolve() if args.work_dir else root / "sim/verilator/wkdir/multicore"
     work.mkdir(parents=True, exist_ok=True)
+    profiles.check_generated()
     if not args.skip_deriv:
         run(["perl", root / "bin/derivgen.pl"], work / "deriv.log")
 
@@ -152,13 +134,7 @@ def main():
                 f"deriv/{config}",
                 [tests / "soc_tb.sv", tests / "dpi.cpp", *sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")],
                 f"mesi{int(args.mesi)}-burst{int(args.cache_bursts)}-b{args.coherence_banks}-c2c{int(args.cache_to_cache)}-{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else ""),
-                [f"-GCOHERENCE_BANKS={args.coherence_banks}", f"-GNCORES={cores}", f"-GLATENCY={latency}", "-GSHARED_CACHE=1'b1" if args.shared_cache else "-GSHARED_CACHE=1'b0",
-                 "-GPRIVATE_DCACHE=1'b1" if args.private_dcache else "-GPRIVATE_DCACHE=1'b0",
-                 f"-GMESI=1'b{int(args.mesi)}", f"-GCACHE_BURSTS=1'b{int(args.cache_bursts)}", f"-GCACHE_TO_CACHE=1'b{int(args.cache_to_cache)}", f"-GPRIVATE_DCACHE_WORDS={args.cache_words}",
-                 f"-GPRIVATE_DCACHE_LINE_WORDS={args.cache_line_words}", f"-GPRIVATE_ICACHE_LINE_WORDS={args.icache_line_words}",
-                 f"-GPRIVATE_ICACHE=1'b{int(args.private_icache)}", f"-GPRIVATE_ICACHE_WORDS={args.icache_words}",
-                 f"-GLOCAL_DCACHE_READS=1'b{int(args.local_dcache_reads)}",
-                               f"-GLOCAL_DCACHE_WRITES=1'b{int(args.local_dcache_writes)}"],
+                [f"-GLATENCY={latency}", *profiles.verilator_args({**topology, 'NCORES': cores})],
             )
             run([executable, f"+image={image}", f"+suite={args.suite}"])
             if smoke_image is not None:

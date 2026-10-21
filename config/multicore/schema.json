@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "fields": {
+    "NCORES": {
+      "type": "int unsigned",
+      "default": 1
+    },
+    "SHARED_CACHE": {
+      "type": "bit",
+      "default": 0
+    },
+    "SHARED_CACHE_WORDS": {
+      "type": "int unsigned",
+      "default": 256
+    },
+    "PRIVATE_DCACHE": {
+      "type": "bit",
+      "default": 0
+    },
+    "PRIVATE_DCACHE_WORDS": {
+      "type": "int unsigned",
+      "default": "8192 // (AHBW // 8)"
+    },
+    "PRIVATE_DCACHE_LINE_WORDS": {
+      "type": "int unsigned",
+      "default": 1
+    },
+    "PRIVATE_ICACHE": {
+      "type": "bit",
+      "default": 0
+    },
+    "PRIVATE_ICACHE_WORDS": {
+      "type": "int unsigned",
+      "default": "8192 // (AHBW // 8)"
+    },
+    "PRIVATE_ICACHE_LINE_WORDS": {
+      "type": "int unsigned",
+      "default": 1
+    },
+    "CACHE_TO_CACHE": {
+      "type": "bit",
+      "default": 0
+    },
+    "CACHE_BURSTS": {
+      "type": "bit",
+      "default": 0
+    },
+    "MESI": {
+      "type": "bit",
+      "default": 0
+    },
+    "COHERENCE_BANKS": {
+      "type": "int unsigned",
+      "default": 1
+    },
+    "LOCAL_DCACHE_READS": {
+      "type": "bit",
+      "default": 0
+    },
+    "LOCAL_DCACHE_WRITES": {
+      "type": "bit",
+      "default": 0
+    }
+  },
+  "rules": [
+    {
+      "when": "NCORES >= 1 and NCORES <= 4095",
+      "message": "NCORES outside the supported CLINT register range"
+    },
+    {
+      "when": "power2(COHERENCE_BANKS) and (NCORES == 1 or COHERENCE_BANKS == 1 or PRIVATE_DCACHE)",
+      "message": "Coherence banks require private MSI and a power-of-two count"
+    },
+    {
+      "when": "NCORES == 1 or not (PRIVATE_ICACHE or CACHE_TO_CACHE or CACHE_BURSTS or MESI or LOCAL_DCACHE_READS or LOCAL_DCACHE_WRITES) or PRIVATE_DCACHE",
+      "message": "Private I-cache/local paths require private MSI data caches"
+    },
+    {
+      "when": "not (NCORES > 1 and PRIVATE_DCACHE and SHARED_CACHE)",
+      "message": "Select private MSI data caches or the shared cache, not both"
+    },
+    {
+      "when": "not SHARED_CACHE or power2(SHARED_CACHE_WORDS) and SHARED_CACHE_WORDS >= 2",
+      "message": "Shared cache requires power-of-two WORDS >= 2"
+    },
+    {
+      "when": "not (NCORES > 1 and PRIVATE_DCACHE) or power2(PRIVATE_DCACHE_WORDS) and power2(PRIVATE_DCACHE_LINE_WORDS) and PRIVATE_DCACHE_WORDS >= 2 * COHERENCE_BANKS * PRIVATE_DCACHE_LINE_WORDS",
+      "message": "Each coherence bank needs power-of-two private DCACHE capacity and at least two complete lines"
+    },
+    {
+      "when": "not (NCORES > 1 and PRIVATE_DCACHE) or power2(PRIVATE_ICACHE_WORDS) and power2(PRIVATE_ICACHE_LINE_WORDS) and PRIVATE_ICACHE_WORDS >= 2 * COHERENCE_BANKS * PRIVATE_ICACHE_LINE_WORDS",
+      "message": "Each coherence bank needs power-of-two private ICACHE capacity and at least two complete lines"
+    },
+    {
+      "when": "(NCORES == 1 and not SHARED_CACHE) or (P.BUS_SUPPORTED and not P.DTIM_SUPPORTED and not P.IROM_SUPPORTED and not P.DCACHE_SUPPORTED and not P.ICACHE_SUPPORTED and not P.BURST_EN)",
+      "message": "Multicore requires a shared bus with no private memories/caches or bursts"
+    },
+    {
+      "when": "not (NCORES > 1 and PRIVATE_DCACHE) or not (P.ZICBOM_SUPPORTED or P.ZICBOZ_SUPPORTED or P.ZICBOP_SUPPORTED)",
+      "message": "MSI baseline does not implement cache-maintenance operations"
+    },
+    {
+      "when": "not (NCORES > 1 and PRIVATE_DCACHE or SHARED_CACHE) or not P.SVADU_SUPPORTED",
+      "message": "Cached SMP uses software PTE A/D updates (Svade)"
+    },
+    {
+      "when": "not (NCORES > 1 and PRIVATE_DCACHE or SHARED_CACHE) or not P.SVPBMT_SUPPORTED",
+      "message": "Multicore caches use physical RAM attributes; Svpbmt must be disabled"
+    },
+    {
+      "when": "(NCORES == 1 and not SHARED_CACHE) or P.AHBW == P.XLEN",
+      "message": "Buffered memory requires AHBW == XLEN"
+    }
+  ],
+  "profiles": {
+    "default": {},
+    "stress": {
+      "PRIVATE_DCACHE_WORDS": 256,
+      "PRIVATE_ICACHE_WORDS": 256
+    },
+    "ci-msi": {
+      "NCORES": 2,
+      "PRIVATE_DCACHE": 1,
+      "PRIVATE_ICACHE": 1,
+      "PRIVATE_DCACHE_WORDS": 32,
+      "PRIVATE_ICACHE_WORDS": 32,
+      "PRIVATE_DCACHE_LINE_WORDS": 4,
+      "PRIVATE_ICACHE_LINE_WORDS": 4,
+      "LOCAL_DCACHE_READS": 1,
+      "LOCAL_DCACHE_WRITES": 1,
+      "CACHE_TO_CACHE": 1
+    },
+    "ci-mesi-banked": {
+      "extends": "ci-msi",
+      "CACHE_TO_CACHE": 0,
+      "MESI": 1,
+      "COHERENCE_BANKS": 2,
+      "CACHE_BURSTS": 1
+    },
+    "linux-shared": {
+      "NCORES": 2,
+      "SHARED_CACHE": 1
+    },
+    "linux-msi": {
+      "NCORES": 2,
+      "PRIVATE_DCACHE": 1
+    }
+  },
+  "linux_platform": {
+    "frequency_hz": 20000000,
+    "ram_mb": 128,
+    "max_harts": 8,
+    "ram_base": 2147483648,
+    "bootrom_base": 4096,
+    "kernel_offset": 2097152,
+    "dtb_offset": 117440512
+  }
+}

@@ -53,7 +53,7 @@ Workflow actionlint, scoped pre-commit, ordinary regression selection and
 failure/stale-result propagation checks passed. Remote GitHub execution and
 the complete ACT regression were not run. See proposed [ADR 0015](decisions/0015-automated-multicore-verification.md)
 and the [matrix record](experiments/2026-10-21-multicore-ci.md).
-Recommendation 4 is implemented in the working tree on `8ecb9ef1b`:
+Recommendation 4 was committed and pushed as `e8162b462`:
 the [buffered core/bus contract](interfaces/core-bus.md) specifies address
 acceptance, delayed/live write payloads, atomic sideband, AMO exclusion/pairing,
 retained SC results and ERROR/flush/reset semantics. A reusable port checker
@@ -67,10 +67,31 @@ and scoped pre-commit. MEM3 retention is explicitly checked via BusCommitted/
 BusStall while pipeline stall remains asserted across an IFU reply. Source
 hashes of the final aggregate and both boundary manifests match the final tree.
 No new Linux, remote CI, full ACT regression or hardware verification was run.
-Recommendation 4 is recorded in the commit containing this checkpoint. See proposed
+See proposed
 [ADR 0016](decisions/0016-core-bus-temporal-contract.md) and the
 [boundary record](experiments/2026-10-21-core-bus-contract.md).
 Other review recommendations and proposed ADR statuses remain unchanged.
+
+Follow-up static review at `e8162b462` confirms recommendations 1–4 are present.
+At that reviewed source, 5 (configuration/policy ownership) and 6 (engine
+decomposition) remained pending.
+The [post-refactor review](experiments/2026-10-21-multicore-post-refactor-review.md)
+proposes additional recommendations 9–12: simulation observation adapters,
+feature-interaction coverage, shared atomic symbols and reusable downstream test
+infrastructure. Prioritize the observation boundary and complementary coverage
+before further RTL extraction. All 378 sources in the final CI manifest match
+the reviewed checkout; no new simulations or functional refactors were performed.
+These recommendations remain proposals; no merge into main was performed.
+
+Recommendation 5 is implemented on parent `e8162b462`: shared schema/profiles,
+generated SV parameters and validation, one physical RAM predicate, and effective
+RTL/DT/image-manifest checks. Public SoC parameters and 8 KiB private defaults are
+preserved; topology remains outside cvw_t. All four final CI cases, the 300-vector
+policy/DT negative suite, seven standard lints, eight additional shared-cache
+full-core runs and Linux harness build/reuse passed. No new Linux boot or hardware
+result is claimed. See proposed [ADR 0017](decisions/0017-multicore-configuration-policy.md)
+and the [configuration record](experiments/2026-10-21-multicore-configuration-policy.md).
+Recommendation 6 and additional recommendations 9–12 remain proposals. No merge into main was performed.
 
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.

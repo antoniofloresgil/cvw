@@ -109,6 +109,12 @@ the [boundary execution record](experiments/2026-10-21-core-bus-contract.md).
 Manual simulation source lists containing ahbmulticore/ahbmsifabric must also
 include `src/ebu/corebus_contract.sv`; the maintained runners do so automatically.
 
+Recommendation 5 adds generated-policy freshness, 300 Python/SV policy vectors,
+physical RAM/MMIO boundaries, actual RV32/RV64 defaults and Linux DT consistency
+checks to single-default. This needs `dtc` but no Linux images. The four profiles
+retain their prior functional scope. CI results now include elaborated core and
+topology data; see [profile ownership](../../config/multicore/README.md).
+
 ## Result vocabulary and preservation
 
 | State | Required interpretation |

@@ -46,9 +46,7 @@ module ahbsharedcache import cvw::*; #(
   assign FillIndex = Addr[OFFSET +: INDEX];
   // Cache only ordinary RAM. ROM and peripheral accesses retain their size,
   // address, byte strobes and completion ordering on the downstream bus.
-  assign Cacheable = (P.UNCORE_RAM_SUPPORTED &&
-    ((64'(UpHADDR) & ~P.UNCORE_RAM_RANGE) == P.UNCORE_RAM_BASE)) ||
-    (P.EXT_MEM_SUPPORTED && ((64'(UpHADDR) & ~P.EXT_MEM_RANGE) == P.EXT_MEM_BASE));
+  assign Cacheable = multicore_cacheable(P, 64'(UpHADDR));
   assign Hit = Cacheable && Valid[LookupIndex] && Tags[LookupIndex] == LookupTag;
   assign UpHREADY = HRESETn && (State == IDLE || State == REPLY);
   assign HADDR = Addr;

@@ -309,6 +309,9 @@ typedef struct packed {
   int INTDIVb    ;
 } cvw_t;
 
+  `include "multicore-config.vh"
+  `include "multicore-memory.vh"
+
 endpackage
 
 `endif

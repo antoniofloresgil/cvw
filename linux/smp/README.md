@@ -38,6 +38,20 @@ del UART en RTL; para depurar el arranque se puede cambiar a 7 en el generador
 y regenerar las imágenes. `--reuse` evita recompilar un modelo RTL ya construido; usarlo
 solo si no han cambiado RTL, configuración ni número de harts.
 
+## Perfiles y coherencia de configuración
+
+Los scripts comparten [la definición de perfiles](../../config/multicore/README.md).
+`--profile linux-shared` es el valor inicial; `--profile linux-msi` selecciona
+cachés privadas de 8 KiB. Las opciones explícitas como `--cache-mode` y
+`--cache-words` siguen disponibles y tienen prioridad sobre el perfil.
+
+El builder consulta la configuración elaborada por SystemVerilog y genera el
+DT desde sus propiedades reales. El manifiesto registra `effective_configuration`.
+El runner comprueba RTL, manifiesto, hashes, DTS y DTB antes de compilar/reutilizar
+el modelo o ejecutar QEMU. Los manifiestos anteriores deben regenerarse con
+`build.py`; no se migran snapshots de un modelo anterior. Estas comprobaciones
+necesitan Verilator y `dtc` también para QEMU.
+
 ## Modo MSI y puntos de control
 
 Para probar la integración con cachés privadas de datos:
