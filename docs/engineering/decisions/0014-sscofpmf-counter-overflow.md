@@ -30,10 +30,16 @@ Hardware set wins if software clears LCOFIP in the same cycle.
 
 This is synthesizable RTL. The fixed events still have no programmable event
 crossbar. The source signals for some cache and stall events originate before
-M stage, so a privilege switch near such an event can attribute a boundary
-cycle to the current privilege mode. That timing limitation should be resolved
-before using mode-filtered counts as precise security accounting. No H-mode
-filtering, `Smcntrpmf`, FPGA timing or board verification is claimed.
+M stage. The PMU now carries the initiating privilege mode alongside D-to-M
+load/store stalls and holds it for cache stalls, delayed cache-miss notifications
+and division busy cycles. Retired and M-stage events use the current instruction
+mode; cache accesses are counted when issued. Directed tests cover a mode
+transition while these earlier events remain pending. Speculative
+instruction-cache activity is still counted; the result is not claimed as
+precise security accounting. No H-mode filtering, FPGA timing or board
+verification is claimed. See the
+[mode-attribution experiment](../experiments/2026-10-21-pmu-event-modes.md)
+for the new checks.
 
 Directed RV32/RV64 tests and full-core checks are recorded in the
 [Sscofpmf experiment](../experiments/2026-10-21-sscofpmf.md). The base

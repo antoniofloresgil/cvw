@@ -1,5 +1,10 @@
 # PMU checks
 
+`csrc.sv` retains the counter/selector CSR storage and read mux;
+`pmuevents.sv` generates Wally's fixed events and mode tags, while
+`pmucountercontrol.sv` implements optional filters, overflow and delegated
+indirect access. The directed runner compiles all three modules explicitly.
+
 After sourcing setup.sh, run `python3 tests/pmu/run.py --work /tmp/pmu-unit`.
 The directed Verilator configurations cover RV32/RV64 and COUNTERS=3/8/32,
 including permissions, fixed event sources, retirement gating, enable/inhibit

@@ -50,3 +50,20 @@ branch counts, direct overflow samples, actual `perf stat`, and actual
 [software compatibility matrix](pmu-software-compatibility.md). The latter
 also records that this Linux PMU driver still uses SBI for programming,
 despite hardware support for Smcdeleg/Ssccfg.
+
+The PMU mode-attribution change tags early-stage and multicycle events with
+their initiating privilege mode for Sscofpmf filtering. Directed RV32/RV64
+tests and three full-core lint configurations pass. **Pending:** repeat the
+full-core HPM simulation with a Verilator version that compiles the testbench's
+dynamic-string `$system` call. The installed 5.022 generates an undefined
+`VL_SYSTEM_IN` call; the current attempt never started the simulation and is
+not a PASS. See the
+[mode-attribution experiment](experiments/2026-10-21-pmu-event-modes.md).
+
+The PMU modularization moves fixed events/mode tags and optional
+counter control/delegation into two new modules while retaining the existing
+`csrc` CSR interface and storage. All 22 directed PMU cases, board DTB checks
+and ten full-core lint configurations passed; see
+[ADR 0017](decisions/0017-pmu-module-boundary.md) and the
+[refactor experiment](experiments/2026-10-21-pmu-modules.md). Full-core
+simulation remains pending on the Verilator `$system` compilation issue above.

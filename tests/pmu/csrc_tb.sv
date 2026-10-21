@@ -21,6 +21,8 @@ module csrc_tb import cvw::*; #(
     logic valid = 0, wrong = 0;
     logic [3:0] iclass = 0;
     logic daccess = 0, dmiss = 0, iaccess = 0, imiss = 0;
+    logic dcache_stall = 0, icache_stall = 0, divide_busy = 0;
+    logic load_stall = 0, store_stall = 0;
     logic write_csr = 0, write_supervisor = 0, cde = 0;
     logic [P.XLEN-1:0] selected = 0;
     logic [11:0] address = 0;
@@ -30,13 +32,13 @@ module csrc_tb import cvw::*; #(
     logic [1:0] privilege = 3;
     csrc #(.P(C)) dut(
         .clk, .reset, .StallE(1'b0), .StallM(1'b0), .StallW(1'b0), .FlushM(1'b0),
-        .InstrValidNotFlushedM(valid), .LoadStallD(1'b0), .StoreStallD(1'b0),
+        .InstrValidNotFlushedM(valid), .LoadStallD(load_stall), .StoreStallD(store_stall),
         .CSRMWriteM(write_csr & ~write_supervisor), .CSRSWriteM(write_csr & write_supervisor),
         .CSRWriteM(write_csr), .BPDirWrongM(1'b0), .BTAWrongM(1'b0),
         .RASPredPCWrongM(1'b0), .IClassWrongM(1'b0), .BPWrongM(wrong), .IClassM(iclass),
         .DCacheMiss(dmiss), .DCacheAccess(daccess), .ICacheMiss(imiss), .ICacheAccess(iaccess),
-        .ICacheStallF(1'b0), .DCacheStallM(1'b0), .sfencevmaM(1'b0), .InterruptM(1'b0),
-        .TrapM(1'b0), .InvalidateICacheM(1'b0), .DivBusyE(1'b0), .FDivBusyE(1'b0),
+        .ICacheStallF(icache_stall), .DCacheStallM(dcache_stall), .sfencevmaM(1'b0), .InterruptM(1'b0),
+        .TrapM(1'b0), .InvalidateICacheM(1'b0), .DivBusyE(divide_busy), .FDivBusyE(1'b0),
         .CSRAdrM(address), .PrivilegeModeW(privilege), .CSRWriteValM(wdata),
         .MCOUNTINHIBIT_REGW(inhibit), .MCOUNTEREN_REGW(men), .SCOUNTEREN_REGW(sen),
         .SISELECT_REGW(selected), .CounterDelegationEnabled(cde),
@@ -314,6 +316,49 @@ module csrc_tb import cvw::*; #(
             end
             privilege = 3;
         end else expect_csr('h151, 0, 1);
+        if (SSCOFPMF != 0 && COUNTER_COUNT > 24) begin
+            // A cache miss completes after its initiating access.  Attribute
+            // the delayed miss and every busy cycle to the initiating U mode,
+            // even if the global privilege mode changes in the meantime.
+            privilege = 3;
+            inhibit = '1;
+            for (int c = 0; c < COUNTER_COUNT; c++) begin
+                if (c == 11 || c == 12 || c == 14 || c == 15 || c == 17 || c == 18 || c == 24) begin
+                    put('hb00+c, 0);
+                    if (P.XLEN == 32) begin
+                        put('h320+c, 1);
+                        put('h720+c, 'h60000000);
+                    end else put('h320+c, P.XLEN'(64'h6000000000000001));
+                    inhibit[c] = 0;
+                end
+            end
+            @(negedge clk); privilege = 0; dcache_stall = 1; icache_stall = 1; divide_busy = 1;
+            @(negedge clk); privilege = 3; dmiss = 1; imiss = 1;
+            @(negedge clk); dmiss = 0; imiss = 0;
+            @(negedge clk); dcache_stall = 0; icache_stall = 0; divide_busy = 0;
+            inhibit = '1;
+            expect_csr('hb0e, 1); expect_csr('hb0f, 3);
+            expect_csr('hb11, 1); expect_csr('hb12, 3);
+            expect_csr('hb18, 3);
+            // The D-stage load/store stall is counted in M two cycles later.
+            inhibit[11] = 0; inhibit[12] = 0;
+            @(negedge clk); privilege = 0; load_stall = 1; store_stall = 1;
+            @(negedge clk); privilege = 3; load_stall = 0; store_stall = 0;
+            repeat (2) @(negedge clk);
+            inhibit = '1;
+            expect_csr('hb0b, 1); expect_csr('hb0c, 1);
+            // The reverse transition must not turn M-origin events into U events.
+            inhibit[14] = 0; inhibit[15] = 0; inhibit[17] = 0;
+            inhibit[18] = 0; inhibit[24] = 0;
+            @(negedge clk); privilege = 3; dcache_stall = 1; icache_stall = 1; divide_busy = 1;
+            @(negedge clk); privilege = 0; dmiss = 1; imiss = 1;
+            @(negedge clk); dmiss = 0; imiss = 0;
+            @(negedge clk); dcache_stall = 0; icache_stall = 0; divide_busy = 0;
+            inhibit = '1; privilege = 3;
+            expect_csr('hb0e, 1); expect_csr('hb0f, 3);
+            expect_csr('hb11, 1); expect_csr('hb12, 3);
+            expect_csr('hb18, 3);
+        end
         $display("PASS: RV%0d %0d counter CSR permissions, fixed events, enable/inhibit and rollover", P.XLEN, COUNTER_COUNT);
         $finish;
     end

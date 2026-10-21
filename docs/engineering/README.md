@@ -74,3 +74,6 @@ separate [Linux perf integration result](experiments/2026-10-21-smcntrpmf-linux.
 Counter delegation is tracked in
 [ADR 0016](decisions/0016-smcdeleg-ssccfg-counter-delegation.md) and the
 [Smcdeleg/Ssccfg experiment](experiments/2026-10-21-smcdeleg-ssccfg.md).
+The proposed PMU module boundary is tracked in
+[ADR 0017](decisions/0017-pmu-module-boundary.md) and its
+[refactor experiment](experiments/2026-10-21-pmu-modules.md).
