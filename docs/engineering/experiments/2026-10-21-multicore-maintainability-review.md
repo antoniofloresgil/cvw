@@ -9,7 +9,8 @@ change RTL. It evaluates the multicore delta, not every fork/upstream delta.
 Implementation follow-up (separate source/result scopes): recommendation 1
 is recorded in the [memory extraction](2026-10-21-memory-subsystem-extraction.md),
 recommendation 2 in the [single-hart compatibility record](2026-10-21-singlecore-compatibility.md),
-and recommendation 3 in the [automated matrix record](2026-10-21-multicore-ci.md).
+recommendation 3 in the [automated matrix record](2026-10-21-multicore-ci.md),
+and recommendation 4 in the [CPU/bus contract record](2026-10-21-core-bus-contract.md).
 The findings below describe the reviewed revision; follow-up work does not
 retroactively change that review or accept proposed ADRs.
 

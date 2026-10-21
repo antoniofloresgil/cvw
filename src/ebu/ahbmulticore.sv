@@ -3,6 +3,7 @@
 // Accept each local address before stalling its data phase. This is necessary
 // because busfsm gates its initial HTRANS with HREADY: grants cannot depend on
 // HTRANS while HREADY is withheld. A pending hart holds write data until reply.
+// Contract and reset/error/atomic lifetime: docs/engineering/interfaces/core-bus.md.
 module ahbmulticore import cvw::*; #(
   parameter cvw_t P,
   parameter int unsigned NCORES = 2,
@@ -46,6 +47,11 @@ module ahbmulticore import cvw::*; #(
   input  logic HREADY, HRESP
 );
   localparam OWNER_BITS = NCORES > 1 ? $clog2(NCORES) : 1;
+  // synopsys translate_off
+  corebus_contract #(.P(P), .NCORES(NCORES)) port_contract(
+    .HCLK, .HRESETn, .CoreHTRANS, .CoreHATOMIC, .CoreHBURST, .CoreHWRITE, .CoreHMASTLOCK,
+    .CoreHREADY, .CoreHRESP, .CoreSCFail, .CoreHWDATA, .CoreHWSTRB, .CoreHRDATA);
+  // synopsys translate_on
   typedef enum logic [1:0] {AVAILABLE, PENDING, REPLY, ERROR_REPLY} localstate_t;
   localstate_t State[NCORES];
   logic [NCORES-1:0][P.PA_BITS-1:0] Addr;
@@ -220,6 +226,50 @@ module ahbmulticore import cvw::*; #(
     for (int h = 0; h < NCORES; h++)
       CoreHREADY[h] = HRESETn && (State[h] == AVAILABLE || State[h] == REPLY);
   end
+
+  // synopsys translate_off
+  logic WaitingData;
+  logic [OWNER_BITS-1:0] WaitingOwner;
+  logic [P.PA_BITS+3+4:0] WaitingControl;
+  logic [P.PA_BITS-1:0] LockedAddr;
+  logic [2:0] LockedSize;
+  always_ff @(posedge HCLK) begin
+    if (!HRESETn) begin
+      WaitingData <= 0; WaitingOwner <= '0; WaitingControl <= '0;
+      LockedAddr <= '0; LockedSize <= '0;
+    end else begin
+      if (WaitingData)
+        assert (DataPhase && Owner == WaitingOwner &&
+                {HADDR, HWRITE, HSIZE, HPROT} == WaitingControl)
+          else $fatal(1, "corebus contract: downstream owner/control changed during wait");
+      if (DataPhase) begin
+        assert (State[Owner] == PENDING && HTRANS == 0)
+          else $fatal(1, "corebus contract: data phase lost its pending owner");
+        assert (!LockActive || Owner == LockOwner)
+          else $fatal(1, "corebus contract: global transfer bypassed AMO owner");
+      end
+      if (LockActive)
+        assert (!(|CacheWriteCommit))
+          else $fatal(1, "corebus contract: local store bypassed AMO exclusion");
+      if (!DataPhase && Found && HREADY) begin
+        assert (!LockActive || NextOwner == LockOwner)
+          else $fatal(1, "corebus contract: grant bypassed AMO owner");
+        if (FailedSC || BadAMOWrite)
+          assert (HTRANS == 0 && !CacheWriteCommit[NextOwner])
+            else $fatal(1, "corebus contract: rejected atomic reached memory");
+        if (Op[NextOwner] == AMO && !Write[NextOwner]) begin
+          LockedAddr <= Addr[NextOwner]; LockedSize <= Size[NextOwner];
+        end
+        if (Op[NextOwner] == AMO && Write[NextOwner] && LockActive)
+          assert (Addr[NextOwner] == LockedAddr && Size[NextOwner] == LockedSize)
+            else $fatal(1, "corebus contract: AMO write does not match locked read");
+      end
+      WaitingData <= DataPhase && !HREADY;
+      WaitingOwner <= Owner;
+      WaitingControl <= {HADDR, HWRITE, HSIZE, HPROT};
+    end
+  end
+  // synopsys translate_on
 
   always_ff @(posedge HCLK) begin
     if (!HRESETn) begin

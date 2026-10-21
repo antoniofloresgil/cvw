@@ -12,6 +12,7 @@ records source boundaries and interactions that should guide future changes.
 | --- | --- |
 | SoC wiring | [wallypipelinedsoc.sv](../../src/wally/wallypipelinedsoc.sv): hart zero is `core`, additional harts are `harts[h].core`; one optional uncore is shared |
 | Multicore memory topology | [multicore_memory_system.sv](../../src/ebu/multicore_memory_system.sv): bypass, arbitration, optional caches/coherence banks and capability checks; per-hart requests/responses to one uncore AHB port |
+| Buffered hart/bus timing | [Interface contract](interfaces/core-bus.md), [corebus_contract.sv](../../src/ebu/corebus_contract.sv): accepted metadata, delayed write payload, AMO ownership, retained SC and ERROR/reset lifetime; assertions are excluded from synthesis |
 | Pipeline interfaces | [wallypipelinedcore.sv](../../src/wally/wallypipelinedcore.sv), [hazard.sv](../../src/hazard/hazard.sv): stage-aligned stall/flush coordination |
 | Configuration | [cvw_t](../../src/cvw.sv), [shared derivations](../../config/shared/config-shared.vh), [struct initialization](../../config/shared/parameter-defs.vh), [derivative recipes](../../config/derivlist.txt) |
 | Fetch, translation and memory arbitration | [ifu.sv](../../src/ifu/ifu.sv), [lsu.sv](../../src/lsu/lsu.sv), [hptw.sv](../../src/mmu/hptw.sv) |

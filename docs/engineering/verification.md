@@ -90,6 +90,25 @@ the dedicated matrix. Keep long RTL Linux checks in their existing separate
 procedures. Execution results and current limits are in the
 [matrix record](experiments/2026-10-21-multicore-ci.md).
 
+Recommendation 4 adds real ahbinterface/busfsm/EBU boundary fixtures to the
+same per-change matrix: bus selects one home and mesi-banked selects two homes,
+each with RV32/RV64, two/three harts and latency 0/3. The bus case also requires
+six deliberately broken endpoints to trigger named assertions. The standalone
+command runs both home counts:
+
+```bash
+python3 tests/multicore/check_boundary.py --negative --work-dir /tmp/cvw-boundary
+```
+
+The [port contract](interfaces/core-bus.md) specifies acceptance versus delayed
+payload, sideband lifetime, AMO pairing/exclusion, retained SC, ERROR and abort
+semantics. Assertions are active in all existing assertion-enabled buffered
+bridge/fabric tests, including full-core/coherence runs. Their simulation state
+is excluded from synthesis; native single-hart bypass remains unchanged. See
+the [boundary execution record](experiments/2026-10-21-core-bus-contract.md).
+Manual simulation source lists containing ahbmulticore/ahbmsifabric must also
+include `src/ebu/corebus_contract.sv`; the maintained runners do so automatically.
+
 ## Result vocabulary and preservation
 
 | State | Required interpretation |

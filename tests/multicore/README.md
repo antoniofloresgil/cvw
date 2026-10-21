@@ -32,6 +32,22 @@ y elimina los PASS anteriores de los casos seleccionados. El workflow conserva
 logs y JSON incluso si falla. Véase la
 [matriz detallada](../../docs/engineering/verification.md#automated-multicore-matrix).
 
+La matriz también comprueba la frontera CPU/bus con instancias reales de
+`ahbinterface`, `busfsm` y `ebu`, además de los generadores sintéticos. Incluye
+RV32/RV64, dos/tres harts, una/dos homes, datos de escritura retardados,
+metadatos capturados, AMO/SC, ERROR y reset. Seis casos negativos deben disparar
+la aserción esperada. Para ejecutarlos de forma independiente:
+
+```bash
+python3 tests/multicore/check_boundary.py --negative --work-dir /tmp/cvw-boundary
+```
+
+El [contrato temporal](../../docs/engineering/interfaces/core-bus.md) explica
+qué señales se capturan en la dirección y cuáles deben mantenerse durante la
+fase de datos. El checker se activa con `--assert` en los puentes y el fabric;
+su estado se excluye de síntesis. No añade cancelación tras aceptar una petición
+ni excepciones precisas de CPU a partir de HRESP.
+
 Desde la raíz, en Bash, con el toolchain de Wally y Verilator instalado:
 
 ```bash

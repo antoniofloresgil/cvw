@@ -90,6 +90,10 @@ def main():
         run(["perl", root / "bin/derivgen.pl"], work / "deriv.log")
 
     def build_test(top, config, sources, name, parameters=()):
+        sources = list(sources)
+        contract = root / "src/ebu/corebus_contract.sv"
+        if root / "src/ebu/ahbmulticore.sv" in sources and contract not in sources:
+            sources.append(contract)
         build = work / name
         print(f"Building {name}", flush=True)
         # Verilator 5.036 can emit an undeclared fork sync in split coroutine

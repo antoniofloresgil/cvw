@@ -42,6 +42,7 @@ source audits retain their original revision labels.
 | Multicore isolation and maintenance risks before merging | [2026-10-21 architecture review](experiments/2026-10-21-multicore-maintainability-review.md) |
 | Single-hart compatibility and peripheral isolation | [Proposed ADR 0014](decisions/0014-single-hart-peripheral-isolation.md), [compatibility checks](experiments/2026-10-21-singlecore-compatibility.md) |
 | Automated single-core/multicore CI and regression | [Proposed ADR 0015](decisions/0015-automated-multicore-verification.md), [procedure](verification.md#automated-multicore-matrix), [execution record](experiments/2026-10-21-multicore-ci.md) |
+| Buffered CPU/bus timing, atomic sideband and abort contract | [Interface](interfaces/core-bus.md), [proposed ADR 0016](decisions/0016-core-bus-temporal-contract.md), [boundary checks](experiments/2026-10-21-core-bus-contract.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 Existing flow documentation and executable sources remain authoritative for

@@ -38,6 +38,11 @@ module ahbmsifabric import cvw::*; #(
   input logic HREADY, HRESP
 );
   localparam BB = BANKS > 1 ? $clog2(BANKS) : 1;
+  // synopsys translate_off
+  corebus_contract #(.P(P), .NCORES(NCORES)) port_contract(
+    .HCLK, .HRESETn, .CoreHTRANS, .CoreHATOMIC, .CoreHBURST, .CoreHWRITE, .CoreHMASTLOCK,
+    .CoreHREADY, .CoreHRESP, .CoreSCFail, .CoreHWDATA, .CoreHWSTRB, .CoreHRDATA);
+  // synopsys translate_on
   localparam HB = NCORES > 1 ? $clog2(NCORES) : 1;
   localparam DW = DCACHE_WORDS/BANKS;
   localparam IW = ICACHE_WORDS/BANKS;
@@ -63,6 +68,25 @@ module ahbmsifabric import cvw::*; #(
   logic AtomicLock, AnyActive, AtomicPending, AtomicFound;
   logic [HB-1:0] AtomicOwner, AtomicCandidate, AtomicFirst;
   int Candidate;
+
+  // synopsys translate_off
+  logic [P.PA_BITS-1:0] LockedAddr;
+  logic [2:0] LockedSize;
+  always_ff @(posedge HCLK) begin
+    if (!HRESETn) begin
+      LockedAddr <= '0; LockedSize <= '0;
+    end else for (int h = 0; h < NCORES; h++) begin
+      assert (!AtomicLock || State[h] != WAIT_REPLY || HB'(h) == AtomicOwner)
+        else $fatal(1, "corebus contract: peer transaction active during fabric AMO");
+      if (Dispatch[h] && BReady[Home[h]][h] && Op[h] == 3) begin
+        if (!Write[h]) begin LockedAddr <= Addr[h]; LockedSize <= Size[h]; end
+        else if (AtomicLock)
+          assert (Addr[h] == LockedAddr && Size[h] == LockedSize)
+            else $fatal(1, "corebus contract: banked AMO write does not match locked read");
+      end
+    end
+  end
+  // synopsys translate_on
 
   function automatic logic [BB-1:0] home(input logic [P.PA_BITS-1:0] a);
     // Keep every complete line within one bank; peripherals have one home.
@@ -113,6 +137,8 @@ module ahbmsifabric import cvw::*; #(
       for (int h = 0; h < NCORES; h++) State[h] <= AVAILABLE;
     end else begin
       for (int h = 0; h < NCORES; h++) begin
+        assert (!Dispatch[h] || !AtomicLock || HB'(h) == AtomicOwner)
+          else $fatal(1, "corebus contract: bank dispatch bypassed AMO owner");
         if (State[h] == ERROR_REPLY) State[h] <= REPLY;
         if (CoreHREADY[h]) begin
           CoreHRESP[h] <= 1'b0;

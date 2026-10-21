@@ -27,7 +27,7 @@ RTL Linux SMP passed after 339,802,249 cycles with both CPUs online and
 atomic/protected counters 128/128; see the
 [extraction record](experiments/2026-10-21-memory-subsystem-extraction.md).
 No merge into main was performed.
-Recommendation 2 is now implemented in the working tree on `67ec3d991`:
+Recommendation 2 was implemented on parent `67ec3d991`:
 single-hart CLINT/PLIC use upstream-shaped modules with explicitly scoped
 generic corrections, multi-hart implementations live in separate modules,
 no-bus clock/reset outputs match upstream, and cached LSU atomic metadata
@@ -38,8 +38,9 @@ clock/reset cases, translated AMO/PTE updates with a negative mutation, bus/
 peripheral units and 12 full-core atomic/smoke executions passed. No new Linux
 or private-cache regression was run. The unsupported cacheless/virtual-memory
 trial was rejected by the existing configuration assertion, then removed from
-the test runner; it is not a PASS. Recommendations 2 and 3 are recorded together in the commit containing this checkpoint.
-Recommendation 3 is implemented in the same working tree: shared
+the test runner; it is not a PASS. Recommendations 2 and 3 were committed and
+pushed together as `8ecb9ef1b` on `multicore-support`.
+Recommendation 3 was committed in that revision: shared
 `tests/multicore/ci.py` cases for single-default, bus, MSI/one-home and
 MESI/two-home configurations are selected by ordinary regression and the new
 Multicore workflow. `regression-wally --multicore` runs only this matrix.
@@ -52,6 +53,23 @@ Workflow actionlint, scoped pre-commit, ordinary regression selection and
 failure/stale-result propagation checks passed. Remote GitHub execution and
 the complete ACT regression were not run. See proposed [ADR 0015](decisions/0015-automated-multicore-verification.md)
 and the [matrix record](experiments/2026-10-21-multicore-ci.md).
+Recommendation 4 is implemented in the working tree on `8ecb9ef1b`:
+the [buffered core/bus contract](interfaces/core-bus.md) specifies address
+acceptance, delayed/live write payloads, atomic sideband, AMO exclusion/pairing,
+retained SC results and ERROR/flush/reset semantics. A reusable port checker
+and engine assertions add simulation checks without changing the datapath or
+single-hart bypass. Real ahbinterface/busfsm/EBU fixtures are selected by CI:
+RV32/RV64, two/three harts, one/two homes, latency 0/3, and six named negative
+cases. Final validation passed: all four CI cases, 16 real-adapter executions,
+six named negative fixtures, seven standard and seven topology lints, 28
+full-core atomic/smoke programs, the existing coherence/burst/peripheral matrix
+and scoped pre-commit. MEM3 retention is explicitly checked via BusCommitted/
+BusStall while pipeline stall remains asserted across an IFU reply. Source
+hashes of the final aggregate and both boundary manifests match the final tree.
+No new Linux, remote CI, full ACT regression or hardware verification was run.
+Recommendation 4 is recorded in the commit containing this checkpoint. See proposed
+[ADR 0016](decisions/0016-core-bus-temporal-contract.md) and the
+[boundary record](experiments/2026-10-21-core-bus-contract.md).
 Other review recommendations and proposed ADR statuses remain unchanged.
 
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
