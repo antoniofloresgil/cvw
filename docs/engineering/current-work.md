@@ -1,11 +1,13 @@
 # Current work
 
-Branch: `multicore-support`. Publication snapshot checked 2026-10-22 after
-`git fetch origin`: local HEAD and `origin/multicore-support` both equal
-`853418123f91806a8b65a59060288728607f920d` before this documentation update.
-The historical integration commit `0533e764d` is already published on that
-feature branch. This is not a merge of the feature into main: local/remote
-main are at `a6f312a2d`, which is not an ancestor of the feature HEAD.
+Branch: `main`. On 2026-10-22, `multicore-support` source commit
+`06d1baab69435abb13efd195ac675134f787da90` was fast-forwarded into main from
+`origin/multicore-support`; the integration includes current main commit
+`a6f312a2d8f7ccff54f6353d846751aae0e5c200`. This replaces the pre-integration
+snapshot below. The remote Multicore workflow passed on feature commit
+`75c805457c29c1ba992027ab934d84f48b55085b`; Lint passed on integration commit
+`06d1baab6`. No full ACT regression, new Linux boot, FPGA qualification, DMA
+coherence or precise CPU bus-error implementation is claimed.
 
 Historically integrated main `4ce065926` (official upstream
 `89479dd09`) into feature parent `f9f7a83be`. Configurable hart/interrupt/
@@ -186,4 +188,7 @@ The 8 MSI and 12 banked-MSI pre/post functional logs match exactly after
 excluding source line numbers and simulator wall-time fields; both profiles
 pass at RV32/RV64 with their configured latencies. See the
 [downstream fixture record](experiments/2026-10-22-multicore-downstream-fixture.md).
-No merge into main has been performed.
+Recommendations 1–12 and their recorded checks are now integrated into main.
+The remaining DMA coherence, precise CPU error-delivery and hardware/scaling
+qualification work is explicitly outside this branch's experimental scope;
+see the [capability contract](interfaces/multicore-capabilities.md).
