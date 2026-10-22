@@ -33,7 +33,7 @@ def expression(source, values, core=None):
 
 
 def sv_expression(node):
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, bool)):
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
         return str(int(node.value))
     if isinstance(node, ast.Name):
         if node.id == 'AHBW':
