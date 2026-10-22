@@ -134,7 +134,7 @@ def main():
     metadata_path = build / "model.json"
     sources = sorted(p for p in (ROOT / "src").rglob("*.sv") if p.name != "cvw.sv")
     inputs = [ROOT / "src/cvw.sv", *sources, HERE / "linux_tb.sv", HERE / "sim_main.cpp",
-              ROOT / "tests/multicore/dpi.cpp", ROOT / "config/deriv/multicore_linux/config.vh",
+              ROOT / "tests/multicore/dpi.cpp", ROOT / "testbench/common/bus_fault_guard.sv", ROOT / "config/deriv/multicore_linux/config.vh",
               ROOT / "config/multicore/schema.json", ROOT / "config/multicore/profiles.py",
               *sorted((ROOT / "config/shared").glob("*.vh"))]
     fingerprint = {
@@ -158,7 +158,7 @@ def main():
             "--Mdir", str(build), f"-I{ROOT / 'config/shared'}",
             f"-I{ROOT / 'config/deriv/multicore_linux'}", str(ROOT / "src/cvw.sv"),
             str(HERE / "linux_tb.sv"), *map(str, sources), str(HERE / "sim_main.cpp"),
-            str(ROOT / "tests/multicore/dpi.cpp"),
+            str(ROOT / "tests/multicore/dpi.cpp"), str(ROOT / "testbench/common/bus_fault_guard.sv"),
         ]
         with (work / "rtl-build.log").open("w") as log:
             subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT)

@@ -10,13 +10,16 @@ module linux_tb import cvw::*; #(`CVW_MULTICORE_PARAMS(AHBW)
 );
     `include "parameter-defs.vh"
     string ram_image, rom_image;
+    logic reset;
     wallypipelinedsoc #(.P(P), `CVW_MULTICORE_CONNECT) dut(
-        .clk, .reset_ext, .reset(), .ExternalStall(1'b0),
+        .clk, .reset_ext, .reset, .ExternalStall(1'b0),
         .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(),
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),
         .HBURST(), .HPROT(), .HTRANS(), .HMASTLOCK(), .HREADY(),
         .TIMECLK(1'b0), .GPIOIN('0), .GPIOOUT(), .GPIOEN(), .UARTSin(1'b1), .UARTSout(),
         .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
+    bus_fault_guard #(.NCORES(NCORES)) fault_guard(
+        .clk, .reset, .GlobalError(dut.HRESP), .HartError(dut.CoreHRESP));
     // Observe actual UART transmit-register writes. The real UART remains in
     // circuit, including its busy/ready timing and interrupt generation.
     assign ConsoleValid = dut.uncoregen.uncore.PSEL[3] && dut.uncoregen.uncore.PWRITE &&

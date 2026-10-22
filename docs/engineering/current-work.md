@@ -107,5 +107,18 @@ All 75 frozen baseline PASS/cycle/traffic signatures match. See proposed
 [extraction record](experiments/2026-10-22-multicore-engine-extraction.md).
 No new Linux, FPGA, formal or main integration result was obtained.
 
+Recommendation 7 is implemented on parent `1a40aaac2`: canonical capability
+metadata separates available hart-path behavior, unsupported DMA/precise HRESP
+features and unverified FPGA/arbitrary-count qualification. Requirements fail before
+builds and per-case CI evidence has explicit execution scope. Experimental SoC/Linux
+harnesses enforce fault-free bus execution; transport fault injection remains separate.
+All four final CI profiles, capability/guard negative fixtures, seven standard lints
+and Linux harness compilation passed; all 75 baseline signatures match. See proposed
+[ADR 0019](decisions/0019-multicore-capability-scope.md), the
+[capability/DMA/error contract](interfaces/multicore-capabilities.md) and the
+[execution record](experiments/2026-10-22-multicore-capability-scope.md).
+No new DMA/architectural-error implementation, Linux boot, FPGA or scaling
+qualification is claimed. Recommendations 8 and 9–12 remain separate proposals.
+
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.

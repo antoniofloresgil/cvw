@@ -12,7 +12,8 @@ recommendation 2 in the [single-hart compatibility record](2026-10-21-singlecore
 recommendation 3 in the [automated matrix record](2026-10-21-multicore-ci.md),
 recommendation 4 in the [CPU/bus contract record](2026-10-21-core-bus-contract.md),
 recommendation 5 in the [configuration/policy record](2026-10-21-multicore-configuration-policy.md),
-and recommendation 6 in the [engine extraction record](2026-10-22-multicore-engine-extraction.md).
+recommendation 6 in the [engine extraction record](2026-10-22-multicore-engine-extraction.md),
+and recommendation 7 in the [capability-scope record](2026-10-22-multicore-capability-scope.md).
 The findings below describe the reviewed revision; follow-up work does not
 retroactively change that review or accept proposed ADRs.
 

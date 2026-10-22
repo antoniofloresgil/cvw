@@ -3,6 +3,7 @@
 
 import argparse
 import ast
+import copy
 import hashlib
 import json
 import subprocess
@@ -95,11 +96,51 @@ def validate(values, core=None):
             raise ValueError(rule['message'])
 
 
+def capability_report(values, core=None):
+    """Implementation limits, never a simulation or hardware qualification verdict."""
+    validate(values, core)
+    contract = SCHEMA['capability_contract']
+    buffered = values['NCORES'] > 1 or bool(values['SHARED_CACHE'])
+    private = values['NCORES'] > 1 and bool(values['PRIVATE_DCACHE'])
+    path = ('native_single_hart' if not buffered else 'private_write_back' if private else
+            'shared_write_through' if values['SHARED_CACHE'] else 'uncached_serialized')
+    report = {'scope': 'optional_multicore_memory_system',
+              'configuration_validation': 'core_and_topology_constraints' if core is not None else 'topology_only_core_not_checked',
+              'contract_version': contract['version'], 'path': path,
+              **copy.deepcopy(contract['paths'][path]), 'requirements': copy.deepcopy(contract['requirements']),
+              'qualification': copy.deepcopy(contract['qualification']),
+              'execution_preconditions': copy.deepcopy(contract['execution_preconditions']),
+              'effective_harts': values['NCORES'], 'coherence_homes': values['COHERENCE_BANKS'] if private else 1,
+              'private_instruction_banks': bool(private and values['PRIVATE_ICACHE']),
+              'coherence_protocol': ('MESI' if values['MESI'] else 'MSI') if private else 'not_applicable'}
+    if not buffered:
+        report['requirements']['coherent_hart_ports'] = {
+            'status': 'outside_scope', 'reason': 'Native bypass uses the separate single-core contract.'}
+    return report
+
+
+def check_capability_report(effective):
+    if effective.get('capabilities') != capability_report(effective['multicore'], effective.get('core')):
+        raise ValueError('Capability metadata differs from the implementation contract; regenerate the manifest')
+
+
+def require_capabilities(values, required):
+    report = capability_report(values)
+    for name in required:
+        feature = report['requirements'].get(name)
+        if feature is None:
+            raise ValueError(f'Unknown required capability: {name}')
+        if feature['status'] != 'implemented':
+            raise ValueError(f"Required capability {name} is {feature['status']}: {feature['reason']}")
+
+
 def verilator_args(values):
     return [f"-G{key}={1 if FIELDS[key]['type'] == 'bit' else 32}'d{value}" for key, value in values.items()]
 
 
 def add_arguments(parser, default='stress', linux=False, multiple_cores=False):
+    parser.add_argument('--require-capability', action='append', default=[], choices=list(SCHEMA['capability_contract']['requirements']),
+                        help='Fail before building if a required implementation/qualification property is unavailable')
     parser.add_argument('--profile', choices=list(SCHEMA['profiles']), default=default)
     if linux:
         parser.add_argument('--cache-mode', choices=['shared', 'msi'])
@@ -130,6 +171,7 @@ def from_args(args, ahbw=64, linux=False, cores=None, base=None):
     if 'PRIVATE_DCACHE_WORDS' in overrides and values['SHARED_CACHE']:
         values['SHARED_CACHE_WORDS'] = overrides['PRIVATE_DCACHE_WORDS']
     validate(values)
+    require_capabilities(values, getattr(args, 'require_capability', []))
     return values
 
 
@@ -197,6 +239,7 @@ def probe(config, values, work, use_defaults=False):
     if effective['multicore'] != values:
         raise ValueError('Elaborated multicore parameters differ from the requested profile')
     validate(values, effective['core'])
+    effective['capabilities'] = capability_report(values, effective['core'])
     effective['schema_version'] = SCHEMA['version']
     effective['policy_sha256'] = hashlib.sha256((HERE / 'schema.json').read_bytes()).hexdigest()
     return effective
@@ -205,11 +248,19 @@ def probe(config, values, work, use_defaults=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--generate', action='store_true')
+    parser.add_argument('--describe', action='store_true', help='Print topology and explicit capability limits; no qualification verdict')
+    add_arguments(parser, default='default')
     args = parser.parse_args()
+    try:
+        values = from_args(args)
+    except ValueError as error:
+        parser.error(str(error))
     if args.generate:
         HEADER.write_text(generated_header())
     else:
         check_generated()
+    if args.describe:
+        print(json.dumps({'multicore': values, 'capabilities': capability_report(values)}, indent=2))
 
 
 if __name__ == '__main__':

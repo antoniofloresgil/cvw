@@ -46,6 +46,7 @@ source audits retain their original revision labels.
 | Automated single-core/multicore CI and regression | [Proposed ADR 0015](decisions/0015-automated-multicore-verification.md), [procedure](verification.md#automated-multicore-matrix), [execution record](experiments/2026-10-21-multicore-ci.md) |
 | Buffered CPU/bus timing, atomic sideband and abort contract | [Interface](interfaces/core-bus.md), [proposed ADR 0016](decisions/0016-core-bus-temporal-contract.md), [boundary checks](experiments/2026-10-21-core-bus-contract.md) |
 | Reservation and I/D storage boundaries and RAM timing | [Storage/event interface](interfaces/multicore-storage.md), [proposed ADR 0018](decisions/0018-multicore-engine-boundaries.md), [extraction record](experiments/2026-10-22-multicore-engine-extraction.md) |
+| Experimental multicore capability limits, DMA and error integration | [Capability contract](interfaces/multicore-capabilities.md), [proposed ADR 0019](decisions/0019-multicore-capability-scope.md), [execution record](experiments/2026-10-22-multicore-capability-scope.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 Existing flow documentation and executable sources remain authoritative for

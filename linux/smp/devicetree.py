@@ -14,6 +14,7 @@ import profiles
 def generate(effective, memory_mb=None, frequency=None, **overrides):
     memory_mb = profiles.LINUX['ram_mb'] if memory_mb is None else memory_mb
     frequency = profiles.LINUX['frequency_hz'] if frequency is None else frequency
+    profiles.check_capability_report(effective)
     values = effective['multicore']
     profiles.validate(values, effective['core'])
     options = profiles.legacy_options(values)

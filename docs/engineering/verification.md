@@ -131,6 +131,23 @@ explicitly; recursive all-source flows already discover them. See the
 [revision-specific results](experiments/2026-10-22-multicore-engine-extraction.md).
 These tests are not BRAM inference or timing evidence.
 
+Recommendation 7 adds capability-report/requirement rejection and a full-core
+fault guard. The single-default CI case selects:
+
+```bash
+python3 tests/multicore/check_capabilities.py --work-dir /tmp/cvw-capabilities
+```
+
+The guard is used by experimental soc_tb/Linux execution; intentional HRESP belongs
+to the separate controller/adapter fixtures. Its two negative tests must produce
+the specific fault-free-execution diagnostic. A transport PASS never means precise
+CPU faults or program recovery. CI manifests now record executed full-core counts,
+widths/latencies and NOT RUN Linux/FPGA qualification separately from capability
+metadata. Ordinary failed SC remains legal because its reply is OKAY with SCFail.
+See the [capability contract](interfaces/multicore-capabilities.md). Explicit
+simulation lists for soc_tb/linux_tb must include testbench/common/bus_fault_guard.sv;
+maintained runners do so automatically.
+
 ## Result vocabulary and preservation
 
 | State | Required interpretation |

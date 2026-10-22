@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "fields": {
     "NCORES": {
       "type": "int unsigned",
@@ -65,7 +65,7 @@
   "rules": [
     {
       "when": "NCORES >= 1 and NCORES <= 4095",
-      "message": "NCORES outside the supported CLINT register range"
+      "message": "NCORES outside the addressable CLINT register range; this is not a verified hart-count limit"
     },
     {
       "when": "power2(COHERENCE_BANKS) and (NCORES == 1 or COHERENCE_BANKS == 1 or PRIVATE_DCACHE)",
@@ -153,6 +153,66 @@
     "ram_base": 2147483648,
     "bootrom_base": 4096,
     "kernel_offset": 2097152,
-    "dtb_offset": 117440512
+    "dtb_offset": 117440512,
+    "hart_count_scope": "image_recipe_only_not_boot_qualification"
+  },
+  "capability_contract": {
+    "version": 1,
+    "requirements": {
+      "coherent_hart_ports": {
+        "status": "implemented",
+        "reason": "Only requests traversing the buffered hart ports participate in the shared ordering/coherence domain."
+      },
+      "external_dma_coherence": {
+        "status": "unsupported",
+        "reason": "No coherent external-master ingress or snoop protocol is implemented."
+      },
+      "precise_cpu_bus_errors": {
+        "status": "unsupported",
+        "reason": "The EBU does not translate HRESP into precise CPU access faults; transport ERROR recovery is a separate property."
+      },
+      "fpga_multicore_qualified": {
+        "status": "unverified",
+        "reason": "No multicore FPGA synthesis/timing/board-boot qualification is recorded for this implementation."
+      },
+      "arbitrary_hart_count_qualified": {
+        "status": "unverified",
+        "reason": "Addressable parameter ranges and Linux image-recipe limits are not verified hart-count bounds."
+      }
+    },
+    "paths": {
+      "native_single_hart": {
+        "writer_domain": "native_core_contract",
+        "error_delivery": "inherited_ebu",
+        "dirty_writeback": "native_core_contract"
+      },
+      "uncached_serialized": {
+        "writer_domain": "buffered_hart_ports_only",
+        "error_delivery": "two_cycle_transport_error",
+        "dirty_writeback": "not_applicable"
+      },
+      "shared_write_through": {
+        "writer_domain": "buffered_hart_ports_only",
+        "error_delivery": "two_cycle_transport_error",
+        "dirty_writeback": "not_applicable_write_through"
+      },
+      "private_write_back": {
+        "writer_domain": "buffered_hart_ports_only",
+        "error_delivery": "two_cycle_transport_error",
+        "dirty_writeback": "retain_modified_owner_on_failure_partial_memory_effects_possible_no_automatic_retry"
+      }
+    },
+    "qualification": {
+      "configuration_validation": "elaboration_constraints_only",
+      "simulation_evidence": "per_revision_case_configuration_and_test",
+      "fpga_multicore": "unverified",
+      "hart_scaling": "only_executed_counts_have_evidence",
+      "linux_recipe": "image_generation_is_not_boot_evidence"
+    },
+    "execution_preconditions": {
+      "coherent_writers": "all_writers_traverse_the_ordering_domain",
+      "bus_errors": "full_core_execution_requires_fault_free_bus",
+      "error_recovery": "transport_unit_recovery_does_not_qualify_cpu_recovery"
+    }
   }
 }

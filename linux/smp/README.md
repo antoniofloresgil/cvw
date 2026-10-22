@@ -238,3 +238,18 @@ a separate `-mesi1` build directory. Geometry and DTB bytes do not change.
 Enable `--local-dcache-writes` to use local E-to-M stores. A new RTL model is
 required; an earlier MSI/Linux checkpoint is not compatible. See the
 [MESI experiment](../../docs/engineering/experiments/2026-10-20-mesi.md).
+
+## Alcance de capacidades
+
+Los manifiestos incluyen las capacidades y limitaciones del subsistema, separadas
+del resultado de cada ejecución. El límite de 1 a 8 harts corresponde a la receta
+de imágenes y no acredita arranque con ocho CPU. Un DTB generado o un modelo
+compilado tampoco acredita arranque Linux ni funcionamiento en FPGA.
+
+Se pueden exigir propiedades mediante `--require-capability`. DMA coherente,
+errores CPU precisos por HRESP y cualificación multicore en FPGA siguen sin estar
+disponibles o verificados; esas peticiones se rechazan antes de construir el
+modelo. El harness Linux detiene la simulación ante HRESP global o por hart fuera
+de reset. Esa guarda exige ejecución sin errores de bus y no implementa traps.
+Las pruebas de inyección de errores del transporte se ejecutan por separado.
+Consultar el [contrato de capacidades e integración DMA/errores](../../docs/engineering/interfaces/multicore-capabilities.md).

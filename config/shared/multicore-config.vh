@@ -41,7 +41,7 @@ endfunction
 
 function automatic string multicore_config_message(input int error);
   case (error)
-    1: return "NCORES outside the supported CLINT register range";
+    1: return "NCORES outside the addressable CLINT register range; this is not a verified hart-count limit";
     2: return "Coherence banks require private MSI and a power-of-two count";
     3: return "Private I-cache/local paths require private MSI data caches";
     4: return "Select private MSI data caches or the shared cache, not both";

@@ -62,3 +62,37 @@ python3 tests/multicore/check_profiles.py --work-dir /tmp/cvw-profile-check
 This checks Python/SV rule parity, real RV32/RV64 defaults, RAM/MMIO boundaries,
 Linux DT generation and stale RTL/manifest/DTS/DTB rejection. The single-default
 CI case selects it automatically. The pre-commit hook checks header freshness.
+
+## Capability and evidence scope
+
+The schema also owns the optional subsystem's `capability_contract`. Inspect it
+without building RTL (the report explicitly says core configuration is unchecked):
+
+```bash
+python3 config/multicore/profiles.py --describe --profile ci-msi
+```
+
+Effective SV reports add the canonical capability report after core/topology
+constraint validation. This describes implementation availability and limits,
+not execution or FPGA qualification. CI records actual execution scope separately.
+Native bypass is outside the new buffered-hart ordering contract. The CLINT range
+is addressability and Linux max_harts is an image-recipe bound; neither qualifies
+arbitrary counts. External DMA coherence and precise CPU HRESP faults are
+unsupported; multicore FPGA and arbitrary-count qualification are unverified.
+
+A consumer can explicitly require a property; unavailable properties fail before
+compilation, and every requested hart count is checked separately:
+
+```bash
+python3 tests/multicore/run.py --profile ci-msi --cores 2 3 --require-capability coherent_hart_ports
+# Rejected before building: no external coherent ingress exists.
+python3 tests/multicore/run.py --profile ci-msi --require-capability external_dma_coherence
+```
+
+Requirements do not enable hardware. Linux builders/runners use the same checks;
+forged/stale capability metadata is rejected by DT generation. Schema version 2 adds capability-contract version 1 and requires regeneration of older image manifests. Experimental full-core
+SoC/Linux simulations stop on bus HRESP outside reset; intentional error injection
+belongs to transport/controller fixtures. See the
+[capability and DMA/error integration contract](../../docs/engineering/interfaces/multicore-capabilities.md)
+for current failure semantics and future acceptance criteria. Nothing here adds
+coherent DMA, precise traps, writeback retry or a hardware qualification result.

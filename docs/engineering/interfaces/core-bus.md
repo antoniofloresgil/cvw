@@ -146,3 +146,11 @@ back-to-back/atomic/coherence benches and full-core CI supplement these tests.
 See the [verification record](../experiments/2026-10-21-core-bus-contract.md).
 These checks are simulation assertions and directed tests, not a formal proof
 or a generic AHB conformance suite.
+
+
+The [capability and integration contract](multicore-capabilities.md) scopes
+hart-only coherent writers, transport-only error recovery, dirty-writeback effects
+and the prerequisites for future DMA/architectural-error support. Experimental
+full-core SoC/Linux harnesses require fault-free execution and stop on HRESP;
+transport fixtures retain deliberate error injection. Parameter legality and
+transport PASS do not qualify FPGA, arbitrary hart counts or CPU trap delivery.

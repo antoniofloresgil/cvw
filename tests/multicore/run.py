@@ -55,6 +55,8 @@ def main():
         parser.error("RAM latency must be in the range 0..255")
     try:
         topology = profiles.from_args(args, cores=max(args.cores))
+        for cores in args.cores:
+            profiles.require_capabilities({**topology, 'NCORES': cores}, args.require_capability)
     except ValueError as error:
         parser.error(str(error))
     for key, value in topology.items():
@@ -138,7 +140,7 @@ def main():
             executable = build_test(
                 "soc_tb",
                 f"deriv/{config}",
-                [tests / "soc_tb.sv", tests / "dpi.cpp", *sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")],
+                [tests / "soc_tb.sv", tests / "dpi.cpp", root / "testbench/common/bus_fault_guard.sv", *sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")],
                 f"mesi{int(args.mesi)}-burst{int(args.cache_bursts)}-b{args.coherence_banks}-c2c{int(args.cache_to_cache)}-{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else ""),
                 [f"-GLATENCY={latency}", *profiles.verilator_args({**topology, 'NCORES': cores})],
             )

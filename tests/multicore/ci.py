@@ -81,6 +81,8 @@ def main():
             params = [arg for arg in profiles.verilator_args(values) if not arg.startswith('-GNCORES=')]
             print(f"Starting multicore CI case {name}", flush=True)
             if name == 'single-default':
+                execute([sys.executable, str(root / 'tests/multicore/check_capabilities.py'),
+                         '--work-dir', str(casework / 'capabilities')], casework / 'capabilities.log')
                 execute([sys.executable, str(root / 'tests/multicore/check_profiles.py'),
                          '--work-dir', str(casework / 'policy')], casework / 'policy.log')
             for cores in ([1] if name == "single-default" else [2, 3]):
@@ -106,7 +108,13 @@ def main():
                 execute([sys.executable, str(root / "tests/multicore/run.py"), "--skip-deriv", "--suite", "atomic",
                          "--latency", "0", "3", *options, "--work-dir", str(casework)], casework / "run.log")
             effective = [profiles.probe(config, {**values, 'NCORES': n}, casework / f'config-{n}') for n in core_counts]
-            result = {"effective_configurations": effective, "case": name, "config": config, "options": options, "lint_parameters": params,
+            scope = {'environment': 'verilator', 'full_core_harts': core_counts,
+                     'full_core_widths': sorted({c['core']['XLEN'] for c in effective}),
+                     'full_core_latencies': [] if name == 'single-default' else [0, 3],
+                     'full_core_bus_error_policy': 'fault_free_required_by_guard' if name != 'single-default' else 'native_compatibility_fixture',
+                     'injected_error_verdicts': 'transport_only', 'linux_boot': 'not_run', 'fpga_multicore': 'not_run',
+                     'hart_count_qualification': 'executed_counts_only'}
+            result = {"validation_scope": scope, "effective_configurations": effective, "case": name, "config": config, "options": options, "lint_parameters": params,
                       "config_sha256": hashlib.sha256((root / "config" / config / "config.vh").read_bytes()).hexdigest(),
                       "suite": "translated AMO, cached and uncacheable" if name == "single-default" else "atomic and smoke",
                       "latencies": [] if name == "single-default" else [0, 3],

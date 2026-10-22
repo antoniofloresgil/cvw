@@ -21,6 +21,8 @@ module soc_tb import cvw::*; #(parameter int LATENCY = 0, `CVW_MULTICORE_PARAMS(
         .HBURST(), .HPROT(), .HTRANS(), .HMASTLOCK(), .HREADY(),
         .TIMECLK(1'b0), .GPIOIN('0), .GPIOOUT(), .GPIOEN(), .UARTSin(1'b1), .UARTSout(),
         .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
+    bus_fault_guard #(.NCORES(NCORES)) fault_guard(
+        .clk, .reset, .GlobalError(dut.HRESP), .HartError(dut.CoreHRESP));
     // White-box architectural observer: write-back data may be newer than RAM.
     // This does not flush caches or participate in the coherence protocol.
     if (PRIVATE_DCACHE && NCORES > 1 && COHERENCE_BANKS > 1) begin : observer
