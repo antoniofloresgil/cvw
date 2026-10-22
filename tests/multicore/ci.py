@@ -99,6 +99,8 @@ def main():
                     raise SystemExit("Native single-core test did not report success")
             else:
                 if name == 'bus':
+                    execute([sys.executable, str(root / 'tests/multicore/check_downstream_checker.py'),
+                             '--work-dir', str(casework / 'downstream-checker')], casework / 'downstream-checker.log')
                     execute([sys.executable, str(root / 'tests/multicore/check_observation.py'),
                              '--work-dir', str(casework / 'observation')], casework / 'observation.log')
                     execute([sys.executable, str(root / 'tests/multicore/check_engines.py'),

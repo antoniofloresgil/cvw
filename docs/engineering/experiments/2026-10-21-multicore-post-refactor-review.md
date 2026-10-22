@@ -1,6 +1,6 @@
 # Multicore maintenance review after recommendations 1–4
 
-Status: **static review completed; additional recommendations proposed**.
+Status: **historical static review; follow-up recommendations 9–12 implemented**.
 Source: `multicore-support:e8162b462f05817d7fa78e1db9ed6e20ac86db19`.
 Baseline: local `main:4ce065926c8096f34c77867c358f044ec1ea777e`, an ancestor
 of HEAD. No remote refresh, branch switch, merge or RTL change was performed.
@@ -10,15 +10,10 @@ its numbering and historical source scope remain intact.
 Implementation follow-up: recommendation 9 is recorded in the
 [observation extraction](2026-10-22-multicore-test-observation.md), recommendation 10 in the
 [option-interaction coverage record](2026-10-22-multicore-option-interactions.md),
-and recommendation 11 in the [shared atomic-symbol record](2026-10-22-corebus-atomic-symbols.md).
-Recommendation 12 remains proposed. These later implementations do not change
-the source/revision scope or static-review verdict below.
-
-Implementation follow-up: recommendation 9 is recorded in the
-[observation extraction](2026-10-22-multicore-test-observation.md); recommendation 11 in the
-[shared atomic-symbol execution record](2026-10-22-corebus-atomic-symbols.md).
-The findings below retain their original reviewed-source scope and do not
-accept the associated proposed ADR.
+and recommendation 11 in the [shared atomic-symbol record](2026-10-22-corebus-atomic-symbols.md);
+recommendation 12 in the [downstream fixture record](2026-10-22-multicore-downstream-fixture.md).
+The findings below retain their original reviewed-source scope and static-review
+verdict. These implementation follow-ups do not automatically accept proposed ADRs.
 
 ## Current assessment
 

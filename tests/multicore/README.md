@@ -541,3 +541,22 @@ coverage. The JSON marks the full Cartesian product and unselected option pairs
 as uncovered. External DMA coherence and precise CPU HRESP delivery remain
 unsupported; FPGA multicore and arbitrary hart-count qualification remain
 unverified.
+
+### Shared downstream fixture
+
+The MSI and banked-MSI benches share `ahb_downstream_memory.svh` for the
+pipelined RAM/fault model, `ahb_downstream_checker.sv` for passive AHB wait,
+write-data and SEQ checks, and `ahb_master_tasks.svh` for bounded hart accesses.
+Topology-specific routing, coherence and overlap scenarios remain in their
+benches. Each master access has a 10,000-cycle watchdog. The bus CI case also
+runs a standalone checker fixture with legal traffic and expected-failure
+mutations for malformed SEQ and unstable write data:
+
+```bash
+source ./setup.sh
+python3 tests/multicore/check_downstream_checker.py --work-dir /tmp/cvw-downstream-checker
+```
+
+The [downstream extraction record](../../docs/engineering/experiments/2026-10-22-multicore-downstream-fixture.md)
+compares RV32/RV64 MSI and banked logs, including fault, reset, transfer,
+writeback, burst and overlap results, with the pre-extraction CI artifacts.

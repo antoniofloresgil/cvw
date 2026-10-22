@@ -163,7 +163,9 @@ and 92 unit output/counter lines match; all 407 final source hashes match.
 A one-hart atomic run also passes with unused private capacities zero.
 No new Linux boot or FPGA result is claimed. See proposed [ADR 0021](decisions/0021-multicore-test-observation.md)
 and the [execution record](experiments/2026-10-22-multicore-test-observation.md).
-Recommendations 10 and 12 remain proposed follow-up work.
+At that checkpoint recommendations 10 and 12 were pending; recommendation 10
+has since been implemented below and recommendation 12 is implemented in this
+update.
 
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.
@@ -176,4 +178,12 @@ and aggregate four-profile CI passed. An isolated
 local-writes case also corrected a stale expected value in the controller
 scoreboard; RTL is unchanged. See the
 [option-interaction experiment](experiments/2026-10-22-multicore-option-interactions.md).
-Recommendation 12 remains proposed. No merge into main has been performed.
+Recommendation 12 is implemented: MSI and banked-MSI benches now share the
+pipelined downstream memory/fault fixture, passive AHB protocol checker and
+bounded master access tasks. The standalone checker fixture accepts legal
+traffic and requires malformed-SEQ and unstable-write-data mutations to fail.
+The 8 MSI and 12 banked-MSI pre/post functional logs match exactly after
+excluding source line numbers and simulator wall-time fields; both profiles
+pass at RV32/RV64 with their configured latencies. See the
+[downstream fixture record](experiments/2026-10-22-multicore-downstream-fixture.md).
+No merge into main has been performed.

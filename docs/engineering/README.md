@@ -53,6 +53,7 @@ source audits retain their original revision labels.
 | Shared translated atomic-operation symbols | [Proposed ADR 0020](decisions/0020-corebus-atomic-symbols.md), [interface](interfaces/core-bus.md), [execution record](experiments/2026-10-22-corebus-atomic-symbols.md) |
 | Passive multicore test observation | [Proposed ADR 0021](decisions/0021-multicore-test-observation.md), [observation contract](interfaces/multicore-observation.md), [execution record](experiments/2026-10-22-multicore-test-observation.md) |
 | Independent multicore option combinations | [Additional recommendation 10](experiments/2026-10-21-multicore-post-refactor-review.md#10-high-verify-option-independence-beyond-named-deployment-profiles), [coverage execution record](experiments/2026-10-22-multicore-option-interactions.md) |
+| Shared downstream AHB test fixture | [Additional recommendation 12](experiments/2026-10-21-multicore-post-refactor-review.md#12-medium-share-downstream-test-infrastructure-across-topologies), [extraction record](experiments/2026-10-22-multicore-downstream-fixture.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 Existing flow documentation and executable sources remain authoritative for

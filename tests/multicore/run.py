@@ -85,6 +85,8 @@ def main():
                     path = root / 'src/ebu' / dependency
                     if path not in sources:
                         sources.append(path)
+        if top in ('msi_tb', 'msifabric_tb'):
+            sources.append(tests / 'ahb_downstream_checker.sv')
         if top in ('msi_tb', 'msifabric_tb', 'soc_tb'):
             sources = [tests / 'observation_pkg.sv', tests / 'cache_observer.sv',
                        tests / 'bridge_observer.sv', tests / 'word_observer.sv', *sources]

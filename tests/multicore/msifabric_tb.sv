@@ -58,111 +58,15 @@ module msifabric_tb import cvw::*; import multicore_observation::*; #(
         if ($countones(Active) > peak_active) peak_active <= $countones(Active);
     end
     logic [31:0] rng = 32'h10c0ffee;
-    assign downready = !pending || (delayq == 0 && (!errorq || error_first));
-    assign downresp = pending && delayq == 0 && errorq;
-    assign downrdata = mem[addrq[OFFSET +: 12]];
-    always @(posedge HCLK) begin
-        if (!HRESETn) begin
-            pending <= 0; error_first <= 0; delayq <= 0;
-        end else begin
-            if (pending && delayq != 0) delayq <= delayq-1;
-            if (pending && delayq == 0 && errorq && !error_first) error_first <= 1;
-            if (downready) begin
-                if (pending && writeq && !errorq) begin
-                    if (addrq != P.PA_BITS'('h10000001))
-                        assert (&downstrb) else $fatal(1, "Incomplete dirty writeback data phase");
-                    for (int b = 0; b < P.XLEN/8; b++)
-                        if (downstrb[b]) mem[addrq[OFFSET +: 12]][8*b +: 8] <= downwdata[8*b +: 8];
-                end
-                pending <= downtrans[1];
-                if (downtrans[1]) begin
-                    addrq <= downaddr; writeq <= downwrite;
-                    errorq <= downaddr == fault_addr && (downwrite ? fault_write : fault_read);
-                    error_first <= 0; delayq <= LATENCY;
-                    transfers <= transfers+1;
-                    if (downwrite) writebacks <= writebacks+1;
-                    if (downaddr == P.PA_BITS'('h10000001)) begin
-                        mmio <= mmio+1;
-                        assert (downsize == 0 && downburst == 0 && downtrans == 2)
-                            else $fatal(1, "MMIO burst or access size changed");
-                    end else
-                        assert (downsize == 3'(OFFSET) && downaddr[OFFSET-1:0] == 0)
-                            else $fatal(1, "Fill/writeback must use aligned words");
-                end
-            end
-        end
-    end
-    // Check real sequential transfers, control/data stability and boundaries.
-    int sequential = 0;
-    logic waiting = 0, write_wait = 0;
-    logic [P.PA_BITS-1:0] held_addr, previous_addr;
-    logic [P.AHBW-1:0] held_data;
-    logic [P.XLEN/8-1:0] held_strb;
-    logic [2:0] previous_burst;
-    logic [1:0] held_trans;
-    logic previous_valid = 0;
-    always @(posedge HCLK) begin
-        if (!HRESETn) begin
-            waiting <= 0; write_wait <= 0; previous_valid <= 0;
-        end else begin
-            if (waiting && !downresp)
-                assert (downaddr == held_addr && downtrans == held_trans)
-                    else $fatal(1, "Address changed during AHB wait");
-            if (write_wait)
-                assert (downwdata == held_data && downstrb == held_strb)
-                    else $fatal(1, "Write data changed during AHB wait");
-            waiting <= !downready && !downresp;
-            write_wait <= pending && writeq && !downready;
-            held_addr <= downaddr; held_trans <= downtrans;
-            held_data <= downwdata; held_strb <= downstrb;
-            if (downready && downtrans[1]) begin
-                if (downtrans == 3) begin
-                    sequential <= sequential+1;
-                    assert (previous_valid && downburst != 0 && downburst == previous_burst &&
-                        downaddr == previous_addr+(P.PA_BITS'(1) << OFFSET) &&
-                        downaddr[P.PA_BITS-1:10] == previous_addr[P.PA_BITS-1:10])
-                        else $fatal(1, "Malformed or cross-1KiB sequential beat");
-                end
-                previous_valid <= 1;
-                previous_addr <= downaddr; previous_burst <= downburst;
-            end
-            if (downready && downresp) previous_valid <= 0;
-        end
-    end
-    task automatic access(input int hart, input bit wr, input logic [P.PA_BITS-1:0] address,
-        input logic [P.XLEN-1:0] value, input logic [P.XLEN/8-1:0] strobes,
-        input logic [P.XLEN-1:0] expected, input logic [1:0] atomic_op = 0,
-        input bit instruction = 0, input bit error_expected = 0, input bit sc_failed = 0,
-        input logic [2:0] access_size = 3'(OFFSET));
-        @(negedge HCLK);
-        assert (CoreHREADY[hart]) else $fatal(1, "Hart %0d not ready", hart);
-        CoreHADDR[hart] = address;
-        CoreHWRITE[hart] = wr;
-        CoreHSIZE[hart] = access_size;
-        CoreHPROT[hart] = instruction ? 4'b0010 : 4'b0011;
-        CoreHATOMIC[hart] = atomic_op;
-        CoreHTRANS[hart] = 2;
-        @(negedge HCLK);
-        CoreHTRANS[hart] = 0;
-        CoreHWDATA[hart] = value;
-        CoreHWSTRB[hart] = strobes;
-        while (!CoreHREADY[hart]) @(negedge HCLK);
-        assert (CoreHRESP[hart] == error_expected) else $fatal(1, "Unexpected error response");
-        if (!wr && !error_expected)
-            assert (CoreHRDATA[hart] == expected)
-                else $fatal(1, "Hart %0d read %h: got %h expected %h", hart, address, CoreHRDATA[hart], expected);
-        if (atomic_op == 2)
-            assert (CoreSCFail[hart] == sc_failed) else $fatal(1, "Unexpected SC verdict");
-        @(negedge HCLK);
-    endtask
-    task automatic load(input int h, input int word_index, input logic [P.XLEN-1:0] expected,
-        input logic [1:0] op = 0, input bit instruction = 0);
-        access(h, 0, BASE + (P.PA_BITS'(word_index) << OFFSET), 0, '0, expected, op, instruction);
-    endtask
-    task automatic store(input int h, input int word_index, input logic [P.XLEN-1:0] value,
-        input logic [1:0] op = 0, input bit sc_failed = 0);
-        access(h, 1, BASE + (P.PA_BITS'(word_index) << OFFSET), value, '1, 0, op, 0, 0, sc_failed);
-    endtask
+    `include "ahb_downstream_memory.svh"
+    int unsigned sequential;
+    ahb_downstream_checker #(.ADDR_WIDTH(P.PA_BITS), .DATA_WIDTH(P.AHBW),
+        .STRB_WIDTH(P.XLEN/8), .BYTE_OFFSET(OFFSET)) downstream_checker(
+        .HCLK, .HRESETn, .HADDR(downaddr), .HWDATA(downwdata), .HWSTRB(downstrb),
+        .HSIZE(downsize), .HBURST(downburst), .HTRANS(downtrans), .HREADY(downready),
+        .HRESP(downresp), .WriteDataWait(pending && writeq && !downready),
+        .SequentialBeats(sequential));
+    `include "ahb_master_tasks.svh"
     int coherence_requests = 0;
     always @(posedge HCLK) if (HRESETn)
         coherence_requests <= coherence_requests+$countones(TestLookup);

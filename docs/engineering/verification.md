@@ -96,6 +96,21 @@ the dedicated matrix. Keep long RTL Linux checks in their existing separate
 procedures. Execution results and current limits are in the
 [matrix record](experiments/2026-10-21-multicore-ci.md).
 
+Recommendation 12 extracts the downstream pipelined AHB RAM/fault model,
+passive protocol checker and common bounded hart access tasks for both private
+cache topologies. The checker fixture is independently exercised by the bus
+case, including malformed SEQ and write-data stability mutations:
+
+```bash
+source ./setup.sh
+python3 tests/multicore/check_downstream_checker.py --work-dir /tmp/cvw-downstream-checker
+```
+
+The MSI and banked-MSI scenarios continue to check waits, every configured
+fault beat, reset, exact transfer/writeback counts and concurrency. The
+[extraction record](experiments/2026-10-22-multicore-downstream-fixture.md)
+compares their pre/post output signatures and records the unqualified scope.
+
 Recommendation 9 adds a passive observation contract suite to the bus case:
 
 ```bash
