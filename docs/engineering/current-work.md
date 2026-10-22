@@ -135,8 +135,10 @@ is pending. See the [focused fix record](experiments/2026-10-22-multicore-action
 
 Recommendation 8 reconciles the completed 8 KiB implementation with
 [ADR 0012](decisions/0012-private-cache-default-capacity.md), now **accepted**
-by explicit user instruction on 2026-10-22. ADRs 0009–0011 and 0014–0019
-remain **proposed** despite implementation and tests; pre-existing accepted
+by explicit user instruction on 2026-10-22. ADR 0010 is also **accepted** by
+subsequent explicit user instruction on that date, for the optional implemented
+AHB cache-line burst path; no new hardware qualification is implied.
+ADRs 0009, 0011 and 0014–0019 remain **proposed** despite implementation and tests; pre-existing accepted
 ADRs retain their scope. Publication and acceptance are separate from runtime
 qualification. See the [reconciliation record](experiments/2026-10-22-multicore-documentation-reconciliation.md).
 

@@ -29,6 +29,18 @@ A PASS, a published commit and an accepted decision describe different facts.
 Historical experiments retain their revision/tool/profile scope. Original
 review findings remain a snapshot, with links to implementation follow-ups.
 
+## Subsequent explicit acceptance of ADR 0010
+
+On 2026-10-22, after confirmation that the optional AHB cache-line burst path
+was implemented and that its historical RTL Linux test passed at 413,832,376
+cycles, the user instructed “pasala a aprobada”. ADR 0010 is therefore now
+**accepted** for that optional implementation on multicore-support. This
+supersedes only ADR 0010's proposed status in the earlier snapshot table above.
+ADRs 0009, 0011 and 0014–0019 remain proposed. FPGA/hardware qualification,
+external-memory throughput and the scope of historical evidence are unchanged.
+No functional simulations were rerun for this status-only follow-up; relative
+links, scoped pre-commit and git diff --check passed.
+
 ## Publication check and reproduction
 
 After `git fetch origin`, local HEAD and origin/multicore-support both resolved

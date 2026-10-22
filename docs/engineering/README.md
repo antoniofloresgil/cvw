@@ -97,7 +97,7 @@ and [their experiment](experiments/2026-10-20-banked-coherence.md) permit
 multiple active transactions in distinct homes; validation is separate from
 the completed one-home Linux cache-to-cache result.
 
-The proposed [pipelined line transfers](decisions/0010-pipelined-cache-line-bursts.md)
+The accepted optional [pipelined line transfers](decisions/0010-pipelined-cache-line-bursts.md)
 and [their experiment](experiments/2026-10-20-cache-line-bursts.md) add optional
 AHB bursts below MSI, with separate protocol/performance/Linux evidence.
 

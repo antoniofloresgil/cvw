@@ -1,7 +1,11 @@
 # ADR 0010: Pipelined AHB transfers for private-cache lines
 
-Status: **proposed**, implemented as an optional simulation path on
-`multicore-support`, base `b72f8852188560c181b8f1bc06e552d497ccf371`.
+Status: **accepted** for the optional implemented AHB cache-line burst path on
+`multicore-support`, explicitly approved by the user on 2026-10-22.
+Implementation base: `b72f8852188560c181b8f1bc06e552d497ccf371`.
+Acceptance records the user's instruction; it is not an automatic consequence
+of passing tests. FPGA timing, external-memory throughput and hardware
+qualification remain outside this acceptance. Other ADR statuses are unchanged.
 Date: 2026-10-20. The user requested bursts to improve cache-line handling.
 See [the experiment](../experiments/2026-10-20-cache-line-bursts.md) for results.
 
