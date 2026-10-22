@@ -50,6 +50,7 @@ source audits retain their original revision labels.
 | Reservation and I/D storage boundaries and RAM timing | [Storage/event interface](interfaces/multicore-storage.md), [proposed ADR 0018](decisions/0018-multicore-engine-boundaries.md), [extraction record](experiments/2026-10-22-multicore-engine-extraction.md) |
 | Experimental multicore capability limits, DMA and error integration | [Capability contract](interfaces/multicore-capabilities.md), [proposed ADR 0019](decisions/0019-multicore-capability-scope.md), [execution record](experiments/2026-10-22-multicore-capability-scope.md) |
 | Private-cache capacity decision and documentation/publication status | [Accepted ADR 0012](decisions/0012-private-cache-default-capacity.md), [capacity experiment](experiments/2026-10-20-private-cache-capacity.md), [reconciliation](experiments/2026-10-22-multicore-documentation-reconciliation.md) |
+| Shared translated atomic-operation symbols | [Proposed ADR 0020](decisions/0020-corebus-atomic-symbols.md), [interface](interfaces/core-bus.md), [execution record](experiments/2026-10-22-corebus-atomic-symbols.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 Existing flow documentation and executable sources remain authoritative for

@@ -142,5 +142,16 @@ ADRs 0009, 0011 and 0014–0019 remain **proposed** despite implementation and t
 ADRs retain their scope. Publication and acceptance are separate from runtime
 qualification. See the [reconciliation record](experiments/2026-10-22-multicore-documentation-reconciliation.md).
 
+Recommendation 11 is implemented on parent `7c2a28642`: translated core/bus
+atomic symbols now have one definition in package cvw, reused by LSU, EBU,
+bridge/fabric arbitration, reservations and the temporal checker. Two-bit wire
+encodings, ports and LSUAtomicM's distinct representation remain unchanged.
+Seven standard lints and all four CI profiles pass, including all six named
+negative endpoint cases. All 75 baseline PASS/cycle/traffic signatures match;
+all 399 final manifest source hashes match the tree. No new Linux boot or FPGA
+qualification was performed. See proposed [ADR 0020](decisions/0020-corebus-atomic-symbols.md)
+and the [execution record](experiments/2026-10-22-corebus-atomic-symbols.md).
+Recommendations 9, 10 and 12 remain proposed follow-up work.
+
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.

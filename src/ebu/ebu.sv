@@ -120,7 +120,7 @@ module ebu import cvw::*; #(parameter cvw_t P) (
   assign HTRANS = LSUSelect ? LSUHTRANSOut : IFUSelect ? IFUHTRANSOut : '0; // SEQ if not first read or write, NONSEQ if first read or write, IDLE otherwise
   assign HWRITE = LSUSelect ? LSUHWRITEOut : '0;
   assign HPROT = {3'b001, LSUSelect}; // treat as privileged access of either Opcode fetch or Data access
-  assign HATOMIC = LSUSelect ? LSUAtomicOp : 2'b00;
+  assign HATOMIC = LSUSelect ? LSUAtomicOp : COREBUS_NORMAL;
   assign HMASTLOCK = 1'b0; // multicore AMO locking is handled downstream
 
   // data phase muxing.  This would be a mux if IFU wrote data.

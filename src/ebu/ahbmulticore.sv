@@ -59,7 +59,6 @@ module ahbmulticore import cvw::*; #(
   logic [NCORES-1:0][3:0] Prot;
   logic [NCORES-1:0] Write;
   logic [OWNER_BITS-1:0] Owner, NextOwner, First, AddressOwner;
-  localparam logic [1:0] SC = 2'b10, AMO = 2'b11;
   localparam GRANULE_BITS = $clog2(P.XLEN/8);
   logic [NCORES-1:0][1:0] Op;
   logic LockActive;
@@ -99,7 +98,7 @@ module ahbmulticore import cvw::*; #(
     // A local store must not race ANY global access to its line: a read
     // may already have captured modified data for a writeback/intervention.
     assign CacheWriteCommit[h] = HRESETn && LOCAL_DCACHE_WRITES &&
-      State[h] == PENDING && Write[h] && Prot[h][0] && Op[h] == 0 &&
+      State[h] == PENDING && Write[h] && Prot[h][0] && Op[h] == COREBUS_NORMAL &&
       CacheWriteHit[h] && !LockActive &&
       !((DataPhase || IFillActive) && (Owner == OWNER_BITS'(h) ||
         Addr[h][P.PA_BITS-1:CONFLICT_BITS] == Addr[Owner][P.PA_BITS-1:CONFLICT_BITS]));
@@ -127,7 +126,7 @@ module ahbmulticore import cvw::*; #(
   always_comb begin
     for (int h = 0; h < NCORES; h++) begin
       LocalData[h] = Prot[h][0] ? CacheReadData[h] : ICacheData[h];
-      LocalReply[h] = State[h] == PENDING && !Write[h] && Op[h] == 0 &&
+      LocalReply[h] = State[h] == PENDING && !Write[h] && Op[h] == COREBUS_NORMAL &&
         !LocalBlocked[h] && !LocalStoreConflict[h] &&
         (Prot[h][0] ? (LOCAL_DCACHE_READS && !LockActive && CacheReadHit[h]) : ICacheHit[h]);
     end
@@ -162,8 +161,8 @@ module ahbmulticore import cvw::*; #(
     .Complete(DataPhase && HREADY), .CompleteOwner(Owner), .CompleteAddr(Addr[Owner]),
     .CompleteSize(Size[Owner]), .CompleteOp(Op[Owner]), .CompleteWrite(Write[Owner]), .CompleteError(HRESP),
     .ReservationClear, .LocalStoreCommit(CacheWriteCommit), .LocalStoreAddr(Addr), .SCFail(CoreSCFail));
-  assign FailedSC = Op[NextOwner] == SC && !SCValid;
-  assign BadAMOWrite = Op[NextOwner] == AMO && Write[NextOwner] && !LockActive;
+  assign FailedSC = Op[NextOwner] == COREBUS_SC && !SCValid;
+  assign BadAMOWrite = Op[NextOwner] == COREBUS_AMO && Write[NextOwner] && !LockActive;
   assign AddressOwner = DataPhase ? Owner : NextOwner;
   assign HOWNER = AddressOwner;
 
@@ -178,7 +177,7 @@ module ahbmulticore import cvw::*; #(
     HPROT = Prot[AddressOwner];
     HTRANS = !DataPhase && Found && !FailedSC && !BadAMOWrite && HRESETn ? 2'b10 : 2'b00;
     HBURST = 3'b000;
-    HMASTLOCK = LockActive || (!DataPhase && Found && Op[NextOwner] == AMO);
+    HMASTLOCK = LockActive || (!DataPhase && Found && Op[NextOwner] == COREBUS_AMO);
     // Write data belongs to the DATA owner, never the next address owner.
     HWDATA = CoreHWDATA[Owner];
     HWSTRB = CoreHWSTRB[Owner];
@@ -216,10 +215,10 @@ module ahbmulticore import cvw::*; #(
         if (FailedSC || BadAMOWrite)
           assert (HTRANS == 0 && !CacheWriteCommit[NextOwner])
             else $fatal(1, "corebus contract: rejected atomic reached memory");
-        if (Op[NextOwner] == AMO && !Write[NextOwner]) begin
+        if (Op[NextOwner] == COREBUS_AMO && !Write[NextOwner]) begin
           LockedAddr <= Addr[NextOwner]; LockedSize <= Size[NextOwner];
         end
-        if (Op[NextOwner] == AMO && Write[NextOwner] && LockActive)
+        if (Op[NextOwner] == COREBUS_AMO && Write[NextOwner] && LockActive)
           assert (Addr[NextOwner] == LockedAddr && Size[NextOwner] == LockedSize)
             else $fatal(1, "corebus contract: AMO write does not match locked read");
       end
@@ -285,12 +284,12 @@ module ahbmulticore import cvw::*; #(
             IBeat <= '0;
           end
           DataPhase <= 1'b1;
-          if (Op[NextOwner] == AMO && !Write[NextOwner]) begin
+          if (Op[NextOwner] == COREBUS_AMO && !Write[NextOwner]) begin
             assert (!LockActive) else $fatal(1, "Nested AMO read");
             LockActive <= 1'b1;
             LockOwner <= NextOwner;
           end
-          if (Op[NextOwner] == AMO && Write[NextOwner])
+          if (Op[NextOwner] == COREBUS_AMO && Write[NextOwner])
             assert (LockActive && LockOwner == NextOwner)
               else $fatal(1, "AMO write without its locked read");
         end
@@ -310,7 +309,7 @@ module ahbmulticore import cvw::*; #(
           IBeat <= '0;
           First <= int'(Owner) == NCORES-1 ? '0 : Owner + 1'b1;
         end
-        if (Op[Owner] == AMO && (Write[Owner] || HRESP)) LockActive <= 1'b0;
+        if (Op[Owner] == COREBUS_AMO && (Write[Owner] || HRESP)) LockActive <= 1'b0;
       end
     end
   end

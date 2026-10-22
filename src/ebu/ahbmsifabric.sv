@@ -78,7 +78,7 @@ module ahbmsifabric import cvw::*; #(
     end else for (int h = 0; h < NCORES; h++) begin
       assert (!AtomicLock || State[h] != WAIT_REPLY || HB'(h) == AtomicOwner)
         else $fatal(1, "corebus contract: peer transaction active during fabric AMO");
-      if (Dispatch[h] && BReady[Home[h]][h] && Op[h] == 3) begin
+      if (Dispatch[h] && BReady[Home[h]][h] && Op[h] == COREBUS_AMO) begin
         if (!Write[h]) begin LockedAddr <= Addr[h]; LockedSize <= Size[h]; end
         else if (AtomicLock)
           assert (Addr[h] == LockedAddr && Size[h] == LockedSize)
@@ -103,12 +103,12 @@ module ahbmsifabric import cvw::*; #(
     Candidate = 0;
     for (int h = 0; h < NCORES; h++) begin
       if (State[h] == WAIT_REPLY) AnyActive = 1'b1;
-      if (State[h] == ISSUE && Op[h] == 3 && !Write[h]) AtomicPending = 1'b1;
+      if (State[h] == ISSUE && Op[h] == COREBUS_AMO && !Write[h]) AtomicPending = 1'b1;
     end
     for (int offset = 0; offset < NCORES; offset++) begin
       Candidate = int'(AtomicFirst) + offset;
       if (Candidate >= NCORES) Candidate -= NCORES;
-      if (!AtomicFound && State[Candidate] == ISSUE && Op[Candidate] == 3 && !Write[Candidate]) begin
+      if (!AtomicFound && State[Candidate] == ISSUE && Op[Candidate] == COREBUS_AMO && !Write[Candidate]) begin
         AtomicCandidate = HB'(Candidate);
         AtomicFound = 1'b1;
       end
@@ -122,7 +122,7 @@ module ahbmsifabric import cvw::*; #(
         (AtomicLock ? HB'(h) == AtomicOwner :
          (!AtomicPending || (!AnyActive && HB'(h) == AtomicCandidate)));
       if (Dispatch[h]) BTrans[Home[h]][h] = 2'b10;
-      if (State[h] == WAIT_REPLY && BReady[Home[h]][h] && (Op[h] == 1 || Op[h] == 2))
+      if (State[h] == WAIT_REPLY && BReady[Home[h]][h] && (Op[h] == COREBUS_LR || Op[h] == COREBUS_SC))
         for (int b = 0; b < BANKS; b++)
           if (BB'(b) != Home[h]) Clear[b][h] = 1'b1;
     end
@@ -151,16 +151,16 @@ module ahbmsifabric import cvw::*; #(
         end
         if (Dispatch[h] && BReady[Home[h]][h]) begin
           State[h] <= WAIT_REPLY;
-          if (Op[h] == 3 && !Write[h]) begin
+          if (Op[h] == COREBUS_AMO && !Write[h]) begin
             assert (!AtomicLock && !AnyActive) else $fatal(1, "AMO admitted before fabric drained");
             AtomicLock <= 1'b1; AtomicOwner <= HB'(h);
           end
         end
         if (State[h] == WAIT_REPLY && BReady[Home[h]][h]) begin
           CoreHRDATA[h] <= BData[Home[h]][h]; CoreHRESP[h] <= BResp[Home[h]][h];
-          if (Op[h] == 2) CoreSCFail[h] <= BSCFail[Home[h]][h];
+          if (Op[h] == COREBUS_SC) CoreSCFail[h] <= BSCFail[Home[h]][h];
           State[h] <= BResp[Home[h]][h] ? ERROR_REPLY : REPLY;
-          if (Op[h] == 3 && (Write[h] || BResp[Home[h]][h]) && AtomicLock && AtomicOwner == HB'(h)) begin
+          if (Op[h] == COREBUS_AMO && (Write[h] || BResp[Home[h]][h]) && AtomicLock && AtomicOwner == HB'(h)) begin
             AtomicLock <= 1'b0;
             AtomicFirst <= h == NCORES-1 ? '0 : HB'(h+1);
           end

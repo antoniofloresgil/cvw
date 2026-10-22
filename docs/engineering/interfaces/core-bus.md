@@ -59,12 +59,19 @@ four-state simulator. This does not make failed-read data architecturally valid.
 
 ## Atomic sideband and exclusion
 
-| HATOMIC | Meaning at accepted address |
-| --- | --- |
-| 00 | Ordinary load/store or IFU access |
-| 01 | LR read |
-| 10 | SC write |
-| 11 | AMO read or its paired AMO write, distinguished by HWRITE |
+| HATOMIC | Shared symbol in package cvw | Meaning at accepted address |
+| --- | --- | --- |
+| 00 | COREBUS_NORMAL | Ordinary load/store or IFU access |
+| 01 | COREBUS_LR | LR read |
+| 10 | COREBUS_SC | SC write |
+| 11 | COREBUS_AMO | AMO read or its paired AMO write, distinguished by HWRITE |
+
+The executable encoding owner is [src/cvw.sv](../../../src/cvw.sv).
+These narrowly scoped two-bit constants are used by LSU translation, EBU
+selection, bridge/fabric arbitration, reservations and the port checker.
+They do not redefine LSUAtomicM: its bit 1 identifies AMO and bit 0 identifies
+LR/SC, with read/write direction deciding which. Ports remain logic [1:0];
+no cache-state encoding is part of this shared vocabulary.
 
 LR must be a read; SC must be a write. EBU drives zero atomic metadata when
 selecting IFU, even if LSU is stalled on an AMO. In supported profiles the LSU

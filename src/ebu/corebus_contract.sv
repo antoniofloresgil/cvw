@@ -18,7 +18,7 @@ module corebus_contract import cvw::*; #(parameter cvw_t P, parameter int NCORES
     always_ff @(posedge HCLK) begin
       if (!HRESETn) begin
         Outstanding <= 0; Write <= 0; DataSeen <= 0; ErrorWait <= 0;
-        PreviousSCFail <= 0; Op <= 0; Data <= '0; Strb <= '0; ErrorData <= '0;
+        PreviousSCFail <= 0; Op <= COREBUS_NORMAL; Data <= '0; Strb <= '0; ErrorData <= '0;
       end else begin
         assert (!CoreHRESP[h] || Outstanding)
           else $fatal(1, "corebus contract: response without outstanding request, hart %0d", h);
@@ -32,7 +32,7 @@ module corebus_contract import cvw::*; #(parameter cvw_t P, parameter int NCORES
         ErrorData <= CoreHRDATA[h];
         // The SC result can become visible in the first ERROR phase. Only the
         // completing SC may replace it; an intervening IFU/ordinary reply cannot.
-        if (!(Outstanding && Op == 2'b10 && (CoreHREADY[h] || CoreHRESP[h])))
+        if (!(Outstanding && Op == COREBUS_SC && (CoreHREADY[h] || CoreHRESP[h])))
           assert (CoreSCFail[h] == PreviousSCFail)
             else $fatal(1, "corebus contract: SC result changed outside SC completion, hart %0d", h);
         PreviousSCFail <= CoreSCFail[h];
@@ -56,8 +56,8 @@ module corebus_contract import cvw::*; #(parameter cvw_t P, parameter int NCORES
             Write <= CoreHWRITE[h]; Op <= CoreHATOMIC[h];
             assert (CoreHTRANS[h] == 2'b10 && CoreHBURST[h] == 0 && !CoreHMASTLOCK[h])
               else $fatal(1, "corebus contract: unsupported address phase, hart %0d", h);
-            assert ((CoreHATOMIC[h] != 2'b01 || !CoreHWRITE[h]) &&
-                    (CoreHATOMIC[h] != 2'b10 || CoreHWRITE[h]))
+            assert ((CoreHATOMIC[h] != COREBUS_LR || !CoreHWRITE[h]) &&
+                    (CoreHATOMIC[h] != COREBUS_SC || CoreHWRITE[h]))
               else $fatal(1, "corebus contract: LR/SC direction mismatch, hart %0d", h);
           end
         end

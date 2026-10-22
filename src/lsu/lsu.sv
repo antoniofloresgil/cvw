@@ -431,9 +431,9 @@ module lsu import cvw::*;  #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0
   // Atomic operations
   /////////////////////////////////////////////////////////////////////////////////////////////
 
-  assign LSUAtomicOp = !SHARED_ATOMICS ? 2'b00 :
-                       LSUAtomicM[1] ? 2'b11 :
-                       LSUAtomicM[0] ? (PreLSURWM[0] ? 2'b10 : 2'b01) : 2'b00;
+  assign LSUAtomicOp = !SHARED_ATOMICS ? COREBUS_NORMAL :
+                       LSUAtomicM[1] ? COREBUS_AMO :
+                       LSUAtomicM[0] ? (PreLSURWM[0] ? COREBUS_SC : COREBUS_LR) : COREBUS_NORMAL;
 
   if (P.ZAAMO_SUPPORTED | P.ZALRSC_SUPPORTED) begin : atomic
     atomic #(.P(P), .SHARED_ATOMICS(SHARED_ATOMICS)) atomic(.clk, .reset, .StallW, .SCFail, .ReadDataM(ReadDataM[P.XLEN-1:0]), .IHWriteDataM, .PAdrM,

@@ -34,6 +34,13 @@
 
 package cvw;
 
+  // Translated buffered core/bus atomic sideband, distinct from LSUAtomicM.
+  // Keep two-bit logic ports and the existing wire encoding at all boundaries.
+  localparam logic [1:0] COREBUS_NORMAL = 2'b00,
+                         COREBUS_LR     = 2'b01,
+                         COREBUS_SC     = 2'b10,
+                         COREBUS_AMO    = 2'b11;
+
   `include "BranchPredictorType.vh"
 
 typedef struct packed {

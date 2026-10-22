@@ -25,7 +25,6 @@ module multicore_reservations import cvw::*; #(
 );
   localparam OWNER_BITS = NCORES > 1 ? $clog2(NCORES) : 1;
   localparam GRANULE_BITS = $clog2(P.XLEN/8);
-  localparam logic [1:0] LR = 2'b01, SC = 2'b10;
   logic [NCORES-1:0] Valid;
   logic [NCORES-1:0][P.PA_BITS-1:0] Addr;
   logic [NCORES-1:0][2:0] Size;
@@ -41,13 +40,13 @@ module multicore_reservations import cvw::*; #(
       SCFail <= '0;
     end else begin
       if (Issue) begin
-        if (IssueOp == LR || IssueOp == SC) Valid[QueryOwner] <= 1'b0;
-        if (IssueOp == SC && !SCValid) SCFail[QueryOwner] <= 1'b1;
+        if (IssueOp == COREBUS_LR || IssueOp == COREBUS_SC) Valid[QueryOwner] <= 1'b0;
+        if (IssueOp == COREBUS_SC && !SCValid) SCFail[QueryOwner] <= 1'b1;
       end
       if (Complete) begin
         // Retain the SC result across unrelated replies and pipeline stalls.
-        if (CompleteOp == SC) SCFail[CompleteOwner] <= CompleteError;
-        if (CompleteOp == LR && !CompleteError) begin
+        if (CompleteOp == COREBUS_SC) SCFail[CompleteOwner] <= CompleteError;
+        if (CompleteOp == COREBUS_LR && !CompleteError) begin
           Valid[CompleteOwner] <= 1'b1;
           Addr[CompleteOwner] <= CompleteAddr;
           Size[CompleteOwner] <= CompleteSize;
@@ -65,7 +64,7 @@ module multicore_reservations import cvw::*; #(
       for (int writer = 0; writer < NCORES; writer++)
         if (LocalStoreCommit[writer]) begin
           for (int h = 0; h < NCORES; h++)
-            if ((Complete && !CompleteError && CompleteOp == LR && CompleteOwner == OWNER_BITS'(h)) ?
+            if ((Complete && !CompleteError && CompleteOp == COREBUS_LR && CompleteOwner == OWNER_BITS'(h)) ?
                 (CompleteAddr[P.PA_BITS-1:GRANULE_BITS] == LocalStoreAddr[writer][P.PA_BITS-1:GRANULE_BITS]) :
                 (Addr[h][P.PA_BITS-1:GRANULE_BITS] == LocalStoreAddr[writer][P.PA_BITS-1:GRANULE_BITS]))
               Valid[h] <= 1'b0;
