@@ -8,6 +8,13 @@ This supplements the [original review](2026-10-21-multicore-maintainability-revi
 its numbering and historical source scope remain intact.
 
 Implementation follow-up: recommendation 9 is recorded in the
+[observation extraction](2026-10-22-multicore-test-observation.md), recommendation 10 in the
+[option-interaction coverage record](2026-10-22-multicore-option-interactions.md),
+and recommendation 11 in the [shared atomic-symbol record](2026-10-22-corebus-atomic-symbols.md).
+Recommendation 12 remains proposed. These later implementations do not change
+the source/revision scope or static-review verdict below.
+
+Implementation follow-up: recommendation 9 is recorded in the
 [observation extraction](2026-10-22-multicore-test-observation.md); recommendation 11 in the
 [shared atomic-symbol execution record](2026-10-22-corebus-atomic-symbols.md).
 The findings below retain their original reviewed-source scope and do not

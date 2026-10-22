@@ -167,3 +167,13 @@ Recommendations 10 and 12 remain proposed follow-up work.
 
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.
+
+Recommendation 10 is implemented in the current `multicore-support` worktree:
+the automated CI adds ten focused RV64 cache/SoC interactions and a JSON report
+that maps supported features and selected risky pairs to case verdicts, with
+unsupported, unverified and uncovered scope explicit. The complementary suite
+and aggregate four-profile CI passed. An isolated
+local-writes case also corrected a stale expected value in the controller
+scoreboard; RTL is unchanged. See the
+[option-interaction experiment](experiments/2026-10-22-multicore-option-interactions.md).
+Recommendation 12 remains proposed. No merge into main has been performed.

@@ -47,6 +47,7 @@ def main():
     parser.add_argument("--work-dir", type=Path, help="Build/log directory; use native Linux storage on case-insensitive hosts")
     parser.add_argument("--skip-deriv", action="store_true", help="Use already generated configurations; for an enclosing regression that builds them once")
     parser.add_argument("--unit-only", action="store_true", help="Run bus/cache/peripheral tests without full-core models")
+    parser.add_argument("--focus", choices=["cache", "soc"], help="Build only the requested feature-interaction target")
     args = parser.parse_args()
     args.cores = args.cores or [1, 2, 3]
     if any(not 1 <= n <= 4 for n in args.cores):
@@ -95,28 +96,31 @@ def main():
         run(["verilator", "--binary", "--timing", "--assert", "-j", "2", "--top-module", top, *(["--output-split", "0"] if top in ("msi_tb", "msifabric_tb") else []), *parameters, "--Mdir", build, f"-I{root / 'config/shared'}", f"-I{tests}", f"-I{root / 'config' / config}", root / "src/cvw.sv", *sources], work / f"{name}.log")
         return build / f"V{top}"
 
-    for config in ("rv64gc", "rv32gc"):
-        executable = build_test("peripherals_tb", config, [tests / "peripherals_tb.sv", root / "src/uncore/clint_multicore_apb.sv", root / "src/uncore/plic_multicore_apb.sv", root / "src/generic/flop/flopr.sv"], f"peripherals-{config}")
+    if args.focus != "cache":
+        for config in ("rv64gc", "rv32gc"):
+            executable = build_test("peripherals_tb", config, [tests / "peripherals_tb.sv", root / "src/uncore/clint_multicore_apb.sv", root / "src/uncore/plic_multicore_apb.sv", root / "src/generic/flop/flopr.sv"], f"peripherals-{config}")
+            run([executable])
+        executable = build_test("bus_tb", "rv64gc", [tests / "bus_tb.sv", root / "src/ebu/ahbmulticore.sv"], "bus")
         run([executable])
-    executable = build_test("bus_tb", "rv64gc", [tests / "bus_tb.sv", root / "src/ebu/ahbmulticore.sv"], "bus")
-    run([executable])
-    executable = build_test("atomic_bus_tb", "rv64gc", [tests / "atomic_bus_tb.sv", root / "src/ebu/ahbmulticore.sv"], "atomic-bus")
-    run([executable])
-    if args.shared_cache:
+        executable = build_test("atomic_bus_tb", "rv64gc", [tests / "atomic_bus_tb.sv", root / "src/ebu/ahbmulticore.sv"], "atomic-bus")
+        run([executable])
+    if args.shared_cache and args.focus != "soc":
         executable = build_test("cache_tb", "rv64gc", [tests / "cache_tb.sv", root / "src/ebu/ahbsharedcache.sv"], "cache")
         run([executable])
-    if args.cache_bursts:
-        for config in ("rv64gc", "rv32gc"):
+    if args.cache_bursts and args.focus != "soc":
+        for config in (("rv64gc",) if args.focus == "cache" else ("rv64gc", "rv32gc")):
             for latency in args.latency:
                 name = f"lineburst-{config}-{latency}"
                 executable = build_test("lineburst_tb", config,
                     [tests / "lineburst_tb.sv", root / "src/ebu/ahblineburst.sv"], name,
                     [f"-GLATENCY={latency}"])
                 run([executable], work / f"{name}-run.log")
-    if args.private_dcache:
-        for config in ("rv64gc", "rv32gc"):
-            for cores in (2, 3):
-                for latency in args.latency:
+    if args.private_dcache and args.focus != "soc":
+        configs = ("rv64gc",) if args.focus == "cache" else ("rv64gc", "rv32gc")
+        hart_counts = (args.cores[0],) if args.focus == "cache" else (2, 3)
+        for config in configs:
+            for cores in hart_counts:
+                for latency in ((args.latency[0],) if args.focus == "cache" else args.latency):
                     name = f"mesi{int(args.mesi)}-burst{int(args.cache_bursts)}-b{args.coherence_banks}-c2c{int(args.cache_to_cache)}-msi-{config}-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}"
                     top = "msifabric_tb" if args.coherence_banks > 1 else "msi_tb"
                     executable = build_test(top, config,
@@ -127,7 +131,7 @@ def main():
                                f"-GLOCAL_DCACHE_READS=1'b{int(args.local_dcache_reads)}",
                                f"-GLOCAL_DCACHE_WRITES=1'b{int(args.local_dcache_writes)}"])
                     run([executable], work / f"{name}-run.log")
-    if args.unit_only:
+    if args.unit_only or args.focus == "cache":
         return
     config = "multicore_atomic" if args.suite == "atomic" else "multicore"
     if args.shared_cache:

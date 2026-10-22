@@ -513,3 +513,31 @@ for actual verification scope and performance.
 The `--suite exclusive` program reads then writes 32 clean private lines per
 hart and checks values. It isolates the first-write permission cost; matched
 MSI/MESI results and exact configuration are in the experiment above.
+
+### Complementary option-interaction coverage
+
+Recommendation 10 adds a bounded complementary matrix rather than multiplying
+the four deployment/stress profiles. The aggregate `ci.py --case all` runs
+`check_feature_interactions.py` after the regular profiles and stores
+`feature-coverage.json` with each command, option set, log, semantic/traffic
+observations, verdict, and explicit unsupported, unverified and uncovered
+entries. Focused runner modes avoid rebuilding unrelated bus/peripheral units
+for each cache combination.
+
+To run this matrix alone after setup and derivative generation:
+
+```bash
+source ./setup.sh
+perl bin/derivgen.pl
+python3 tests/multicore/check_feature_interactions.py --work-dir /tmp/cvw-feature-interactions
+```
+
+It separates local reads from local writes, tests MESI with one home and
+forwarding, banked MSI without bursts, single-home MSI bursts, one-word lines,
+both I/D capacity and line-size orderings, shared-cache unit and one/two-hart
+SoC paths, and private options under the single-hart bypass. It is a targeted
+RV64 complement; regular profiles retain RV32 and broader latency/core-count
+coverage. The JSON marks the full Cartesian product and unselected option pairs
+as uncovered. External DMA coherence and precise CPU HRESP delivery remain
+unsupported; FPGA multicore and arbitrary hart-count qualification remain
+unverified.

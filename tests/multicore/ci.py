@@ -43,7 +43,7 @@ def lint(root, work, config, params, cores):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=["all", *CASES], default="all")
+    parser.add_argument("--case", choices=["all", *CASES, "feature-interactions"], default="all")
     parser.add_argument("--work-dir", type=Path)
     parser.add_argument("--skip-deriv", action="store_true", help="Enclosing regression has already generated configs")
     args = parser.parse_args()
@@ -52,7 +52,7 @@ def main():
     root = Path(os.environ["WALLY"]).resolve()
     work = args.work_dir.resolve() if args.work_dir else root / "sim/verilator/wkdir/multicore-ci"
     work.mkdir(parents=True, exist_ok=True)
-    selected = list(CASES) if args.case == "all" else [args.case]
+    selected = list(CASES) if args.case == "all" else ([] if args.case == "feature-interactions" else [args.case])
     summary = work / f"results-{args.case}.json"
     # Invalidate all selected case summaries before any build, including deriv generation.
     summary.unlink(missing_ok=True)
@@ -124,6 +124,16 @@ def main():
             (casework / "results.json").write_text(json.dumps(result, indent=2) + "\n")
             manifest["results"].append(result)
             print(f"PASS: multicore CI case {name} ({result['elapsed_seconds']} s)", flush=True)
+        if args.case in ("all", "feature-interactions"):
+            feature_work = work / "feature-interactions"
+            feature_work.mkdir(parents=True, exist_ok=True)
+            execute([sys.executable, str(root / "tests/multicore/check_feature_interactions.py"),
+                     "--work-dir", str(feature_work)], feature_work / "run.log")
+            feature_report = json.loads((feature_work / "feature-coverage.json").read_text())
+            manifest["feature_interactions"] = {"verdict": feature_report["verdict"],
+                                                "report": str(feature_work / "feature-coverage.json"),
+                                                "coverage": feature_report["coverage"],
+                                                "limits": feature_report["limits"]}
     except (subprocess.CalledProcessError, OSError, SystemExit, ValueError) as error:
         manifest["verdict"] = "FAIL"
         manifest["error"] = str(error)

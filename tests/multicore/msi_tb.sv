@@ -303,6 +303,7 @@ module msi_tb import cvw::*; import multicore_observation::*; #(
             'haa00, (P.XLEN/8)'('h02), 0, 0, 0, 0, 0, 0);
         load(0, 128, 'haa33);
         load(1, 128, 'haa33); // Peer intervention sees newest local bytes.
+        reference[128] = 'haa33;
         // A stale reservation address must not clear a newly completed LR
         // to a DIFFERENT word when an M commit occurs on the same edge.
         load(1, 96, reference[96], 1);
