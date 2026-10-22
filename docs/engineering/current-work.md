@@ -1,11 +1,18 @@
 # Current work
 
-Branch: `multicore-support`. Integrated main `4ce065926` (official upstream
+Branch: `multicore-support`. Publication snapshot checked 2026-10-22 after
+`git fetch origin`: local HEAD and `origin/multicore-support` both equal
+`853418123f91806a8b65a59060288728607f920d` before this documentation update.
+The historical integration commit `0533e764d` is already published on that
+feature branch. This is not a merge of the feature into main: local/remote
+main are at `a6f312a2d`, which is not an ancestor of the feature HEAD.
+
+Historically integrated main `4ce065926` (official upstream
 `89479dd09`) into feature parent `f9f7a83be`. Configurable hart/interrupt/
 atomic interfaces and optional MSI/MESI private caches are preserved; private
 I/D defaults remain 8 KiB and single-core coherence bypass remains.
 
-Combined-source validation passed: controller/peripheral checks, 41 full-core
+At that historical integration, combined-source validation passed: controller/peripheral checks, 41 full-core
 runs, RV32/RV64 directed tests, configuration/FPGA lint and scoped pre-commit.
 Fresh native Linux SMP passed after 347,795,562 cycles with both CPUs online
 and atomic/protected counters 128/128. See the
@@ -125,6 +132,13 @@ because uv was absent during ordinary-testbench ELF conversion. The workflow
 now installs uv and exports its Python tool environment. Fresh conversion and
 both AMO/walker modes pass locally with an isolated PATH; remote confirmation
 is pending. See the [focused fix record](experiments/2026-10-22-multicore-actions-uv-fix.md).
+
+Recommendation 8 reconciles the completed 8 KiB implementation with
+[ADR 0012](decisions/0012-private-cache-default-capacity.md), now **accepted**
+by explicit user instruction on 2026-10-22. ADRs 0009–0011 and 0014–0019
+remain **proposed** despite implementation and tests; pre-existing accepted
+ADRs retain their scope. Publication and acceptance are separate from runtime
+qualification. See the [reconciliation record](experiments/2026-10-22-multicore-documentation-reconciliation.md).
 
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.

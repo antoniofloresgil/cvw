@@ -2,7 +2,9 @@
 
 Start with [AGENTS.md](../../AGENTS.md), then this index and
 [current-work.md](current-work.md). Read the remaining documents only when
-relevant to the task. Snapshot: 2026-10-20; this checkout is `multicore-support`. Integration
+relevant to the task. Documentation/status reconciliation: 2026-10-22; this checkout is
+`multicore-support`. Publication and current main divergence are recorded in
+[current work](current-work.md). Historical integration
 of `main:4ce065926` (including official upstream `89479dd09`) into
 `f9f7a83be` passed focused and native Linux validation; see the
 [current integration record](experiments/2026-10-20-multicore-upstream-integration.md).
@@ -47,6 +49,7 @@ source audits retain their original revision labels.
 | Buffered CPU/bus timing, atomic sideband and abort contract | [Interface](interfaces/core-bus.md), [proposed ADR 0016](decisions/0016-core-bus-temporal-contract.md), [boundary checks](experiments/2026-10-21-core-bus-contract.md) |
 | Reservation and I/D storage boundaries and RAM timing | [Storage/event interface](interfaces/multicore-storage.md), [proposed ADR 0018](decisions/0018-multicore-engine-boundaries.md), [extraction record](experiments/2026-10-22-multicore-engine-extraction.md) |
 | Experimental multicore capability limits, DMA and error integration | [Capability contract](interfaces/multicore-capabilities.md), [proposed ADR 0019](decisions/0019-multicore-capability-scope.md), [execution record](experiments/2026-10-22-multicore-capability-scope.md) |
+| Private-cache capacity decision and documentation/publication status | [Accepted ADR 0012](decisions/0012-private-cache-default-capacity.md), [capacity experiment](experiments/2026-10-20-private-cache-capacity.md), [reconciliation](experiments/2026-10-22-multicore-documentation-reconciliation.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 Existing flow documentation and executable sources remain authoritative for

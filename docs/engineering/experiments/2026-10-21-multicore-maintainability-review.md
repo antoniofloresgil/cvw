@@ -1,6 +1,6 @@
 # Multicore maintenance and merge-readiness review
 
-Status: **review completed; recommendations proposed, not implemented or accepted**.
+Status at the reviewed revision: **review completed; recommendations proposed, not implemented or accepted**.
 Source: `multicore-support:0533e764dc43e6b6f418fb6189d38211b1c270d1`.
 Baseline: local `main:4ce065926c8096f34c77867c358f044ec1ea777e`, which is
 an ancestor of the reviewed source. This review did not merge branches or
@@ -13,7 +13,8 @@ recommendation 3 in the [automated matrix record](2026-10-21-multicore-ci.md),
 recommendation 4 in the [CPU/bus contract record](2026-10-21-core-bus-contract.md),
 recommendation 5 in the [configuration/policy record](2026-10-21-multicore-configuration-policy.md),
 recommendation 6 in the [engine extraction record](2026-10-22-multicore-engine-extraction.md),
-and recommendation 7 in the [capability-scope record](2026-10-22-multicore-capability-scope.md).
+recommendation 7 in the [capability-scope record](2026-10-22-multicore-capability-scope.md),
+and recommendation 8 in the [documentation reconciliation](2026-10-22-multicore-documentation-reconciliation.md).
 The findings below describe the reviewed revision; follow-up work does not
 retroactively change that review or accept proposed ADRs.
 
