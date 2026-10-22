@@ -60,7 +60,6 @@ module ahbmsicache import cvw::*; #(
   // One independently tagged/stateful data bank per hart, not a shared cache.
   msi_t [NCORES-1:0][N_LINES-1:0] States;
   logic [TAG-1:0] Tags[NCORES][N_LINES];
-  logic [P.AHBW-1:0] Lines[NCORES][WORDS];
   state_t State;
   transfer_t Transfer;
   logic [HART_BITS-1:0] Owner, Snooper, FlushOwner, Supplier;
@@ -72,15 +71,35 @@ module ahbmsicache import cvw::*; #(
   logic [P.AHBW-1:0] FillLine[LINE_WORDS];
   logic [BEAT_BITS-1:0] Beat;
   logic [WORD_INDEX-1:0] WordIndex;
-  // Flat data storage keeps total capacity independent of line size.
-  function automatic int data_index(input logic [INDEX-1:0] idx, input int beat);
-    return int'(idx) * LINE_WORDS + beat;
-  endfunction
   logic [P.XLEN/8-1:0] Strobes;
   logic Write, Filled, Cacheable, DirtyPeer;
   logic [2:0] Size;
   logic [3:0] Prot;
   logic [NCORES-1:0] Hit;
+
+  logic [NCORES-1:0][WORD_INDEX-1:0] LocalWordIndex;
+  logic [NCORES-1:0][P.AHBW-1:0] LocalReadData;
+  logic [HART_BITS-1:0] WordReadOwner, LineReadOwner;
+  logic [P.AHBW-1:0] WordReadData, LineReadData[LINE_WORDS];
+  assign WordReadOwner = State == COMPLETE ? Owner : Supplier;
+  assign LineReadOwner = State == LOOKUP ? Owner : State == SNOOP ? Snooper :
+    Transfer == EVICT ? Owner : FlushOwner;
+  for (genvar h = 0; h < NCORES; h++) begin : dataindices
+    assign LocalWordIndex[h] = CacheReadAddr[h][OFFSET +: WORD_INDEX];
+  end
+  multicore_dcache_data #(.P(P), .NCORES(NCORES), .WORDS(WORDS), .LINE_WORDS(LINE_WORDS)) data_bank(
+    .HCLK, .HRESETn, .LocalWordIndex, .LocalReadData,
+    .WordReadOwner, .WordReadIndex(WordIndex), .WordReadData, .LineReadOwner, .LineReadIndex(Index), .LineReadData,
+    .Install(State == COMPLETE && Prot[0] && Filled), .Store(State == COMPLETE && Prot[0] && Write),
+    .WriteOwner(Owner), .InstallIndex(Index), .InstallLine(FillLine),
+    .StoreIndex(WordIndex), .StoreData(WriteData), .StoreStrb(Strobes),
+    .LocalStore(CacheWriteCommit), .LocalStoreData(CacheWriteData), .LocalStoreStrb(CacheWriteStrb));
+  // synopsys translate_off
+  // Preserve existing passive test probes without exporting arrays as hardware
+  // ports. Functional datapaths use only the explicit storage ports above.
+  wire [P.AHBW-1:0] Lines[NCORES][WORDS];
+  assign Lines = data_bank.Lines;
+  // synopsys translate_on
 
   localparam MAX_WORDS = LINE_WORDS > IFILL_WORDS ? LINE_WORDS : IFILL_WORDS;
   localparam BC = $clog2(MAX_WORDS+1);
@@ -115,7 +134,7 @@ module ahbmsicache import cvw::*; #(
      (Transfer == EVICT || Transfer == FLUSH || (Transfer == FILL && Prot[0]))));
   for (genvar w = 0; w < MAX_WORDS; w++) begin : writebuffer
     if (w < LINE_WORDS)
-      assign BurstWriteLine[w] = Lines[Transfer == EVICT ? Owner : FlushOwner][data_index(Index, w)];
+      assign BurstWriteLine[w] = LineReadData[w];
     else assign BurstWriteLine[w] = '0;
   end
   if (CACHE_BURSTS && MAX_WORDS > 1) begin : burst
@@ -144,7 +163,7 @@ module ahbmsicache import cvw::*; #(
           States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] != I &&
           Tags[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == CacheReadAddr[h][P.PA_BITS-1:LINE_OFFSET+INDEX];
         CacheReadHit[h] = LOCAL_READS && ProbeHit[h];
-        CacheReadData[h] = LOCAL_READS ? Lines[h][CacheReadAddr[h][OFFSET +: WORD_INDEX]] : '0;
+        CacheReadData[h] = LOCAL_READS ? LocalReadData[h] : '0;
         CacheWriteHit[h] = LOCAL_WRITES && ProbeHit[h] &&
           (States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == M ||
            (MESI && States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == E));
@@ -236,7 +255,7 @@ module ahbmsicache import cvw::*; #(
           Strobes <= UpHWSTRB;
           if (Cacheable && Prot[0] && !Hit[Owner] && States[Owner][Index] == M) begin
             SAddr <= {Tags[Owner][Index], Index, {LINE_OFFSET{1'b0}}};
-            SWData <= Lines[Owner][data_index(Index, 0)];
+            SWData <= LineReadData[0];
             SStrb <= '1;
             SWrite <= 1'b1;
             SSize <= 3'(OFFSET);
@@ -251,12 +270,12 @@ module ahbmsicache import cvw::*; #(
             // until COMPLETE atomically installs the requester and invalidates
             // every peer. No target-line RAM write/read is needed.
             for (int beat = 0; beat < LINE_WORDS; beat++)
-              FillLine[beat] <= Lines[Snooper][data_index(Index, beat)];
+              FillLine[beat] <= LineReadData[beat];
             Filled <= 1'b1;
             State <= COMPLETE;
           end else if (Cacheable && DirtyPeer) begin
             SAddr <= {Addr[P.PA_BITS-1:LINE_OFFSET], {LINE_OFFSET{1'b0}}};
-            SWData <= Lines[Snooper][data_index(Index, 0)];
+            SWData <= LineReadData[0];
             Beat <= '0;
             SStrb <= '1;
             SWrite <= 1'b1;
@@ -274,7 +293,7 @@ module ahbmsicache import cvw::*; #(
           end else if (CACHE_TO_CACHE && Cacheable && !Write && !Prot[0] && AnyHit) begin
             // After an M->S intervention, subsequent IFU words can use the
             // clean supplier directly. IFU never allocates a D line.
-            FillData <= Lines[Supplier][WordIndex];
+            FillData <= WordReadData;
             Filled <= 1'b1;
             State <= COMPLETE;
           end else if (!Cacheable) begin
@@ -343,7 +362,7 @@ module ahbmsicache import cvw::*; #(
               end else begin
                 Beat <= Beat + 1'b1;
                 SAddr <= SAddr + (P.PA_BITS'(1) << OFFSET);
-                SWData <= Lines[Transfer == EVICT ? Owner : FlushOwner][data_index(Index, int'(Beat)+1)];
+                SWData <= LineReadData[int'(Beat)+1];
                 State <= ADDRESS;
               end
             end
@@ -381,15 +400,10 @@ module ahbmsicache import cvw::*; #(
         end
         COMPLETE: begin
           UpHRDATA <= Filled ? (Prot[0] ? FillLine[(int'(Addr) >> OFFSET) & (LINE_WORDS-1)] : FillData) :
-            Lines[Owner][WordIndex];
+            WordReadData;
           if (Prot[0]) begin
             Tags[Owner][Index] <= Tag;
-            if (Filled)
-              for (int beat = 0; beat < LINE_WORDS; beat++)
-                Lines[Owner][data_index(Index, beat)] <= FillLine[beat];
             if (Write) begin
-              for (int b = 0; b < P.XLEN/8; b++)
-                if (Strobes[b]) Lines[Owner][WordIndex][8*b +: 8] <= WriteData[8*b +: 8];
               States[Owner][Index] <= M;
               for (int h = 0; h < NCORES; h++)
                 if (HART_BITS'(h) != Owner && Hit[h]) States[h][Index] <= I;
@@ -420,9 +434,6 @@ module ahbmsicache import cvw::*; #(
              Addr[P.PA_BITS-1:LINE_OFFSET] != CacheReadAddr[h][P.PA_BITS-1:LINE_OFFSET]))
             else $fatal(1, "Local M store raced a global owner or snoop");
           States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] <= M;
-          for (int b = 0; b < P.XLEN/8; b++)
-            if (CacheWriteStrb[h][b])
-              Lines[h][CacheReadAddr[h][OFFSET +: WORD_INDEX]][8*b +: 8] <= CacheWriteData[h][8*b +: 8];
         end
       // Snooping is a broadcast lookup to every bank. At most one dirty owner
       // exists and it cannot coexist with any other valid copy of that word.

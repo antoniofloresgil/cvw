@@ -96,6 +96,9 @@ def main():
                 if "SUCCESS! All tests ran without failures." not in (casework / "native-run.log").read_text():
                     raise SystemExit("Native single-core test did not report success")
             else:
+                if name == 'bus':
+                    execute([sys.executable, str(root / 'tests/multicore/check_engines.py'),
+                             '--work-dir', str(casework / 'engines')], casework / 'engines.log')
                 if name in ("bus", "mesi-banked"):
                     execute([sys.executable, str(root / "tests/multicore/check_boundary.py"),
                              "--banks", "1" if name == "bus" else "2", *(["--negative"] if name == "bus" else []),

@@ -73,9 +73,15 @@ def main():
 
     def build_test(top, config, sources, name, parameters=()):
         sources = list(sources)
-        contract = root / "src/ebu/corebus_contract.sv"
-        if root / "src/ebu/ahbmulticore.sv" in sources and contract not in sources:
-            sources.append(contract)
+        for parent, dependencies in {
+            'ahbmulticore.sv': ('corebus_contract.sv', 'multicore_reservations.sv', 'multicore_icache_bank.sv'),
+            'ahbmsicache.sv': ('multicore_dcache_data.sv',),
+        }.items():
+            if root / 'src/ebu' / parent in sources:
+                for dependency in dependencies:
+                    path = root / 'src/ebu' / dependency
+                    if path not in sources:
+                        sources.append(path)
         build = work / name
         print(f"Building {name}", flush=True)
         # Verilator 5.036 can emit an undeclared fork sync in split coroutine

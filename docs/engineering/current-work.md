@@ -91,7 +91,21 @@ policy/DT negative suite, seven standard lints, eight additional shared-cache
 full-core runs and Linux harness build/reuse passed. No new Linux boot or hardware
 result is claimed. See proposed [ADR 0017](decisions/0017-multicore-configuration-policy.md)
 and the [configuration record](experiments/2026-10-21-multicore-configuration-policy.md).
-Recommendation 6 and additional recommendations 9–12 remain proposals. No merge into main was performed.
+Recommendation 6 was still pending at that source; additional recommendations
+9–12 remain proposals. No merge into main was performed.
+
+Recommendation 6 is implemented on parent `349263f55`: LR/SC reservations and
+sticky SC results, instruction banks and data-word arrays have separate modules.
+Bridge arbitration/AMO locks and MSI/MESI metadata/control preserve their cycle
+behavior in the compared tests.
+The [storage contract](interfaces/multicore-storage.md) specifies ports, edge
+priorities and current combinational-read/line-wide bandwidth before any BRAM work.
+All four final CI cases, seven standard lints, isolated RV32/RV64 engine fixtures,
+eight one-word coherence cases and eight shared-cache full-core runs passed.
+All 75 frozen baseline PASS/cycle/traffic signatures match. See proposed
+[ADR 0018](decisions/0018-multicore-engine-boundaries.md) and the
+[extraction record](experiments/2026-10-22-multicore-engine-extraction.md).
+No new Linux, FPGA, formal or main integration result was obtained.
 
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.

@@ -59,12 +59,9 @@ module ahbmulticore import cvw::*; #(
   logic [NCORES-1:0][3:0] Prot;
   logic [NCORES-1:0] Write;
   logic [OWNER_BITS-1:0] Owner, NextOwner, First, AddressOwner;
-  localparam logic [1:0] LR = 2'b01, SC = 2'b10, AMO = 2'b11;
+  localparam logic [1:0] SC = 2'b10, AMO = 2'b11;
   localparam GRANULE_BITS = $clog2(P.XLEN/8);
   logic [NCORES-1:0][1:0] Op;
-  logic [NCORES-1:0] ReservationValid;
-  logic [NCORES-1:0][P.PA_BITS-1:0] ReservationAddr;
-  logic [NCORES-1:0][2:0] ReservationSize;
   logic LockActive;
   logic [OWNER_BITS-1:0] LockOwner;
   localparam I_BEAT_BITS = ICACHE_LINE_WORDS > 1 ? $clog2(ICACHE_LINE_WORDS) : 1;
@@ -112,68 +109,27 @@ module ahbmulticore import cvw::*; #(
     return multicore_cacheable(P, 64'(address));
   endfunction
 
+  logic [NCORES-1:0] ICacheHit;
+  logic [NCORES-1:0][P.AHBW-1:0] ICacheData;
   if (PRIVATE_ICACHE) begin : icache
-    localparam OFFSET = $clog2(P.AHBW/8);
-    localparam LINE_OFFSET = OFFSET + $clog2(ICACHE_LINE_WORDS);
-    localparam N_LINES = ICACHE_WORDS / ICACHE_LINE_WORDS;
-    localparam INDEX = $clog2(N_LINES);
-    localparam WORD_INDEX = $clog2(ICACHE_WORDS);
-    localparam TAG = P.PA_BITS - LINE_OFFSET - INDEX;
-    logic [NCORES-1:0][N_LINES-1:0] Valid;
-    logic [TAG-1:0] Tags[NCORES][N_LINES];
-    logic [P.AHBW-1:0] Lines[NCORES][ICACHE_WORDS];
-    always_comb begin
-      for (int h = 0; h < NCORES; h++) begin
-        LocalData[h] = Prot[h][0] ? CacheReadData[h] : Lines[h][Addr[h][OFFSET +: WORD_INDEX]];
-        LocalReply[h] = State[h] == PENDING && !Write[h] && Op[h] == 0 &&
-          !LocalBlocked[h] && !LocalStoreConflict[h] &&
-          (Prot[h][0] ? (LOCAL_DCACHE_READS && !LockActive && CacheReadHit[h]) :
-           (cacheable(Addr[h]) && Valid[h][Addr[h][LINE_OFFSET +: INDEX]] &&
-            Tags[h][Addr[h][LINE_OFFSET +: INDEX]] == Addr[h][P.PA_BITS-1:LINE_OFFSET+INDEX]));
-      end
-    end
-    always_ff @(posedge HCLK) begin
-      if (!HRESETn) Valid <= '0;
-      else begin
-        // Apply invalidations before a global I fill. A simultaneous fill is
-        // of another region and must retain its new tag/valid bit, even if the
-        // victim's old tag matches a committing local store.
-        for (int writer = 0; writer < NCORES; writer++)
-          if (CacheWriteCommit[writer])
-            for (int h = 0; h < NCORES; h++)
-              if (Tags[h][Addr[writer][LINE_OFFSET +: INDEX]] == Addr[writer][P.PA_BITS-1:LINE_OFFSET+INDEX])
-                Valid[h][Addr[writer][LINE_OFFSET +: INDEX]] <= 1'b0;
-        // A partial/error fill never exposes any words as a valid line.
-        if ((!DataPhase && Found && HREADY && IFillRequest) ||
-            (DataPhase && HREADY && HRESP && IFillActive))
-          Valid[AddressOwner][Addr[AddressOwner][LINE_OFFSET +: INDEX]] <= 1'b0;
-        if (DataPhase && HREADY && !HRESP) begin
-          if (Write[Owner]) begin
-            // Invalidate all instruction copies, including the writer's. This
-            // conservatively supplies coherence stronger than fence.i requires.
-            for (int h = 0; h < NCORES; h++)
-              if (Tags[h][Addr[Owner][LINE_OFFSET +: INDEX]] == Addr[Owner][P.PA_BITS-1:LINE_OFFSET+INDEX])
-                Valid[h][Addr[Owner][LINE_OFFSET +: INDEX]] <= 1'b0;
-          end else if (!Prot[Owner][0] && cacheable(Addr[Owner])) begin
-            Valid[Owner][Addr[Owner][LINE_OFFSET +: INDEX]] <= IFillLast;
-            Tags[Owner][Addr[Owner][LINE_OFFSET +: INDEX]] <= Addr[Owner][P.PA_BITS-1:LINE_OFFSET+INDEX];
-            Lines[Owner][HADDR[OFFSET +: WORD_INDEX]] <= HRDATA;
-          end
-        end
-      end
-    end
-    initial begin
-      assert (ICACHE_LINE_WORDS >= 1 && (ICACHE_LINE_WORDS & (ICACHE_LINE_WORDS-1)) == 0 &&
-        ICACHE_WORDS >= 2*ICACHE_LINE_WORDS && (ICACHE_WORDS & (ICACHE_WORDS-1)) == 0 && TAG > 0)
-        else $fatal(1, "Private I-cache words must be a power of two >= 2 and fit PA_BITS");
-    end
+    multicore_icache_bank #(.P(P), .NCORES(NCORES), .WORDS(ICACHE_WORDS), .LINE_WORDS(ICACHE_LINE_WORDS)) banks(
+      .HCLK, .HRESETn, .ProbeAddr(Addr), .ProbeHit(ICacheHit), .ProbeData(ICacheData),
+      .LocalStoreCommit(CacheWriteCommit), .LocalStoreAddr(Addr),
+      .GlobalWrite(DataPhase && HREADY && !HRESP && Write[Owner]), .GlobalAddr(Addr[Owner]),
+      .FillInvalidate((!DataPhase && Found && HREADY && IFillRequest) ||
+        (DataPhase && HREADY && HRESP && IFillActive)),
+      .FillBeat(DataPhase && HREADY && !HRESP && !Write[Owner] && !Prot[Owner][0] && cacheable(Addr[Owner])),
+      .FillLast(IFillLast), .FillOwner(AddressOwner), .FillAddr(Addr[AddressOwner]), .FillWordAddr(HADDR), .FillData(HRDATA));
   end else begin : noicache
-    always_comb begin
-      LocalData = CacheReadData;
-      for (int h = 0; h < NCORES; h++)
-        LocalReply[h] = LOCAL_DCACHE_READS && State[h] == PENDING && !Write[h] &&
-          Prot[h][0] && Op[h] == 0 && !LockActive && CacheReadHit[h] &&
-          !LocalBlocked[h] && !LocalStoreConflict[h];
+    assign ICacheHit = '0;
+    assign ICacheData = '0;
+  end
+  always_comb begin
+    for (int h = 0; h < NCORES; h++) begin
+      LocalData[h] = Prot[h][0] ? CacheReadData[h] : ICacheData[h];
+      LocalReply[h] = State[h] == PENDING && !Write[h] && Op[h] == 0 &&
+        !LocalBlocked[h] && !LocalStoreConflict[h] &&
+        (Prot[h][0] ? (LOCAL_DCACHE_READS && !LockActive && CacheReadHit[h]) : ICacheHit[h]);
     end
   end
 
@@ -199,8 +155,13 @@ module ahbmulticore import cvw::*; #(
   end
 
   // Validate SC where all stores are ordered, never at local address issue.
-  assign SCValid = ReservationValid[NextOwner] && ReservationAddr[NextOwner] == Addr[NextOwner] &&
-                   ReservationSize[NextOwner] == Size[NextOwner] && !LocalStoreConflict[NextOwner];
+  multicore_reservations #(.P(P), .NCORES(NCORES)) reservations(
+    .HCLK, .HRESETn, .QueryOwner(NextOwner), .QueryAddr(Addr[NextOwner]), .QuerySize(Size[NextOwner]),
+    .QueryBlocked(LocalStoreConflict[NextOwner]), .SCValid,
+    .Issue(!DataPhase && Found && HREADY), .IssueOp(Op[NextOwner]),
+    .Complete(DataPhase && HREADY), .CompleteOwner(Owner), .CompleteAddr(Addr[Owner]),
+    .CompleteSize(Size[Owner]), .CompleteOp(Op[Owner]), .CompleteWrite(Write[Owner]), .CompleteError(HRESP),
+    .ReservationClear, .LocalStoreCommit(CacheWriteCommit), .LocalStoreAddr(Addr), .SCFail(CoreSCFail));
   assign FailedSC = Op[NextOwner] == SC && !SCValid;
   assign BadAMOWrite = Op[NextOwner] == AMO && Write[NextOwner] && !LockActive;
   assign AddressOwner = DataPhase ? Owner : NextOwner;
@@ -283,11 +244,7 @@ module ahbmulticore import cvw::*; #(
       Write <= '0;
       CoreHRDATA <= '0;
       CoreHRESP <= '0;
-      CoreSCFail <= '0;
       Op <= '0;
-      ReservationValid <= '0;
-      ReservationAddr <= '0;
-      ReservationSize <= '0;
       LockActive <= 1'b0;
       LockOwner <= '0;
       for (int h = 0; h < NCORES; h++) State[h] <= AVAILABLE;
@@ -315,11 +272,8 @@ module ahbmulticore import cvw::*; #(
         end
       end
       if (!DataPhase && Found && HREADY) begin
-        if (Op[NextOwner] == LR || Op[NextOwner] == SC)
-          ReservationValid[NextOwner] <= 1'b0;
         if (FailedSC || BadAMOWrite) begin
           // A failed conditional store never reaches RAM or a peripheral.
-          if (FailedSC) CoreSCFail[NextOwner] <= 1'b1;
           CoreHRDATA[NextOwner] <= '0;
           CoreHRESP[NextOwner] <= BadAMOWrite;
           State[NextOwner] <= BadAMOWrite ? ERROR_REPLY : REPLY;
@@ -356,38 +310,8 @@ module ahbmulticore import cvw::*; #(
           IBeat <= '0;
           First <= int'(Owner) == NCORES-1 ? '0 : Owner + 1'b1;
         end
-        if (Op[Owner] == SC) CoreSCFail[Owner] <= HRESP;
-        // Results remain sticky across IFU replies until the next SC finishes;
-        // the memory stage may be waiting for an instruction fetch to retire.
-        if (Op[Owner] == LR && !HRESP) begin
-          ReservationValid[Owner] <= 1'b1;
-          ReservationAddr[Owner] <= Addr[Owner];
-          ReservationSize[Owner] <= Size[Owner];
-        end
-        if (Write[Owner] && !HRESP)
-          for (int h = 0; h < NCORES; h++)
-            if (ReservationAddr[h][P.PA_BITS-1:GRANULE_BITS] == Addr[Owner][P.PA_BITS-1:GRANULE_BITS])
-              ReservationValid[h] <= 1'b0;
         if (Op[Owner] == AMO && (Write[Owner] || HRESP)) LockActive <= 1'b0;
       end
-      // Another coherence bank completed this hart's LR/SC. Reservations
-      // belong to harts, not to independent address banks.
-      for (int h = 0; h < NCORES; h++)
-        if (ReservationClear[h]) ReservationValid[h] <= 1'b0;
-      // A coincident LR completion replaces the old reservation. Invalidate
-      // against its NEW word, not the stale address left by an earlier LR.
-      for (int writer = 0; writer < NCORES; writer++)
-        if (CacheWriteCommit[writer]) begin
-          for (int h = 0; h < NCORES; h++)
-            if ((DataPhase && HREADY && !HRESP && Op[Owner] == LR && Owner == OWNER_BITS'(h)) ?
-                (Addr[Owner][P.PA_BITS-1:GRANULE_BITS] == Addr[writer][P.PA_BITS-1:GRANULE_BITS]) :
-                (ReservationAddr[h][P.PA_BITS-1:GRANULE_BITS] == Addr[writer][P.PA_BITS-1:GRANULE_BITS]))
-              ReservationValid[h] <= 1'b0;
-          for (int peer = writer+1; peer < NCORES; peer++)
-            assert (!(CacheWriteCommit[peer] &&
-              Addr[writer][P.PA_BITS-1:GRANULE_BITS] == Addr[peer][P.PA_BITS-1:GRANULE_BITS]))
-              else $fatal(1, "Two local M stores to one physical word");
-        end
     end
   end
 endmodule

@@ -115,6 +115,22 @@ checks to single-default. This needs `dtc` but no Linux images. The four profile
 retain their prior functional scope. CI results now include elaborated core and
 topology data; see [profile ownership](../../config/multicore/README.md).
 
+Recommendation 6 adds isolated reservation and I/D storage fixtures to the bus
+case. To run just those contracts after setup:
+
+```bash
+python3 tests/multicore/check_engines.py --work-dir /tmp/cvw-engines
+```
+
+The fixtures cover RV32/RV64, metadata/event priorities, byte/line write merging,
+combinational reads and reset. Manual source lists using ahbmulticore now also need
+`multicore_reservations.sv` and `multicore_icache_bank.sv`; ahbmsicache additionally
+needs `multicore_dcache_data.sv` (all in src/ebu). Maintained unit runners add these
+explicitly; recursive all-source flows already discover them. See the
+[RAM/event contract](interfaces/multicore-storage.md) and
+[revision-specific results](experiments/2026-10-22-multicore-engine-extraction.md).
+These tests are not BRAM inference or timing evidence.
+
 ## Result vocabulary and preservation
 
 | State | Required interpretation |
