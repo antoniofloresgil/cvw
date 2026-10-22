@@ -81,6 +81,12 @@ config/deriv concurrently with simulations. Each case has separate builds,
 commands and logs under `sim/verilator/wkdir/multicore-ci/`; `results-<case>.json`
 or `results-all.json` records tool/source/configuration hashes and verdicts.
 CI retains logs and JSON on failure and limits each job to 30 minutes.
+The single-default ordinary testbench invokes bin/elf2hex through uv; CI installs
+uv alongside pre-commit and exports that environment through GITHUB_PATH.
+A missing uv executable prevents ELF input generation before program execution;
+inspect compatibility/atomic-walker/cached-run.log in the uploaded artifact
+when run.log only reports a failed child process. See the
+[Actions prerequisite fix](experiments/2026-10-22-multicore-actions-uv-fix.md).
 
 The single-hart comparison requires Git object
 `4ce065926c8096f34c77867c358f044ec1ea777e` (an ancestor of this feature branch).

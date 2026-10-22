@@ -120,5 +120,11 @@ and Linux harness compilation passed; all 75 baseline signatures match. See prop
 No new DMA/architectural-error implementation, Linux boot, FPGA or scaling
 qualification is claimed. Recommendations 8 and 9–12 remain separate proposals.
 
+Remote Actions at `af35521ac` passed bus/MSI/MESI but failed single-default
+because uv was absent during ordinary-testbench ELF conversion. The workflow
+now installs uv and exports its Python tool environment. Fresh conversion and
+both AMO/walker modes pass locally with an isolated PATH; remote confirmation
+is pending. See the [focused fix record](experiments/2026-10-22-multicore-actions-uv-fix.md).
+
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.

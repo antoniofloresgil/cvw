@@ -61,7 +61,9 @@ jobs:
           sudo apt-get install -y autoconf bison flex g++ make help2man libfl-dev \
             gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf python3-venv device-tree-compiler
           python3 -m venv "$RUNNER_TEMP/hooks"
-          "$RUNNER_TEMP/hooks/bin/pip" install pre-commit
+          # The ordinary testbench invokes elf2hex through its uv shebang.
+          "$RUNNER_TEMP/hooks/bin/pip" install pre-commit uv
+          echo "$RUNNER_TEMP/hooks/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/hooks/bin/pre-commit" install
       - name: Restore Verilator
         id: verilator
