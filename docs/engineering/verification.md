@@ -96,6 +96,20 @@ the dedicated matrix. Keep long RTL Linux checks in their existing separate
 procedures. Execution results and current limits are in the
 [matrix record](experiments/2026-10-21-multicore-ci.md).
 
+Recommendation 9 adds a passive observation contract suite to the bus case:
+
+```bash
+python3 tests/multicore/check_observation.py --work-dir /tmp/cvw-observation
+```
+
+It requires exact failures for duplicate dirty owners and a bad word mapping,
+checks sentinel lookup geometry in RV32/RV64 and runs unchanged one-home/banked
+scenarios against reordered internal enum codes. Only ignored fixture copies
+are mutated. The [observation contract](interfaces/multicore-observation.md)
+defines events, permission queries and the separation from reference models.
+The runner includes its package and adapters explicitly; standalone custom
+builds of msi_tb/msifabric_tb/soc_tb must include those sources as well.
+
 Recommendation 4 adds real ahbinterface/busfsm/EBU boundary fixtures to the
 same per-change matrix: bus selects one home and mesi-banked selects two homes,
 each with RV32/RV64, two/three harts and latency 0/3. The bus case also requires

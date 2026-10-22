@@ -7,7 +7,8 @@ of HEAD. No remote refresh, branch switch, merge or RTL change was performed.
 This supplements the [original review](2026-10-21-multicore-maintainability-review.md);
 its numbering and historical source scope remain intact.
 
-Implementation follow-up: recommendation 11 is recorded separately in the
+Implementation follow-up: recommendation 9 is recorded in the
+[observation extraction](2026-10-22-multicore-test-observation.md); recommendation 11 in the
 [shared atomic-symbol execution record](2026-10-22-corebus-atomic-symbols.md).
 The findings below retain their original reviewed-source scope and do not
 accept the associated proposed ADR.

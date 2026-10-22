@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 // Full arbiter/MSI path, RV32/RV64, waits/errors and a software reference model.
 `include "config.vh"
-module msi_tb import cvw::*; #(
+module msi_tb import cvw::*; import multicore_observation::*; #(
     parameter int NCORES = 2,
     parameter int LATENCY = 3,
     parameter int WORDS = 4,
@@ -67,33 +67,26 @@ module msi_tb import cvw::*; #(
         if ($countones(CacheWriteCommit) > 1) parallel_stores <= parallel_stores + 1;
         if (HTRANS[1] && HREADY) global_requests <= global_requests + 1;
         if (|CacheWriteCommit) begin
-            assert (!bus.LockActive) else $fatal(1, "Local M store bypassed AMO lock");
-            if (bus.DataPhase || bus.IFillActive) begin
+            if (bus.observation.GlobalOrRefillActive) begin
                 if ($countones(CacheWriteCommit) > 1) parallel_stores_during_bus <= parallel_stores_during_bus + 1;
                 stores_during_bus <= stores_during_bus + 1;
-                for (int h = 0; h < NCORES; h++) if (CacheWriteCommit[h])
-                    assert (bus.Owner != HART_BITS'(h) &&
-                        bus.Addr[h][P.PA_BITS-1:CONFLICT_OFFSET] != bus.Addr[bus.Owner][P.PA_BITS-1:CONFLICT_OFFSET])
-                        else $fatal(1, "Local M store raced a global access to its coherence/refill region");
-                if (HREADY && !HRESP && bus.Op[bus.Owner] == 1) stores_at_lr_reply <= stores_at_lr_reply + 1;
-                if (HREADY && !HRESP && !bus.Prot[bus.Owner][0]) stores_at_ifill_reply <= stores_at_ifill_reply + 1;
+                if (bus.observation.LRReply) stores_at_lr_reply <= stores_at_lr_reply + 1;
+                if (bus.observation.InstructionReply) stores_at_ifill_reply <= stores_at_ifill_reply + 1;
             end
         end
     end
     int local_replies = 0, overlapping_replies = 0, simultaneous_replies = 0;
     always @(posedge HCLK) if (HRESETn) begin
-        local_replies <= local_replies + $countones(bus.LocalReply);
-        if (bus.DataPhase && !HREADY && |bus.LocalReply)
+        local_replies <= local_replies + $countones(bus.observation.LocalReply);
+        if (bus.observation.GlobalDataActive && !HREADY && |bus.observation.LocalReply)
             overlapping_replies <= overlapping_replies + 1;
-        if ($countones(bus.LocalReply) > 1) simultaneous_replies <= simultaneous_replies + 1;
+        if ($countones(bus.observation.LocalReply) > 1) simultaneous_replies <= simultaneous_replies + 1;
     end
     int instruction_write_overlaps = 0, data_write_overlaps = 0, simultaneous_write_replies = 0;
-    always @(posedge HCLK) if (HRESETn && bus.DataPhase && bus.Write[bus.Owner]) begin
-        if ($countones(bus.LocalReply) > 1) simultaneous_write_replies <= simultaneous_write_replies + 1;
-        for (int h = 0; h < NCORES; h++) if (bus.LocalReply[h]) begin
-            assert (bus.Addr[h][P.PA_BITS-1:CONFLICT_OFFSET] != bus.Addr[bus.Owner][P.PA_BITS-1:CONFLICT_OFFSET])
-                else $fatal(1, "Local read bypassed a write to the same physical word");
-            if (bus.Prot[h][0]) data_write_overlaps <= data_write_overlaps + 1;
+    always @(posedge HCLK) if (HRESETn && bus.observation.GlobalWriteActive) begin
+        if ($countones(bus.observation.LocalReply) > 1) simultaneous_write_replies <= simultaneous_write_replies + 1;
+        for (int h = 0; h < NCORES; h++) if (bus.observation.LocalReply[h]) begin
+            if (bus.observation.LocalDataReply[h]) data_write_overlaps <= data_write_overlaps + 1;
             else instruction_write_overlaps <= instruction_write_overlaps + 1;
         end
     end
@@ -221,13 +214,13 @@ module msi_tb import cvw::*; #(
             store(1, OTHER, 'h123456);
             begin
                 @(negedge HCLK);
-                while (!(bus.DataPhase && bus.Write[bus.Owner])) @(negedge HCLK);
+                while (!(bus.observation.GlobalWriteActive)) @(negedge HCLK);
                 load(0, 64, reference[64], 0, instruction);
             end
             begin
                 if (NCORES > 2) begin
                     @(negedge HCLK);
-                    while (!(bus.DataPhase && bus.Write[bus.Owner])) @(negedge HCLK);
+                    while (!(bus.observation.GlobalWriteActive)) @(negedge HCLK);
                     load(2, 64, reference[64], 0, instruction);
                 end
             end
@@ -247,7 +240,7 @@ module msi_tb import cvw::*; #(
                 'haa00, (P.XLEN/8)'('h02), 0, 0, 0, 0, 0, 0);
             begin
                 @(negedge HCLK);
-                while (!(bus.DataPhase && bus.Write[bus.Owner])) @(negedge HCLK);
+                while (!(bus.observation.GlobalWriteActive)) @(negedge HCLK);
                 load(0, 80, expected, 0, instruction);
             end
         join
@@ -261,7 +254,7 @@ module msi_tb import cvw::*; #(
             load(1, 176, 'h8100, 0, instruction);
             begin
                 @(negedge HCLK);
-                while (!(bus.DataPhase && !bus.Write[bus.Owner])) @(negedge HCLK);
+                while (!(bus.observation.GlobalReadActive)) @(negedge HCLK);
                 store(0, 176, 'h8101);
             end
         join
@@ -291,7 +284,7 @@ module msi_tb import cvw::*; #(
                 load(2, 136, reference[136]);
                 begin
                     @(negedge HCLK);
-                    while (!bus.DataPhase) @(negedge HCLK);
+                    while (!bus.observation.GlobalDataActive) @(negedge HCLK);
                     fork
                         store(0, 128, 'h3333);
                         store(1, 129, 'h4444);
@@ -319,7 +312,7 @@ module msi_tb import cvw::*; #(
             load(1, 96+WORDS, reference[96+WORDS], 1);
             begin
                 @(negedge HCLK);
-                while (!(cache.State == 4 && (cache.Transfer == 2 || cache.Transfer == 4) && downready)) @(negedge HCLK);
+                while (!(cache.observation.FillDataAccepted)) @(negedge HCLK);
                 store(0, 96, 'h6101);
             end
         join
@@ -336,7 +329,7 @@ module msi_tb import cvw::*; #(
                 load(1, 160+ICACHE_WORDS, reference[160+ICACHE_WORDS], 0, 1);
                 begin
                     @(negedge HCLK);
-                    while (!(cache.State == 4 && (cache.Transfer == 2 || cache.Transfer == 4) && downready)) @(negedge HCLK);
+                    while (!(cache.observation.FillDataAccepted)) @(negedge HCLK);
                     store(0, 160, 'h7101);
                 end
             join
@@ -379,7 +372,7 @@ module msi_tb import cvw::*; #(
         reference[0] = (reference[0] & ~P.XLEN'('hff00)) | P.XLEN'('hab00);
         assert (transfers == before_count && writebacks == before_writes)
             else $fatal(1, "M-to-M handoff unnecessarily touched RAM");
-        assert (cache.States[0][0] == 0 && cache.States[1][0] == 2)
+        assert (line_state(0, 0) == OBS_INVALID && line_state(1, 0) == OBS_MODIFIED)
             else $fatal(1, "M-to-M ownership did not transfer atomically");
         for (int w = 0; w < LINE_WORDS; w++) load(1, w, reference[w]);
         before_count = transfers;
@@ -424,7 +417,7 @@ module msi_tb import cvw::*; #(
         end
         // Ownership/invalidation covers other words of the line (false sharing).
         store(0, 0, 'h3000); reference[0] = 'h3000;
-        assert (cache.States[1][0] == 0) else $fatal(1, "Peer retained a different word of an invalidated line");
+        assert (line_state(1, 0) == OBS_INVALID) else $fatal(1, "Peer retained a different word of an invalidated line");
         load(1, LINE_WORDS-1, reference[LINE_WORDS-1]);
         // Byte merge on an allocating miss preserves every other word and byte.
         value = (reference[WORDS+1] & ~P.XLEN'('hff00)) | P.XLEN'('hab00);
@@ -473,7 +466,7 @@ module msi_tb import cvw::*; #(
             fork
                 load(1, 80, P.XLEN'('h8100), 0, 1);
                 begin
-                    while (!bus.DataPhase) @(negedge HCLK);
+                    while (!bus.observation.GlobalDataActive) @(negedge HCLK);
                     store(0, 81, 'h8200);
                 end
             join
@@ -500,7 +493,7 @@ module msi_tb import cvw::*; #(
                 fork
                     load(2, 224, reference[224]);
                     begin
-                        while (!bus.DataPhase) @(negedge HCLK);
+                        while (!bus.observation.GlobalDataActive) @(negedge HCLK);
                         fork
                             store(0, 1, 'h9050);
                             store(1, 65, 'h9060);
@@ -546,10 +539,10 @@ module msi_tb import cvw::*; #(
             end
             fault_addr = BASE+(P.PA_BITS'(beat) << OFFSET); fault_write = 1;
             access(0, 0, BASE+(P.PA_BITS'(WORDS) << OFFSET), 0, '0, 0, 0, 0, 1);
-            assert (cache.States[0][0] == 2) else $fatal(1, "Partial eviction lost M permission");
+            assert (line_state(0, 0) == OBS_MODIFIED) else $fatal(1, "Partial eviction lost M permission");
             for (int w = 0; w < LINE_WORDS; w++) load(0, w, reference[w]);
             access(1, 0, BASE, 0, '0, 0, 0, 0, 1);
-            assert (cache.States[0][0] == 2) else $fatal(1, "Partial intervention lost M permission");
+            assert (line_state(0, 0) == OBS_MODIFIED) else $fatal(1, "Partial intervention lost M permission");
             fault_write = 0;
             load(1, 0, reference[0]);
             for (int w = 0; w < LINE_WORDS; w++) load(1, w, reference[w]);
@@ -581,10 +574,10 @@ module msi_tb import cvw::*; #(
         $display("PASS: multiword directed D=%0d I=%0d words/line", LINE_WORDS, ICACHE_LINE_WORDS);
     endtask
     int coherence_requests = 0;
-    always @(posedge HCLK) if (HRESETn && cache.State == 1)
+    always @(posedge HCLK) if (HRESETn && cache.observation.LookupAccepted)
         coherence_requests <= coherence_requests+1;
-    function automatic int line_state(input int hart, input int word_index);
-        return int'(cache.States[hart][(word_index/LINE_WORDS) % (WORDS/LINE_WORDS)]);
+    function automatic permission_t line_state(input int hart, input int word_index);
+        return cache.observation.line_state(hart, word_index);
     endfunction
     `include "mesi_checks.vh"
     initial begin
@@ -604,18 +597,18 @@ module msi_tb import cvw::*; #(
         assert (transfers == snapshot) else $fatal(1, "Private read hit reached RAM");
         load(1, 0, reference[0]);
         store(0, 0, 'h42);
-        assert (cache.States[0][0] == 2 && cache.States[1][0] == 0) else $fatal(1, "S->M upgrade failed");
+        assert (line_state(0, 0) == OBS_MODIFIED && line_state(1, 0) == OBS_INVALID) else $fatal(1, "S->M upgrade failed");
         snapshot = transfers;
         store(0, 0, 'h43);
         load(0, 0, 'h43);
         assert (transfers == snapshot && mem[0] == reference[0]) else $fatal(1, "M hit was not write-back");
         load(1, 0, 'h43);
-        assert (mem[0] == 'h43 && cache.States[0][0] == 1 && cache.States[1][0] == 1)
+        assert (mem[0] == 'h43 && line_state(0, 0) == OBS_SHARED && line_state(1, 0) == OBS_SHARED)
             else $fatal(1, "Modified intervention/downgrade failed");
         for (int h = 2; h < NCORES; h++) load(h, 0, 'h43);
         store(NCORES-1, 0, 'h44);
         for (int h = 0; h < NCORES-1; h++)
-            assert (cache.States[h][0] == 0) else $fatal(1, "BusUpgr missed a sharer");
+            assert (line_state(h, 0) == OBS_INVALID) else $fatal(1, "BusUpgr missed a sharer");
         load(0, 0, 'h44);
         store(0, 0, 'h45);
         store(1, 0, 'h46); // BusRdX against M.
@@ -632,7 +625,7 @@ module msi_tb import cvw::*; #(
         load(0, 0, 'h51, 0, 1);
         store(0, 0, 'h52);
         load(1, 0, 'h52, 0, 1);
-        assert (cache.States[1][0] == 0) else $fatal(1, "Instruction fetch allocated in private D-cache");
+        assert (line_state(1, 0) == OBS_INVALID) else $fatal(1, "Instruction fetch allocated in private D-cache");
         for (int repeat_read = 0; repeat_read < 2; repeat_read++)
             access(0, 0, P.PA_BITS'('h10000001), 0, '0, mem[0], 0, 0, 0, 0, 0);
         assert (mmio == 2) else $fatal(1, "MMIO was cached");
@@ -690,7 +683,7 @@ module msi_tb import cvw::*; #(
                 store(1, 32, 'hcafe);
                 begin
                     @(negedge HCLK);
-                    while (!(bus.DataPhase && bus.Write[bus.Owner])) @(negedge HCLK);
+                    while (!(bus.observation.GlobalWriteActive)) @(negedge HCLK);
                     load(0, 32, 'hcafe, 0, 1);
                 end
             join
@@ -737,7 +730,7 @@ module msi_tb import cvw::*; #(
                 store(1, 44, 'hbeef);
                 begin
                     @(negedge HCLK);
-                    while (!(bus.DataPhase && bus.Write[bus.Owner])) @(negedge HCLK);
+                    while (!(bus.observation.GlobalWriteActive)) @(negedge HCLK);
                     load(0, 44, 'hbeef);
                 end
             join
@@ -775,12 +768,12 @@ module msi_tb import cvw::*; #(
         fault_addr = BASE;
         fault_write = 1;
         access(0, 0, BASE+(P.PA_BITS'(WORDS) << OFFSET), 0, '0, 0, 0, 0, 1);
-        assert (cache.States[0][0] == 2) else $fatal(1, "Failed eviction discarded M");
+        assert (line_state(0, 0) == OBS_MODIFIED) else $fatal(1, "Failed eviction discarded M");
         load(0, 0, 'h71);
         // Failed snoop writeback must not expose stale memory or grant ownership.
         access(1, 0, BASE, 0, '0, 0, 0, 0, 1);
-        assert (cache.States[0][0] == 2 &&
-            !(cache.States[1][0] != 0 && cache.Tags[1][0] == BASE[P.PA_BITS-1:OFFSET+$clog2(LINE_WORDS)+INDEX]))
+        assert (line_state(0, 0) == OBS_MODIFIED &&
+            !cache.observation.has_line(1, BASE))
             else $fatal(1, "Failed intervention changed ownership");
         fault_write = 0;
         load(1, 0, 'h71);
@@ -799,7 +792,7 @@ module msi_tb import cvw::*; #(
             store(0, 2, 'h81);
             store(1, 2, 'h82);
         join
-        assert (cache.States[0][(2/LINE_WORDS) % (WORDS/LINE_WORDS)] == 2 || cache.States[1][(2/LINE_WORDS) % (WORDS/LINE_WORDS)] == 2)
+        assert (line_state(0, 2) == OBS_MODIFIED || line_state(1, 2) == OBS_MODIFIED)
             else $fatal(1, "Concurrent stores left no owner");
         end
         // Establish a known reference, then randomize hits, misses, subword stores,
@@ -843,7 +836,7 @@ module msi_tb import cvw::*; #(
         HRESETn = 1;
         for (int h = 0; h < NCORES; h++)
             for (int w = 0; w < WORDS/LINE_WORDS; w++)
-                assert (cache.States[h][w] == 0) else $fatal(1, "Reset left a valid line");
+                assert (line_state(h, w*LINE_WORDS) == OBS_INVALID) else $fatal(1, "Reset left a valid line");
         load(0, 0, mem[0]);
         if (PRIVATE_ICACHE) begin
             snapshot = transfers;

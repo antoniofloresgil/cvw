@@ -51,6 +51,7 @@ source audits retain their original revision labels.
 | Experimental multicore capability limits, DMA and error integration | [Capability contract](interfaces/multicore-capabilities.md), [proposed ADR 0019](decisions/0019-multicore-capability-scope.md), [execution record](experiments/2026-10-22-multicore-capability-scope.md) |
 | Private-cache capacity decision and documentation/publication status | [Accepted ADR 0012](decisions/0012-private-cache-default-capacity.md), [capacity experiment](experiments/2026-10-20-private-cache-capacity.md), [reconciliation](experiments/2026-10-22-multicore-documentation-reconciliation.md) |
 | Shared translated atomic-operation symbols | [Proposed ADR 0020](decisions/0020-corebus-atomic-symbols.md), [interface](interfaces/core-bus.md), [execution record](experiments/2026-10-22-corebus-atomic-symbols.md) |
+| Passive multicore test observation | [Proposed ADR 0021](decisions/0021-multicore-test-observation.md), [observation contract](interfaces/multicore-observation.md), [execution record](experiments/2026-10-22-multicore-test-observation.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 Existing flow documentation and executable sources remain authoritative for

@@ -151,7 +151,19 @@ negative endpoint cases. All 75 baseline PASS/cycle/traffic signatures match;
 all 399 final manifest source hashes match the tree. No new Linux boot or FPGA
 qualification was performed. See proposed [ADR 0020](decisions/0020-corebus-atomic-symbols.md)
 and the [execution record](experiments/2026-10-22-corebus-atomic-symbols.md).
-Recommendations 9, 10 and 12 remain proposed follow-up work.
+Recommendation 9 is implemented on parent `4986fa5f8`: passive test-only cache,
+bridge, SoC and fabric adapters isolate internal arrays, generated paths and
+numeric permission/FSM/transfer encodings. Expected reference data and scenario
+sequencing remain independent. Architectural lookup now rejects duplicate dirty
+owners; retained CI checks inject duplicate owners/bad mappings and run unchanged
+RV32/RV64 scenarios against reordered internal encodings. All four final CI
+profiles and seven standard lints pass, including 21 observation executions
+and seven expected observation failures. All 75 baseline main-log signatures
+and 92 unit output/counter lines match; all 407 final source hashes match.
+A one-hart atomic run also passes with unused private capacities zero.
+No new Linux boot or FPGA result is claimed. See proposed [ADR 0021](decisions/0021-multicore-test-observation.md)
+and the [execution record](experiments/2026-10-22-multicore-test-observation.md).
+Recommendations 10 and 12 remain proposed follow-up work.
 
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
 support remains on `adding-mpu-support`; other branches are unchanged.

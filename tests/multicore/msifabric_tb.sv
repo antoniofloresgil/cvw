@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 // Full arbiter/MSI path, RV32/RV64, waits/errors and a software reference model.
 `include "config.vh"
-module msifabric_tb import cvw::*; #(
+module msifabric_tb import cvw::*; import multicore_observation::*; #(
     parameter int NCORES = 2,
     parameter int BANKS = 2,
     parameter int LATENCY = 3,
@@ -51,11 +51,8 @@ module msifabric_tb import cvw::*; #(
     logic fault_read = 0, fault_write = 0;
     logic [P.PA_BITS-1:0] fault_addr = '1, addrq;
     int delayq = 0, transfers = 0, writebacks = 0, mmio = 0;
-    logic [BANKS-1:0] Active;
+    `include "fabric_observer.svh"
     int overlap = 0, peak_active = 0;
-    for (genvar b = 0; b < BANKS; b++) begin : monitors
-        assign Active[b] = dut.banks[b].cache.State != 0 && dut.banks[b].cache.State != 6;
-    end
     always @(posedge HCLK) if (HRESETn) begin
         if ($countones(Active) > 1) overlap <= overlap+1;
         if ($countones(Active) > peak_active) peak_active <= $countones(Active);
@@ -167,17 +164,8 @@ module msifabric_tb import cvw::*; #(
         access(h, 1, BASE + (P.PA_BITS'(word_index) << OFFSET), value, '1, 0, op, 0, 0, sc_failed);
     endtask
     int coherence_requests = 0;
-    logic [BANKS-1:0][NCORES-1:0][WORDS/BANKS/LINE_WORDS-1:0][1:0] TestStates;
-    logic [BANKS-1:0] TestLookup;
-    for (genvar b = 0; b < BANKS; b++) begin : mesiprobes
-        assign TestStates[b] = dut.banks[b].cache.States;
-        assign TestLookup[b] = dut.banks[b].cache.State == 1;
-    end
     always @(posedge HCLK) if (HRESETn)
         coherence_requests <= coherence_requests+$countones(TestLookup);
-    function automatic int line_state(input int hart, input int word_index);
-        return int'(TestStates[(word_index/STRIDE)%BANKS][hart][(word_index/LINE_WORDS) % (WORDS/BANKS/LINE_WORDS)]);
-    endfunction
     `include "mesi_checks.vh"
     initial begin
         bit slow_done, fast_first;
