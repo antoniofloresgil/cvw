@@ -65,6 +65,9 @@ EXT_MEM_RANGE       64'h0FFFFFFF
 deriv fpgagenesys2 fpga
 EXT_MEM_RANGE       64'h3FFFFFFF
 
+deriv fpgaqmtechk7 fpga
+EXT_MEM_RANGE       64'h0FFFFFFF
+
 deriv fpgavcu108 fpga
 EXT_MEM_RANGE       64'h7FFFFFFF
 
@@ -1701,3 +1704,37 @@ ICACHE_LINELENINBITS   32'd256
 derive rv32gc_novm_cache_4way_64KB_512Bline  rv32gc_novm_cache_4way_64KB_256Bline
 DCACHE_LINELENINBITS   32'd512
 ICACHE_LINELENINBITS   32'd512
+
+# Uncached shared-memory prototype; NCORES is a SoC parameter, not an ISA field.
+deriv multicore rv64gc
+DCACHE_SUPPORTED 0
+ICACHE_SUPPORTED 0
+BURST_EN 0
+ZAAMO_SUPPORTED 0
+ZALRSC_SUPPORTED 0
+UNCORE_RAM_RANGE 64'h0000FFFF
+BOOTROM_SUPPORTED 0
+
+# Stage two: central LR/SC reservations and serialized uncached AMOs.
+deriv multicore_atomic multicore
+ZAAMO_SUPPORTED 1
+ZALRSC_SUPPORTED 1
+
+# Stage three: one coherent physical cache; no non-atomic hardware PTE updates.
+deriv multicore_coherent multicore_atomic
+SVADU_SUPPORTED 0
+SVPBMT_SUPPORTED 0
+ZICBOM_SUPPORTED 0
+ZICBOZ_SUPPORTED 0
+ZICBOP_SUPPORTED 0
+
+deriv multicore_linux multicore_coherent
+UNCORE_RAM_RANGE 64'h07FFFFFF
+BOOTROM_SUPPORTED 1
+SV48_SUPPORTED 0
+SV57_SUPPORTED 0
+RESET_VECTOR 64'h00001000
+
+# Private per-hart physical data caches with serialized MSI bus snooping.
+# Legacy IFU/LSU caches stay off; enable the SoC PRIVATE_DCACHE parameter.
+deriv multicore_msi multicore_coherent

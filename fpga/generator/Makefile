@@ -11,7 +11,7 @@ else
 $(error FLOW must be vivado or opensource)
 endif
 
-.PHONY: ArtyA7 vcu118 vcu108 genesys2 nexysa7 nexysvideo
+.PHONY: ArtyA7 vcu118 vcu108 genesys2 nexysa7 nexysvideo qmtechk7
 
 ArtyA7: export XILINX_PART := xc7a100tcsg324-1
 ArtyA7: export XILINX_BOARD := digilentinc.com:arty-a7-100:part0:1.1
@@ -71,6 +71,13 @@ else
 nexysvideo: FPGA_NEXYSVIDEO
 endif
 
+qmtechk7: export XILINX_PART := xc7k325tffg676-1
+qmtechk7: export XILINX_BOARD := qmtechk7
+qmtechk7: export board := qmtechk7
+qmtechk7: export SYSTEMCLOCK := 32000000
+qmtechk7: export MAXSDCCLOCK  := 10000000
+qmtechk7: FPGA_QMTECHK7
+
 # variables computed from config
 EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/fpga$(board)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')
 
@@ -94,6 +101,9 @@ FPGA_NEXYSVIDEO: PreProcessFiles IP_NEXYSVIDEO zsbl
 
 FPGA_OPEN: PreProcessOpenSource
 	./build-opensource.sh "$(board)"
+
+FPGA_QMTECHK7: PreProcessFiles IP_QMTECHK7 zsbl
+	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
 
 # Generate IP Blocks
 .PHONY: IP_Arty IP_VCU
@@ -125,6 +135,12 @@ IP_NEXYSVIDEO: $(dst)/sysrst.log \
 	$(dst)/clkconverter.log \
 	$(dst)/ahbaxibridge.log
 
+IP_QMTECHK7: $(dst)/sysrst.log \
+	MEM_QMTECHK7 \
+	$(dst)/mmcm-qmtechk7.log \
+	$(dst)/clkconverter.log \
+	$(dst)/ahbaxibridge.log
+
 # Generate Memory IP Blocks
 .PHONY: MEM_VCU MEM_Arty
 MEM_VCU:
@@ -139,6 +155,9 @@ MEM_NEXYSA7:
 	$(MAKE) $(dst)/ddr2-$(board).log
 
 MEM_NEXYSVIDEO:
+	$(MAKE) $(dst)/ddr3-$(board).log
+
+MEM_QMTECHK7:
 	$(MAKE) $(dst)/ddr3-$(board).log
 
 # Copy files and make necessary modifications
@@ -199,7 +218,7 @@ cleanFPGA:
 cleanAll: cleanIP cleanLogs cleanFPGA
 
 # Aliases
-.PHONY: arty artya7 VCU118 VCU108 nexys nexysa7 NexysVideo
+.PHONY: arty artya7 VCU118 VCU108 nexys nexysa7 NexysVideo qmtechk7
 arty artya7: ArtyA7
 VCU118: vcu118
 VCU108: vcu108

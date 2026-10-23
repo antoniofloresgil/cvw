@@ -46,3 +46,12 @@ repos:
       # Run the linter.
       - id: ruff-check
         args: [ --fix ]
+
+  - repo: local
+    hooks:
+      - id: multicore-config-generated
+        name: check generated multicore policy
+        entry: python3 config/multicore/profiles.py
+        language: system
+        files: ^config/(multicore/|shared/multicore-config\.vh$)
+        pass_filenames: false

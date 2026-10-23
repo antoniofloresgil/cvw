@@ -28,7 +28,7 @@
 
 
 
-module wallywrapper import cvw::*;(
+module wallywrapper import cvw::*; #(`CVW_MULTICORE_PARAMS(AHBW)) (
   input logic clk,
   input logic reset_ext,
   input logic SPIIn,
@@ -78,7 +78,7 @@ module wallywrapper import cvw::*;(
 
   assign ExternalStall = '0;
 
-  wallypipelinedsoc  #(P) dut(.clk, .reset_ext, .reset, .ExternalStall, .HRDATAEXT,.HREADYEXT, .HRESPEXT,.HSELEXT,
+  wallypipelinedsoc #(.P(P), `CVW_MULTICORE_CONNECT) dut(.clk, .reset_ext, .reset, .ExternalStall, .HRDATAEXT,.HREADYEXT, .HRESPEXT,.HSELEXT,
                         .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
                         .HTRANS, .HMASTLOCK, .HREADY, .TIMECLK(1'b0), .GPIOIN, .GPIOOUT, .GPIOEN,
                         .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO);

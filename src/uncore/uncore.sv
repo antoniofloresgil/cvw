@@ -28,7 +28,7 @@
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module uncore import cvw::*;  #(parameter cvw_t P)(
+module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES = 1)(
   // AHB Bus Interface
   input  logic                 HCLK, HRESETn,
   input  logic                 TIMECLK,
@@ -47,8 +47,8 @@ module uncore import cvw::*;  #(parameter cvw_t P)(
   output logic                 HREADY, HRESP,
   output logic                 HSELEXT,
   // peripheral pins
-  output logic                 MTimerInt, MSwInt,         // Timer and software interrupts from CLINT
-  output logic                 MExtInt, SExtInt,          // External interrupts from PLIC
+  output logic [NCORES-1:0]    MTimerInt, MSwInt,         // Timer and software interrupts from CLINT
+  output logic [NCORES-1:0]    MExtInt, SExtInt,          // External interrupts from PLIC
   output logic [63:0]          MTIME_CLINT,               // MTIME, from CLINT
   input  logic [31:0]          GPIOIN,                    // GPIO pin input value
   output logic [31:0]          GPIOOUT, GPIOEN,           // GPIO pin output value and enable
@@ -68,14 +68,14 @@ module uncore import cvw::*;  #(parameter cvw_t P)(
   logic [P.XLEN-1:0]           HREADRam, HREADSDC;
 
   logic [12:0]                 HSELRegions;
-  logic                        HSELDTIM, HSELIROM, HSELRam, HSELCLINT, HSELPLIC, HSELGPIO, HSELUART,HSELSDC, HSELSPI, HSELPWM;
+  logic                        HSELDTIM, HSELIROM, HSELRam, HSELCLINT, HSELPLIC, HSELGPIO, HSELUART, HSELSDC, HSELSPI, HSELPWM;
   logic                        HSELDTIMD, HSELIROMD, HSELEXTD, HSELRamD, HSELCLINTD, HSELPLICD, HSELGPIOD, HSELUARTD, HSELSDCD, HSELSPID, HSELPWMD;
-  logic                        HRESPRam,  HRESPSDC;
+  logic                        HRESPRam, HRESPSDC;
   logic                        HREADYRam, HRESPSDCD;
   logic [P.XLEN-1:0]           HREADBootRom;
   logic                        HSELBootRom, HSELBootRomD, HRESPBootRom, HREADYBootRom, HREADYSDC;
   logic                        HSELNoneD;
-  logic                        UARTIntr,GPIOIntr, SPIIntr;
+  logic                        UARTIntr, GPIOIntr, SPIIntr;
   logic [3:0]                  PWMIntr;                     // one PLIC source per PWM comparator, as in the FU540
   logic                        SDCIntM;
 
@@ -92,7 +92,6 @@ module uncore import cvw::*;  #(parameter cvw_t P)(
   logic                        HRESPBRIDGE, HREADYBRIDGE, HSELBRIDGE, HSELBRIDGED;
   /* SDC Interrupt (SPI Controller) */
   logic                        SDCIntr;
-
 
   // Determine which region of physical memory (if any) is being accessed
   // Use a trimmed down portion of the PMA checker - only the address decoders
@@ -116,27 +115,33 @@ module uncore import cvw::*;  #(parameter cvw_t P)(
       .HTRANS, .HWDATA, .HWSTRB, .HREADRam, .HRESPRam, .HREADYRam);
   end else assign {HREADRam, HRESPRam, HREADYRam} = '0;
 
- if (P.BOOTROM_SUPPORTED) begin : bootrom
+  if (P.BOOTROM_SUPPORTED) begin : bootrom
     rom_ahb #(.P(P), .RANGE(P.BOOTROM_RANGE), .PRELOAD(P.BOOTROM_PRELOAD))
     bootrom(.HCLK, .HRESETn, .HSELRom(HSELBootRom), .HADDR, .HREADY, .HTRANS,
       .HREADRom(HREADBootRom), .HRESPRom(HRESPBootRom), .HREADYRom(HREADYBootRom));
   end else assign {HREADBootRom, HRESPBootRom, HREADYBootRom} = '0;
 
   // memory-mapped I/O peripherals
-  if (P.CLINT_SUPPORTED == 1) begin : clint
+  if (P.CLINT_SUPPORTED == 1 && NCORES == 1) begin : clint
     clint_apb #(P) clint(.PCLK, .PRESETn, .PSEL(PSEL[1]), .PADDR(PADDR[15:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+      .PRDATA(PRDATA[1]), .PREADY(PREADY[1]), .MTIME(MTIME_CLINT), .MTimerInt, .MSwInt);
+  end else if (P.CLINT_SUPPORTED == 1) begin : clint
+    clint_multicore_apb #(.P(P), .NCORES(NCORES)) clint(.PCLK, .PRESETn, .PSEL(PSEL[1]), .PADDR(PADDR[15:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[1]), .PREADY(PREADY[1]), .MTIME(MTIME_CLINT), .MTimerInt, .MSwInt);
   end else begin : clint
     assign MTIME_CLINT = '0;
-    assign MTimerInt = 1'b0; assign MSwInt = 1'b0;
+    assign MTimerInt = '0; assign MSwInt = '0;
   end
 
-  if (P.PLIC_SUPPORTED == 1) begin : plic
-    plic_apb #(P) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+  if (P.PLIC_SUPPORTED == 1 && NCORES == 1) begin : plic
+    plic_apb #(P) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+      .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MExtInt, .SExtInt);
+  end else if (P.PLIC_SUPPORTED == 1) begin : plic
+    plic_multicore_apb #(.P(P), .NCORES(NCORES)) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MExtInt, .SExtInt);
   end else begin : plic
-    assign MExtInt = 1'b0;
-    assign SExtInt = 1'b0;
+    assign MExtInt = '0;
+    assign SExtInt = '0;
   end
 
   if (P.GPIO_SUPPORTED == 1) begin : gpio
@@ -160,7 +165,7 @@ module uncore import cvw::*;  #(parameter cvw_t P)(
   end
 
   if (P.SPI_SUPPORTED == 1) begin : spi
-    spi_apb  #(P) spi (
+    spi_apb #(P) spi (
       .PCLK, .PRESETn, .PSEL(PSEL[4]), .PADDR(PADDR[7:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PREADY(PREADY[4]), .PRDATA(PRDATA[4]),
       .SPIOut, .SPIIn, .SPICS, .SPICLK, .SPIIntr);

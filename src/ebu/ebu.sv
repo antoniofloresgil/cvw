@@ -32,23 +32,26 @@
 // and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module ebu import cvw::*;  #(parameter cvw_t P) (
-  input  logic                clk, reset,
+module ebu import cvw::*; #(parameter cvw_t P) (
+  input  logic                 clk, reset,
   // Signals from IFU
-  input  logic [1:0]          IFUHTRANS, // IFU AHB transaction request
-  input  logic [2:0]          IFUHSIZE,  // IFU AHB transaction size
-  input  logic [2:0]          IFUHBURST, // IFU AHB burst length
-  input  logic [P.PA_BITS-1:0]  IFUHADDR,  // IFU AHB address
-  output logic                IFUHREADY, // AHB peripheral ready gated by possible non-grant
+  input  logic [1:0]           IFUHTRANS, // IFU AHB transaction request
+  input  logic [2:0]           IFUHSIZE,  // IFU AHB transaction size
+  input  logic [2:0]           IFUHBURST, // IFU AHB burst length
+  input  logic [P.PA_BITS-1:0] IFUHADDR,  // IFU AHB address
+  output logic                 IFUHREADY, // AHB peripheral ready gated by possible non-grant
   // Signals from LSU
-  input  logic [1:0]          LSUHTRANS, // LSU AHB transaction request
-  input  logic                LSUHWRITE, // LSU AHB transaction direction. 1: write, 0: read
-  input  logic [2:0]          LSUHSIZE,  // LSU AHB size
-  input  logic [2:0]          LSUHBURST, // LSU AHB burst length
-  input  logic [P.PA_BITS-1:0]  LSUHADDR,  // LSU AHB address
-  input  logic [P.XLEN-1:0]     LSUHWDATA, // initially support AHBW = XLEN
-  input  logic [P.XLEN/8-1:0]   LSUHWSTRB, // AHB byte mask
-  output logic                LSUHREADY, // AHB peripheral. Never gated as LSU always has priority
+  input  logic [1:0]           LSUHTRANS, // LSU AHB transaction request
+  input  logic                 LSUHWRITE, // LSU AHB transaction direction. 1: write, 0: read
+  input  logic [2:0]           LSUHSIZE,  // LSU AHB size
+  input  logic [2:0]           LSUHBURST, // LSU AHB burst length
+  input  logic [P.PA_BITS-1:0] LSUHADDR,  // LSU AHB address
+  input  logic [P.XLEN-1:0]    LSUHWDATA, // initially support AHBW = XLEN
+  input  logic [P.XLEN/8-1:0]  LSUHWSTRB, // AHB byte mask
+  output logic                 LSUHREADY, // AHB peripheral. Never gated as LSU always has priority
+
+  input  logic [1:0]          LSUAtomicOp,
+  output logic [1:0]          HATOMIC,
 
   // AHB-Lite external signals
   output logic                HCLK, HRESETn,
@@ -62,7 +65,7 @@ module ebu import cvw::*;  #(parameter cvw_t P) (
   output logic [2:0]          HBURST,    // AHB burst length after arbitration
   output logic [3:0]          HPROT,     // AHB protection.  Wally does not use
   output logic [1:0]          HTRANS,    // AHB transaction request after arbitration
-  output logic                HMASTLOCK  // AHB master lock.  Wally does not use
+  output logic                HMASTLOCK  // Core lock; multicore bridge derives AMO locks from HATOMIC
 );
 
   logic                       LSUDisable;
@@ -72,13 +75,13 @@ module ebu import cvw::*;  #(parameter cvw_t P) (
   logic                       IFUDisable;
   logic                       IFUSelect;
 
-  logic [P.PA_BITS-1:0]         IFUHADDROut;
+  logic [P.PA_BITS-1:0]       IFUHADDROut;
   logic [1:0]                 IFUHTRANSOut;
   logic [2:0]                 IFUHBURSTOut;
   logic [2:0]                 IFUHSIZEOut;
   logic                       IFUHWRITEOut;
 
-  logic [P.PA_BITS-1:0]         LSUHADDROut;
+  logic [P.PA_BITS-1:0]       LSUHADDROut;
   logic [1:0]                 LSUHTRANSOut;
   logic [2:0]                 LSUHBURSTOut;
   logic [2:0]                 LSUHSIZEOut;
@@ -90,7 +93,7 @@ module ebu import cvw::*;  #(parameter cvw_t P) (
   assign HCLK = clk;
   assign HRESETn = ~reset;
 
-  // if two requests come in at once pick one to select and save the others Address phase
+  // if two requests come in at once pick one to select and save the other's Address phase
   // inputs.  Arbitration scheme is LSU always goes first.
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -112,12 +115,13 @@ module ebu import cvw::*;  #(parameter cvw_t P) (
 
   // output mux
   assign HADDR = LSUSelect ? LSUHADDROut : IFUSelect ? IFUHADDROut : '0;
-  assign HSIZE = LSUSelect ? LSUHSIZEOut : IFUSelect ? IFUHSIZEOut: '0;
+  assign HSIZE = LSUSelect ? LSUHSIZEOut : IFUSelect ? IFUHSIZEOut : '0;
   assign HBURST = LSUSelect ? LSUHBURSTOut : IFUSelect ? IFUHBURSTOut : '0; // If doing memory accesses, use LSUburst, else use Instruction burst.
-  assign HTRANS = LSUSelect ? LSUHTRANSOut : IFUSelect ? IFUHTRANSOut: '0; // SEQ if not first read or write, NONSEQ if first read or write, IDLE otherwise
+  assign HTRANS = LSUSelect ? LSUHTRANSOut : IFUSelect ? IFUHTRANSOut : '0; // SEQ if not first read or write, NONSEQ if first read or write, IDLE otherwise
   assign HWRITE = LSUSelect ? LSUHWRITEOut : '0;
   assign HPROT = {3'b001, LSUSelect}; // treat as privileged access of either Opcode fetch or Data access
-  assign HMASTLOCK = 1'b0; // no locking supported
+  assign HATOMIC = LSUSelect ? LSUAtomicOp : COREBUS_NORMAL;
+  assign HMASTLOCK = 1'b0; // multicore AMO locking is handled downstream
 
   // data phase muxing.  This would be a mux if IFU wrote data.
   assign HWDATA = LSUHWDATA;
@@ -125,6 +129,6 @@ module ebu import cvw::*;  #(parameter cvw_t P) (
   // HRDATA is sent to all controllers at the core level.
 
   ebufsmarb ebufsmarb(.HCLK, .HRESETn, .HBURST, .HREADY, .LSUReq, .IFUReq, .IFUSave,
-          .IFURestore, .IFUDisable, .IFUSelect, .LSUDisable, .LSUSelect);
+    .IFURestore, .IFUDisable, .IFUSelect, .LSUDisable, .LSUSelect);
 
 endmodule

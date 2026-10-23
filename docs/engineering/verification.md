@@ -10,6 +10,17 @@ contains newly executed lint and directed RTL results, plus compatibility
 adaptations required by this host. Earlier historical results stay scoped to
 their original branches and configurations.
 
+The [2026-10-19 multicore integration record](experiments/2026-10-19-multicore-main-integration.md)
+records revalidation after merging `main:82d0b80f7` into `f655debae`.
+Use that record for the combined checkout; the original stage-3 PASS alone
+does not validate the newer upstream interfaces.
+
+The [private MSI record](experiments/2026-10-19-private-msi.md) covers the
+optional private data-cache working tree based on `35cb2093b`. Its results
+are separate from the earlier shared-cache Linux boot. Reproduction commands
+and the write-back-aware full-core observer are documented in
+[tests/multicore/README.md](../../tests/multicore/README.md).
+
 ## Revision-specific command compatibility
 
 At `main:3585ff04e`, inspection of [bin/wsim](../../bin/wsim),
@@ -40,6 +51,137 @@ These are inspected procedures, **not tests executed for this task**. ACT
 configuration ownership is explained in CLAUDE.md and `config/<cfg>/act/`.
 Do not initialize/update submodules just to read these notes. The two existing
 untracked addins directories are not evidence of which test generation was used.
+
+## Automated multicore matrix
+
+On the working tree based on `multicore-support:67ec3d991`, ordinary
+`regression-wally` and the dedicated Multicore GitHub Actions workflow select
+the same four cases in [ci.py](../../tests/multicore/ci.py). After setup:
+
+```bash
+regression-wally --multicore           # Only the bounded matrix; no ACT/Linux
+python3 tests/multicore/ci.py --case msi # One case for diagnosis
+```
+
+| Case | Lint and functional scope |
+| --- | --- |
+| single-default | Default one-hart RV64gc lint; RV32/RV64 differential single-hart CLINT/PLIC checks against fixed upstream ancestor 4ce065926 and SMP(1); RV32i/RV64gc clock/reset with and without bus; RV64 translated AMO/PTE A/D/LR-SC with ordinary and forced-uncacheable data |
+| bus | Two/three-hart wrapper lint; RV32/RV64 peripheral checks and bus wait/error/atomic-ordering units; atomic and smoke programs with 1/2/3 harts and latency 0/3 |
+| msi | Two/three-hart lint, one home, MSI private I/D, forwarding and local reads/writes, 32-word banks, four-word lines; RV32/RV64 controller wait/error/coherence checks and RV64 atomic/smoke with 2/3 harts, latency 0/3 |
+| mesi-banked | Two/three-hart lint, two homes, MESI private I/D, local reads/writes, four-word burst transfers, 32-word total banks; RV32/RV64 burst and banked-controller checks and RV64 atomic/smoke with 2/3 harts, latency 0/3 |
+
+All simulations enable assertions. These are small eviction-stress profiles,
+not deployment capacity changes. Explicit topology lint uses the same warning
+policy as lint-wally. The ordinary standard/nightly regression adds the matrix;
+special coverage/benchmark modes retain their existing selection.
+
+The standalone runner generates derivatives once; enclosing regression passes
+`--skip-deriv` after generating them before worker startup. Do not regenerate
+config/deriv concurrently with simulations. Each case has separate builds,
+commands and logs under `sim/verilator/wkdir/multicore-ci/`; `results-<case>.json`
+or `results-all.json` records tool/source/configuration hashes and verdicts.
+CI retains logs and JSON on failure and limits each job to 30 minutes.
+The single-default ordinary testbench invokes bin/elf2hex through uv; CI installs
+uv alongside pre-commit and exports that environment through GITHUB_PATH.
+A missing uv executable prevents ELF input generation before program execution;
+inspect compatibility/atomic-walker/cached-run.log in the uploaded artifact
+when run.log only reports a failed child process. See the
+[Actions prerequisite fix](experiments/2026-10-22-multicore-actions-uv-fix.md).
+
+The single-hart comparison requires Git object
+`4ce065926c8096f34c77867c358f044ec1ea777e` (an ancestor of this feature branch).
+CI fetches full history; shallow local checkouts must supply that object.
+There is no licensed simulator, ACT generation or Linux image requirement for
+the dedicated matrix. Keep long RTL Linux checks in their existing separate
+procedures. Execution results and current limits are in the
+[matrix record](experiments/2026-10-21-multicore-ci.md).
+
+Recommendation 12 extracts the downstream pipelined AHB RAM/fault model,
+passive protocol checker and common bounded hart access tasks for both private
+cache topologies. The checker fixture is independently exercised by the bus
+case, including malformed SEQ and write-data stability mutations:
+
+```bash
+source ./setup.sh
+python3 tests/multicore/check_downstream_checker.py --work-dir /tmp/cvw-downstream-checker
+```
+
+The MSI and banked-MSI scenarios continue to check waits, every configured
+fault beat, reset, exact transfer/writeback counts and concurrency. The
+[extraction record](experiments/2026-10-22-multicore-downstream-fixture.md)
+compares their pre/post output signatures and records the unqualified scope.
+
+Recommendation 9 adds a passive observation contract suite to the bus case:
+
+```bash
+python3 tests/multicore/check_observation.py --work-dir /tmp/cvw-observation
+```
+
+It requires exact failures for duplicate dirty owners and a bad word mapping,
+checks sentinel lookup geometry in RV32/RV64 and runs unchanged one-home/banked
+scenarios against reordered internal enum codes. Only ignored fixture copies
+are mutated. The [observation contract](interfaces/multicore-observation.md)
+defines events, permission queries and the separation from reference models.
+The runner includes its package and adapters explicitly; standalone custom
+builds of msi_tb/msifabric_tb/soc_tb must include those sources as well.
+
+Recommendation 4 adds real ahbinterface/busfsm/EBU boundary fixtures to the
+same per-change matrix: bus selects one home and mesi-banked selects two homes,
+each with RV32/RV64, two/three harts and latency 0/3. The bus case also requires
+six deliberately broken endpoints to trigger named assertions. The standalone
+command runs both home counts:
+
+```bash
+python3 tests/multicore/check_boundary.py --negative --work-dir /tmp/cvw-boundary
+```
+
+The [port contract](interfaces/core-bus.md) specifies acceptance versus delayed
+payload, sideband lifetime, AMO pairing/exclusion, retained SC, ERROR and abort
+semantics. Assertions are active in all existing assertion-enabled buffered
+bridge/fabric tests, including full-core/coherence runs. Their simulation state
+is excluded from synthesis; native single-hart bypass remains unchanged. See
+the [boundary execution record](experiments/2026-10-21-core-bus-contract.md).
+Manual simulation source lists containing ahbmulticore/ahbmsifabric must also
+include `src/ebu/corebus_contract.sv`; the maintained runners do so automatically.
+
+Recommendation 5 adds generated-policy freshness, 300 Python/SV policy vectors,
+physical RAM/MMIO boundaries, actual RV32/RV64 defaults and Linux DT consistency
+checks to single-default. This needs `dtc` but no Linux images. The four profiles
+retain their prior functional scope. CI results now include elaborated core and
+topology data; see [profile ownership](../../config/multicore/README.md).
+
+Recommendation 6 adds isolated reservation and I/D storage fixtures to the bus
+case. To run just those contracts after setup:
+
+```bash
+python3 tests/multicore/check_engines.py --work-dir /tmp/cvw-engines
+```
+
+The fixtures cover RV32/RV64, metadata/event priorities, byte/line write merging,
+combinational reads and reset. Manual source lists using ahbmulticore now also need
+`multicore_reservations.sv` and `multicore_icache_bank.sv`; ahbmsicache additionally
+needs `multicore_dcache_data.sv` (all in src/ebu). Maintained unit runners add these
+explicitly; recursive all-source flows already discover them. See the
+[RAM/event contract](interfaces/multicore-storage.md) and
+[revision-specific results](experiments/2026-10-22-multicore-engine-extraction.md).
+These tests are not BRAM inference or timing evidence.
+
+Recommendation 7 adds capability-report/requirement rejection and a full-core
+fault guard. The single-default CI case selects:
+
+```bash
+python3 tests/multicore/check_capabilities.py --work-dir /tmp/cvw-capabilities
+```
+
+The guard is used by experimental soc_tb/Linux execution; intentional HRESP belongs
+to the separate controller/adapter fixtures. Its two negative tests must produce
+the specific fault-free-execution diagnostic. A transport PASS never means precise
+CPU faults or program recovery. CI manifests now record executed full-core counts,
+widths/latencies and NOT RUN Linux/FPGA qualification separately from capability
+metadata. Ordinary failed SC remains legal because its reply is OKAY with SCFail.
+See the [capability contract](interfaces/multicore-capabilities.md). Explicit
+simulation lists for soc_tb/linux_tb must include testbench/common/bus_fault_guard.sv;
+maintained runners do so automatically.
 
 ## Result vocabulary and preservation
 
