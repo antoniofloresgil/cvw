@@ -1,0 +1,8 @@
+# Leave buffered-normalized mode before lowering aliases. Deleting $buf cells
+# disconnects their loads; bufnorm -conn also loses bidirectional pad aliases
+# with the pinned Yosys. Techmap preserves both ordinary and inout connections.
+bufnorm -reset
+techmap -map +/techmap.v t:$buf
+opt_clean
+delete t:$scopeinfo
+check -assert

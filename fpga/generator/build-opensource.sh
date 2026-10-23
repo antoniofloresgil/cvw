@@ -56,8 +56,7 @@ find "$source_dir" -type f -name '*.sv' -print | sort | grep -v '/cvw\.sv$' > "$
     echo "read_slang --std 1800-2017 --ignore-timing --ignore-assertions -I $config_dir -I $source_dir -I ../../config/shared -I ../../src --top fpgaOpenSource $(tr '\n' ' ' < "$source_list")"
     echo "hierarchy -top fpgaOpenSource"
     echo "synth_xilinx -flatten -arch xc7 -abc9 -nodsp"
-    echo "delete t:\$buf"
-    echo "delete t:\$scopeinfo"
+    echo "script $WALLY/fpga/generator/prepare-nextpnr.ys"
     echo "write_json $out/$board.json"
 } > "$out/synth.ys"
 

@@ -22,11 +22,17 @@ dry runs and all-file pre-commit checks. No new datapath or topology changes
 were added beyond the combined branch inputs. The merge is local; publication
 is a separate operation.
 
-Open-flow DDR3 hardware bring-up remains unresolved. Main's successful
-Vivado Nexys Video Linux boot does not establish a working LiteDRAM flow.
-No migration of DDR initialization onto Wally or new physical/hardware
-qualification is implied by this merge. See the
-[DDR3 record](experiments/open-ddr3-bringup.md).
+Open-flow DDR3 initialization and memory testing still fail on the connected
+Nexys Video. The 2026-10-23 standalone LiteDRAM/VexRiscv retest corrected the
+open-flow buffer cleanup and restored the expected first data address
+`0x72a0`, but reports `init_error=1`; DQ samples around read-valid were all
+`0xffff`, DQS samples around that window were high, and the DFI read-data OR
+was zero. DFI history records READ and `rddata_en` in phase 3; CKE and RESET_N
+have not yet been checked at that event. The cause remains unresolved. The
+board is currently loaded over JTAG with a volatile diagnostic image; this
+does not test Wally or Linux. Main's successful Vivado Linux boot remains
+separate. Next: snapshot DFI CKE/RESET_N on READ and correlate the serialized
+DDR command timing. See the [DDR3 record](experiments/open-ddr3-bringup.md).
 
 ## Inherited main checkpoint
 
