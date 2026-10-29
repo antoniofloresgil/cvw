@@ -114,7 +114,7 @@ The toolchain installation script installs the following tools:
 - [uv](https://docs.astral.sh/uv/): Python package manager and virtual environment tool
 - [mise](https://mise.jdx.dev/): development environment setup tool for managing tool versions and environment variables
 - [Yosys](https://github.com/YosysHQ/yosys) and [yosys-slang](https://github.com/povik/yosys-slang): Verilog/SystemVerilog synthesis
-- [nextpnr-xilinx](https://github.com/gatecat/nextpnr-xilinx): placement and routing for Xilinx 7-series FPGAs
+- [nextpnr-xilinx](https://github.com/openXC7/nextpnr-xilinx): placement and routing for Xilinx 7-series FPGAs
 - [Project X-Ray](https://github.com/f4pga/prjxray): Xilinx 7-series device database and bitstream tools
 - [openFPGALoader](https://github.com/trabucayre/openFPGALoader): FPGA SRAM and flash programmer
 

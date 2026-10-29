@@ -169,48 +169,21 @@ the UART sticky bit requires the BIOS to reach `uart_init()`/`printf()`.
 
 ## Current status and limitations
 
-- The full open-source bitstream (Wally + LiteDRAM core with its initialization
-  firmware + bridge, single clock domain) **builds and programs** on the Nexys
-  Video (`DONE=1`). It **passes timing at 40 MHz** (`HCLK` reported at
-  `~51 MHz`; the combined design does not close at 50 MHz because Wally and the
-  LiteX service CPU/L2 cache share the `sys` domain).
-- Programs still **boot from the IROM** at `0x80000000`; DDR3 is mapped as extra
-  memory at `0x40000000`. Booting from DDR3 would require a BootROM/ZSBL
-  reorganization (as in the Vivado flow).
-- **The DDR3 path is not validated on hardware, and the blocker is now
-  localized to the service CPU.** The bring-up telemetry above shows:
-  - `clk100` toggles (LD0) and the PLL locks (the external `sys_rst` was
-    observed released and `sys_clk` running in an earlier build), so the input
-    clock, BUFG, PLL and system clock are healthy;
-  - `init_done` (LD1) and `init_error` (LD2) both stay low, and neither the SRAM
-    sticky (LD3) nor the UART sticky (LD4) ever asserts.
-  - Since the BIOS is compiled to run from the ROM before touching DDR3, "no
-    SRAM writes and no UART frame" means the **VexRiscv service CPU is not
-    executing the BIOS at all**; DDR3 initialization/leveling is never reached.
-- This is **not** a firmware-image problem: the reset vector and first
-  instructions in `litedram_core_rom.init` (`0b00006f`, `j 0xb0 <crt_init>`)
-  match `bios.elf` exactly, and the routed netlist / FASM do carry the ROM's
-  `INIT_xx` BRAM contents.
-- The remaining suspects are therefore the service CPU's **reset
-  sequencing** (`sys_rst | litedramcore_reset`) or its **clock/fetch path**
-  inside the standalone core, not the ROM or DDR PHY.
-- nextpnr only reports timing for `HCLK`, `clk100` and the IDELAY clock. The DDR
-  PHY's `sys4x` domain is not constrained in this flow and must be checked
-  separately.
-- The AHB bridge is verified in isolation (Verilator) and by full-design
-  synthesis.
-
-### Next steps
-
-1. Extend the same `gen_litedram.py` injection with two more sticky taps and put
-   them on LEDs: the service CPU's actual reset (`sys_rst | litedramcore_reset`)
-   and instruction-fetch activity (`litedramcore_ibus_cyc`). That distinguishes
-   three cases: CPU held in reset, CPU never fetching, or CPU fetching but
-   trapping (e.g. bus decode). These taps were prototyped but not built or
-   tested yet.
-2. Fix or re-integrate the service CPU reset/clock accordingly.
-3. Constrain and verify the DDR PHY `sys4x` domain.
-4. Only then map programs to DDR3 / reorganize the boot path.
+- The open flow requires openXC7 nextpnr-xilinx 0.9.8 with
+  `bin/installation/nextpnr-xilinx-lutram-clkinv.patch`, installed by
+  `bin/installation/fpga-toolchain-install.sh`. The earlier gatecat revision
+  produced bitstreams whose DDR3 reads always failed. See
+  `docs/engineering/experiments/open-ddr3-bringup.md`.
+- On the Nexys Video, the LiteDRAM BIOS passes read leveling and its memory
+  test. Wally then reads and writes DDR3 at `0x40000000` without errors.
+- The design runs at 40 MHz, so DDR3 runs at 320 MT/s. nextpnr's HCLK estimate
+  has varied from 38.99 to 44.5 MHz across builds, so closure at 40 MHz is
+  marginal.
+- Programs still boot from the IROM at `0x80000000`. In this configuration
+  the DTIM shares that address, so IROM programs cannot read constant data from
+  the IROM. Booting Linux from DDR3 needs a BootROM/ZSBL reorganization, as in
+  the Vivado flow, and is untested.
+- The LED telemetry above remains as bring-up instrumentation.
 
 ## Future design: run DDR3 bring-up without a service CPU (TODO)
 

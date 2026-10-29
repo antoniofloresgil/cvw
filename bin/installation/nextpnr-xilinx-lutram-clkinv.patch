@@ -1,0 +1,35 @@
+diff --git a/xilinx/arch_place.cc b/xilinx/arch_place.cc
+index 203bf439..5fa391ec 100644
+--- a/xilinx/arch_place.cc
++++ b/xilinx/arch_place.cc
+@@ -964,6 +964,18 @@ bool Arch::xc7_logic_tile_valid(IdString tileType, LogicTileStatus &lts) const
+                     }
+                 }
+             }
++            // LUT-RAM shares the half-slice clock inverter with the FFs (see fasm.cc), so an FF
++            // whose clock inversion differs from the LUT-RAM's write-clock inversion is illegal.
++            bool found_mem = false, mem_clkinv = false;
++            for (int z = 4 * i; z < 4 * (i + 1); z++) {
++                for (int k = 0; k < 2; k++) {
++                    CellInfo *lut = lts.cells[z << 4 | (BEL_6LUT + k)];
++                    if (lut != nullptr && lut->lutInfo.is_memory) {
++                        found_mem = true;
++                        mem_clkinv = bool_or_default(lut->params, id("IS_WCLK_INVERTED"), false);
++                    }
++                }
++            }
+             NetInfo *clk = nullptr, *sr = nullptr, *ce = nullptr;
+             bool clkinv = false, srinv = false, islatch = false, ffsync = false;
+             for (int z = 4 * i; z < 4 * (i + 1); z++) {
+@@ -971,6 +983,11 @@ bool Arch::xc7_logic_tile_valid(IdString tileType, LogicTileStatus &lts) const
+                     CellInfo *ff = lts.cells[z << 4 | (BEL_FF + k)];
+                     if (ff == nullptr)
+                         continue;
++                    if (found_mem && ff->ffInfo.is_clkinv != mem_clkinv) {
++                        if (dbg_validity_runtime)
++                            log_info("  invalid-arm: LUT-RAM/FF clock inversion %s\n", nameOf(ff));
++                        return false;
++                    }
+                     if (ff->ffInfo.is_latch && k == 1) {
+                         DBG_RT();
+                         return false;

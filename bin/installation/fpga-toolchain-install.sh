@@ -13,7 +13,9 @@
 
 OSS_CAD_SUITE_VERSION=2026-09-25
 PRJXRAY_VERSION=c9f02d8576042325425824647ab5555b1bc77833
-NEXTPNR_XILINX_VERSION=8f178fc6a6d4dfbc57bef66c3ccff34d558047d5
+# openXC7 release 0.9.8. The older gatecat revision produced DDR3 bitstreams
+# whose LiteDRAM reads always failed on the Nexys Video.
+NEXTPNR_XILINX_VERSION=cbabb65139c3d82f0a05b670b5869e1b512b69e8
 XC7_DEVICES=(xc7a100tcsg324-1 xc7a200tsbg484-1)
 XC7_CHIPDBS=(xc7a100t xc7a200t)
 XC7_DEVICE_SET=xc7a100t+xc7a200t
@@ -94,11 +96,11 @@ STATUS="nextpnr-xilinx"
 if check_tool_version "$NEXTPNR_XILINX_VERSION-$XC7_DEVICE_SET"; then
     section_header "Installing/Updating nextpnr-xilinx"
     cd "$RISCV"
-    git_checkout "nextpnr-xilinx" "https://github.com/gatecat/nextpnr-xilinx" "$NEXTPNR_XILINX_VERSION"
-    cd "$RISCV/nextpnr-xilinx"
-    # Boost.System has been header-only since 1.69 and no longer ships a
-    # library in Boost 1.89+. The supported distros provide 1.69 or newer.
-    git apply "$WALLY/bin/installation/nextpnr-xilinx-boost.patch"
+    git_checkout "nextpnr-xilinx-openxc7" "https://github.com/openXC7/nextpnr-xilinx" "$NEXTPNR_XILINX_VERSION"
+    cd "$RISCV/nextpnr-xilinx-openxc7"
+    # The placer lets flip-flops share a half-slice with LUT-RAM of the other
+    # clock polarity (Wally's negedge register file), which fasm then rejects.
+    git apply "$WALLY/bin/installation/nextpnr-xilinx-lutram-clkinv.patch"
     git submodule update --init --recursive
     cmake -S . -B build \
         -DARCH=xilinx \
@@ -114,14 +116,14 @@ if check_tool_version "$NEXTPNR_XILINX_VERSION-$XC7_DEVICE_SET"; then
         "$RISCV/share/prjxray/venv/bin/python" xilinx/python/bbaexport.py \
             --device "${XC7_DEVICES[$i]}" \
             --bba "xilinx/${XC7_CHIPDBS[$i]}.bba" 2>&1 | logger; [ "${PIPESTATUS[0]}" == 0 ]
-        build/bba/bbasm --l "xilinx/${XC7_CHIPDBS[$i]}.bba" "$RISCV/share/nextpnr/xilinx/${XC7_CHIPDBS[$i]}.bin"
+        build/bbasm --l "xilinx/${XC7_CHIPDBS[$i]}.bba" "$RISCV/share/nextpnr/xilinx/${XC7_CHIPDBS[$i]}.bin"
     done
     cmake --build build --parallel "$NUM_THREADS" 2>&1 | logger; [ "${PIPESTATUS[0]}" == 0 ]
     cmake --install build 2>&1 | logger; [ "${PIPESTATUS[0]}" == 0 ]
     rsync -a --delete xilinx/external/prjxray-db/artix7/ "$RISCV/share/prjxray/database/artix7/"
     echo "$NEXTPNR_XILINX_VERSION-$XC7_DEVICE_SET" > "$RISCV/versions/$STATUS.version"
     if [ "$clean" = true ]; then
-        rm -rf "$RISCV/prjxray/build" "$RISCV/nextpnr-xilinx"
+        rm -rf "$RISCV/prjxray/build" "$RISCV/nextpnr-xilinx-openxc7"
     fi
     echo -e "${SUCCESS_COLOR}nextpnr-xilinx and the Artix-7 chip databases successfully installed/updated!${ENDC}"
 else

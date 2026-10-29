@@ -1,7 +1,9 @@
-# Open-tool DDR3 bring-up: unresolved checkpoint
+# Open-tool DDR3 bring-up
 
-Status: **DDR initialization and memory test still fail on hardware; read-path
-timing is narrowed but the cause is unresolved.**
+Status: **resolved on 2026-10-28.** The failure was in the pinned
+place-and-route tool, gatecat nextpnr-xilinx `8f178fc6`. With openXC7
+nextpnr-xilinx 0.9.8 (`cbabb651`), the open flow passes LiteDRAM read leveling
+and the BIOS memory test on the Nexys Video. See the 2026-10-28 section.
 
 The initial checkpoint below was recovered on 2026-10-18 from branch
 `opensource-fpga-bitstream:23ba9c2a7`. It has since been retested on the
@@ -114,7 +116,79 @@ Yosys `0.69+152` (`6f876ae0e-dirty`), nextpnr-xilinx `8f178fc6`, LiteX
 version was recorded in `$RISCV/versions/litex.version`.
 The JTAG image is volatile and is not a Wally/Linux boot image.
 
-## Next experiment
+## 2026-10-28 root cause: nextpnr-xilinx
+
+Test revision: `opensource-fpga-bitstream:065d79ac1` plus the toolchain and
+script changes in this update. All images are volatile JTAG loads of the
+standalone LiteDRAM/VexRiscv core generated at 80 MHz
+(`generated-80mhz/` in the 2026-10-23 artifact directory), under one small top
+that passes the BIOS UART through. Every build used the same RTL.
+
+| Synthesis | Place/route/bitstream | Result on hardware |
+|-----------|-----------------------|--------------------|
+| Vivado 2024.2 | Vivado 2024.2 | leveling window b02 17±8, `Memtest OK` |
+| Yosys (open-flow script) | Vivado 2024.2 (netlist read as Verilog) | same window, `Memtest OK` |
+| Yosys | nextpnr `8f178fc6` + prjxray | all-zero leveling, `Memtest KO` (256/256 bus errors) |
+| Yosys | same, FASM patched with VREF 750 mV and Vivado's PLL `TABLE`/`LKTABLE`/`FILTREG1` | `Memtest KO` |
+| Yosys | openXC7 nextpnr 0.9.8 + its prjxray-db | leveling window b02 17±8, `Memtest OK` (VREF 675 or 750 mV) |
+| Yosys, 40 MHz core | openXC7 nextpnr 0.9.8 | window b01 20±10, `Memtest OK` |
+
+Yosys synthesis is therefore correct, and the failure came from the old
+nextpnr-xilinx back end. A raw DFII MPR read (MR3 MPR enable, then READ)
+returned `0000ffff`/`ffff0000` on the Vivado-routed image. On the old open
+image it returned zero in all four phases.
+
+A `bit2fasm` decode of the working Vivado bitstream matched the old nextpnr
+FASM in every IOB/IOI configuration feature of the DDR bank: SSTL15, IN_TERM,
+IN_DIFF, ISERDES/OSERDES/IDELAY modes and inversions, and the clock leaf
+assignments. The only configuration differences were VREF and the PLL filter
+and lock tables, and correcting them did not help. The faulty element is thus in routing or in
+a bit outside these features. It was not isolated further, because the fixed
+release resolves it. The openXC7 line carries 447 later commits, including
+IOLOGIC, constant-routing and PLL-table fixes and a LiteX DDR CI demo. The
+old revision also ignored `create_clock` and timed every clock at `--freq`.
+0.9.8 propagates it through the PLL (sys, 200 MHz IDELAY).
+
+The flow changes are:
+- `bin/installation/fpga-toolchain-install.sh` installs openXC7
+  nextpnr-xilinx 0.9.8 and its prjxray-db. The Boost patch is no longer needed.
+- `build-opensource.sh` drops `--top`, which 0.9.8 does not accept, and reads
+  the Wally sources as one slang unit with `fpgaOpenSource.sv` first. Main's
+  `CVW_MULTICORE_PARAMS` macro is defined in package `cvw`, and the merged
+  sources failed to elaborate without one unit.
+- The input clock is constrained in `opensource-NexysVideo.xdc`.
+- The Makefile's removal of the UART `$write` tolerates main's added space.
+  A surviving `$print` cell stopped nextpnr.
+
+- nextpnr 0.9.8 needed two more changes for the full Wally design.
+  - Its default atomic CARRY4 packer found no legal placement for some
+    `maccmap` chains, so `build-opensource.sh` sets
+    `XC7_LEGACY_CARRY4_SPLIT=1`.
+  - Its placer allowed Wally's negedge register-file flip-flops to share a
+    half-slice with posedge LUT-RAM, which its FASM writer then rejected.
+    `bin/installation/nextpnr-xilinx-lutram-clkinv.patch` adds the missing
+    legality check, and the installer applies it.
+
+The previous toolchain is backed up in `$RISCV/backup-nextpnr-gatecat-8f178fc6/`.
+
+### Integrated Wally result
+
+`make nexysvideo FLOW=opensource` built the full Wally SoC (`fpgaopensource`,
+RV32, 40 MHz) with these changes. For the hardware check only, `fpga/src/boot.mem`
+was replaced by a small RV32 IROM program. In each pass it writes 64 KiB at
+`0x40000000` with a pass-dependent pattern, reads it back and prints the pass
+number and error count. The file was restored afterwards. On the board the BIOS
+reported read leveling and `Memtest OK` at 320 MT/s. Wally then took the UART
+and completed 971 consecutive passes with zero errors. The program's strings
+print as zeros because the configuration places DTIM over the IROM at
+`0x80000000`, so data loads from the IROM read DTIM.
+
+nextpnr reported HCLK at 38.99 MHz against the 40 MHz target in that build.
+Another seed reached 44.5 MHz, and the board ran correctly. Timing closure at
+40 MHz is marginal and not guaranteed. Linux and DDR3 boot paths were not
+tested.
+
+## Superseded next experiment
 
 Snapshot DFI CKE and RESET_N, including each phase, at the first internal READ
 and `rddata_en` event; then verify how those signals map into the DDR output

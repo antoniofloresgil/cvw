@@ -1,4 +1,5 @@
 set_property -dict {PACKAGE_PIN R4 IOSTANDARD LVCMOS33} [get_ports default_100mhz_clk]
+create_clock -name default_100mhz_clk -period 10.000 [get_ports default_100mhz_clk]
 set_property -dict {PACKAGE_PIN G4 IOSTANDARD LVCMOS15} [get_ports resetn]
 
 set_property -dict {PACKAGE_PIN E22 IOSTANDARD LVCMOS12} [get_ports {GPI[0]}]

@@ -45,7 +45,12 @@ fi
 source_dir="../src/CopiedFiles_do_not_add_to_repo"
 config_dir="$source_dir/config"
 source_list="$out/sources.txt"
-find "$source_dir" -type f -name '*.sv' -print | sort | grep -v '/cvw\.sv$' > "$source_list"
+# fpgaOpenSource.sv includes cvw.sv, whose macros (e.g. CVW_MULTICORE_PARAMS)
+# the other sources use, so it goes first and slang reads one compilation unit.
+{
+    echo "$source_dir/fpgaOpenSource.sv"
+    find "$source_dir" -type f -name '*.sv' -print | sort | grep -vE '/(cvw|fpgaOpenSource)\.sv$'
+} > "$source_list"
 
 {
     if [ "$board" = "nexysvideo" ]; then
@@ -53,7 +58,7 @@ find "$source_dir" -type f -name '*.sv' -print | sort | grep -v '/cvw\.sv$' > "$
         echo "read_verilog -lib $yosys_xilinx/cells_xtra.v"
         echo "read_verilog $ddr_dir/*.v"
     fi
-    echo "read_slang --std 1800-2017 --ignore-timing --ignore-assertions -I $config_dir -I $source_dir -I ../../config/shared -I ../../src --top fpgaOpenSource $(tr '\n' ' ' < "$source_list")"
+    echo "read_slang --std 1800-2017 --single-unit --ignore-timing --ignore-assertions -I $config_dir -I $source_dir -I ../../config/shared -I ../../src --top fpgaOpenSource $(tr '\n' ' ' < "$source_list")"
     echo "hierarchy -top fpgaOpenSource"
     echo "synth_xilinx -flatten -arch xc7 -abc9 -nodsp"
     echo "script $WALLY/fpga/generator/prepare-nextpnr.ys"
@@ -64,11 +69,13 @@ yosys -l "$out/synthesis.log" "$out/synth.ys"
 
 freq=25
 [ "$board" = "nexysvideo" ] && freq=40
-nextpnr-xilinx \
+# The default atomic CARRY4 packer in nextpnr-xilinx 0.9.8 finds no legal
+# placement for some Wally arithmetic chains (CYINIT and S[0] from flip-flops,
+# with both O[0] and CO[0] used); the legacy split-and-repack packer places them.
+XC7_LEGACY_CARRY4_SPLIT=1 nextpnr-xilinx \
     --chipdb "$chipdb" \
     --xdc "$constraints" \
     --json "$out/$board.json" \
-    --top fpgaOpenSource \
     --freq "$freq" \
     --write "$out/$board-routed.json" \
     --report "$out/$board-report.json" \
