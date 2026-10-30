@@ -15,3 +15,11 @@ set_property -dict {PACKAGE_PIN V15 IOSTANDARD LVCMOS25} [get_ports {GPO[4]}]
 
 set_property -dict {PACKAGE_PIN V18 IOSTANDARD LVCMOS33} [get_ports UARTSin]
 set_property -dict {PACKAGE_PIN AA19 IOSTANDARD LVCMOS33} [get_ports UARTSout]
+
+# SD card (SPI mode)
+set_property -dict {PACKAGE_PIN W19 IOSTANDARD LVCMOS33} [get_ports SDCCLK]
+set_property -dict {PACKAGE_PIN W20 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports SDCCmd]
+set_property -dict {PACKAGE_PIN V19 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports SDCIn]
+set_property -dict {PACKAGE_PIN U18 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports SDCCS]
+set_property -dict {PACKAGE_PIN T18 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports SDCCD]
+set_property -dict {PACKAGE_PIN V20 IOSTANDARD LVCMOS33} [get_ports SD_RESET]

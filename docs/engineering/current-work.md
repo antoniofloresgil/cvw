@@ -29,8 +29,21 @@ The installer now uses openXC7 nextpnr-xilinx 0.9.8 plus a local placer
 legality patch. With it, the LiteDRAM BIOS passes leveling and its memory test.
 In the full `make nexysvideo FLOW=opensource` bitstream, Wally completed 971
 DDR3 write/verify passes with no errors. HCLK timing at 40 MHz is marginal
-(38.99 to 44.5 MHz across builds). Linux and DDR3 boot remain untested. See the
+(38.99 to 44.5 MHz across builds). See the
 [DDR3 record](experiments/open-ddr3-bringup.md).
+
+Open-flow Linux boots on the Nexys Video (2026-10-29) with
+`make nexysvideo FLOW=opensource OPENCONFIG=fpganexysvideo`: RV64GC at 12.5 MHz
+in its own clock domain (LiteDRAM CDC), the ZSBL in the boot ROM, and the SD
+card written for the Vivado flow. OpenSBI 1.7 and Linux 6.19.14 reach the
+BusyBox shell with 512 MiB; an 8 MiB file in `/tmp` has the correct MD5.
+Getting there needed an AHB-to-Wishbone bridge fix (burst beats were dropped),
+DSP48 inference, a CARRY4 netlist pass for nextpnr's atomic carry packer, and
+balanced-tree rewrites of `popcnt` and `lzc` (5.7 to 14.9 MHz). The ZSBL now
+rewrites the device-tree clocks to its own frequency. ACT and periph tests pass
+on rv64gc, rv32gc and rv32imc with Verilator, except `WALLY-uart-01`, which
+also fails on the unchanged branch head. The RV32 open-flow design has not been
+rechecked on hardware since the DSP and carry changes.
 
 ## Inherited main checkpoint
 

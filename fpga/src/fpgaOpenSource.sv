@@ -17,6 +17,13 @@ module fpgaOpenSource import cvw::*; (
   output logic [4:0] GPO,
   input  logic       UARTSin,
   output logic       UARTSout,
+  // SD card, accessed in SPI mode by the SDC
+  input  logic       SDCIn,
+  output logic       SDCCLK,
+  output logic       SDCCmd,
+  output logic       SDCCS,
+  input  logic       SDCCD,
+  output logic       SD_RESET,
   // DDR3 SDRAM
   output logic [14:0] ddram_a,
   output logic [2:0]  ddram_ba,
@@ -37,8 +44,8 @@ module fpgaOpenSource import cvw::*; (
 `include "parameter-defs.vh"
 
   logic clk100;
-  logic sys_clk;
-  logic sys_rst, ddr_init_done, ddr_init_error, ddr_ready, ddr_cpu_active;
+  logic sys_clk, wally_clk;
+  logic sys_rst, wally_rst, ddr_init_done, ddr_init_error, ddr_ready, ddr_cpu_active;
   logic init_uart_tx, wally_uart_tx;
   logic init_uart_tx_q, uart_start_seen;
   logic [3:0] ddr_cpu_bus;
@@ -59,14 +66,17 @@ module fpgaOpenSource import cvw::*; (
   logic [31:0] GPIOIN, GPIOOUT, GPIOEN;
   logic SPIOut;
   logic [3:0] SPICS;
-  logic SPICLK, SDCCmd, SDCCLK;
-  logic [3:0] SDCCS, PWMGPIO;
+  logic SPICLK;
+  logic [3:0] SDCCSin, PWMGPIO;
   logic [31:0] heartbeat;
 
-  // Wishbone between the LiteDRAM DDR3 controller and the AHB bridge
-  logic [26:0] wb_adr;
-  logic [31:0] wb_dat_w, wb_dat_r;
-  logic [3:0]  wb_sel;
+  // Wishbone between the LiteDRAM DDR3 controller and the AHB bridge.  The
+  // bridge spans the whole 512 MiB DDR3 device and addresses AHBW-bit words.
+  localparam DDR_ADDR_BITS = 29;
+  localparam WB_ADR_BITS = DDR_ADDR_BITS - $clog2(P.AHBW/8);
+  logic [WB_ADR_BITS-1:0] wb_adr;
+  logic [P.AHBW-1:0] wb_dat_w, wb_dat_r;
+  logic [P.AHBW/8-1:0] wb_sel;
   logic        wb_we, wb_cyc, wb_stb, wb_ack;
   logic wb_err;
 
@@ -74,11 +84,12 @@ module fpgaOpenSource import cvw::*; (
     .I0(default_100mhz_clk), .CE0(1'b1), .S0(1'b1), .O(clk100)
   );
 
-  // LiteDRAM DDR3 subsystem.  It generates the system clock, which is shared
-  // with the SoC so Wally and the DDR controller live in a single clock domain
-  // (no clock-domain crossing on the memory bus).
+  // LiteDRAM DDR3 subsystem.  It generates Wally's clock (wally_clk).  Either
+  // Wally shares the DDR controller's sys_clk, or (when the gateware is
+  // generated with --user-clk-freq) wally_clk is a separate PLL output and
+  // LiteDRAM crosses the Wishbone port into it with asynchronous FIFOs.
   litedram_ddr litedram (
-    .clk100, .cpu_reset_n(resetn), .sys_clk, .sys_rst,
+    .clk100, .cpu_reset_n(resetn), .sys_clk, .sys_rst, .wally_clk, .wally_rst,
     .init_done(ddr_init_done), .init_error(ddr_init_error),
     .debug_cpu_active(ddr_cpu_active),
     .debug_cpu_bus(ddr_cpu_bus),
@@ -98,8 +109,10 @@ module fpgaOpenSource import cvw::*; (
   assign ddr_ready = ddr_init_done & ~ddr_init_error & ~sys_rst;
   assign UARTSout = ddr_ready ? wally_uart_tx : init_uart_tx;
 
-  assign GPIOIN[31:4] = '0;
-  assign GPIOIN[3:0] = GPI;
+  // As in the Vivado Nexys tops: card detect at GPIO 6, no write protect.
+  assign GPIOIN = {25'b0, SDCCD, 1'b0, 1'b0, GPI};
+  assign SDCCS = SDCCSin[0];
+  assign SD_RESET = 1'b0;  // powers the card
 
   always_ff @(posedge sys_clk or negedge resetn) begin
     if (!resetn) heartbeat <= '0;
@@ -144,17 +157,17 @@ module fpgaOpenSource import cvw::*; (
       default: GPO = {4'b0, led_cnt100[25]};
     endcase
 
-  // AHB -> Wishbone bridge for the external (DDR3) memory region at 0x40000000.
-  ahbwishbonebridge #(.ADDR_WIDTH(29), .DATA_WIDTH(32)) extbridge (
-    .HCLK(sys_clk), .HRESETn(~reset), .HSEL(HSELEXT),
-    .HADDR(HADDR[28:0]), .HTRANS, .HWRITE, .HWDATA, .HWSTRB, .HREADY,
+  // AHB -> Wishbone bridge for the external (DDR3) memory region (EXT_MEM_BASE).
+  ahbwishbonebridge #(.ADDR_WIDTH(DDR_ADDR_BITS), .DATA_WIDTH(P.AHBW)) extbridge (
+    .HCLK(wally_clk), .HRESETn(~reset), .HSEL(HSELEXT),
+    .HADDR(HADDR[DDR_ADDR_BITS-1:0]), .HTRANS, .HWRITE, .HWDATA, .HWSTRB, .HREADY,
     .HREADYOUT(HREADYEXT), .HRDATA(HRDATAEXT), .HRESP(HRESPEXT),
     .wb_adr, .wb_dat_w, .wb_sel, .wb_we, .wb_cyc, .wb_stb, .wb_dat_r, .wb_ack
   );
 
   wallypipelinedsoc #(P) soc (
-    .clk(sys_clk),
-    .reset_ext(!resetn | ~ddr_ready),
+    .clk(wally_clk),
+    .reset_ext(!resetn | wally_rst | ~ddr_ready),
     .reset,
     .HRDATAEXT,
     .HREADYEXT,
@@ -173,7 +186,7 @@ module fpgaOpenSource import cvw::*; (
     .HTRANS,
     .HMASTLOCK,
     .HREADY,
-    .TIMECLK(sys_clk),
+    .TIMECLK(wally_clk),
     .GPIOIN,
     .GPIOOUT,
     .GPIOEN,
@@ -183,9 +196,9 @@ module fpgaOpenSource import cvw::*; (
     .SPIOut,
     .SPICS,
     .SPICLK,
-    .SDCIn(1'b0),
+    .SDCIn,
     .SDCCmd,
-    .SDCCS,
+    .SDCCS(SDCCSin),
     .SDCCLK,
     .PWMGPIO
   );

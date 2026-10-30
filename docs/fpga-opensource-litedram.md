@@ -82,30 +82,37 @@ ones after generation so Yosys finds them regardless of its working directory
 (this must happen *after* copying `platform.sources`, which would otherwise
 overwrite the patched file).
 
-## Clocking decision: a single clock domain
+## Clocking
 
-The SoC and the DDR controller share **one clock domain**. `litedram_ddr`
-exports its `sys_clk` and the SoC runs on it (`sys_clk_freq = 40 MHz` for the
-Nexys Video bring-up), so the AHB/Wishbone bus needs no clock-domain crossing.
+The DDR controller always runs at `sys_clk_freq = 40 MHz` (DDR3 at 320 MT/s).
+`litedram_ddr` exports Wally's clock as `wally_clk`, in one of two ways:
+
+- **Shared clock** (default, `fpgaopensource`): `wally_clk` is the DDR
+  controller's `sys_clk`, so the AHB/Wishbone bus needs no clock-domain
+  crossing.
+- **Separate clock** (`gen_litedram.py --user-clk-freq`, used by the
+  `fpganexysvideo` Linux configuration): the LiteDRAM PLL gets one more output
+  for Wally, and the crossbar port crosses into it through LiteDRAM's own
+  asynchronous FIFOs (`LiteDRAMNativePortCDC`). The bridge itself stays
+  single-clock. This lets Wally run slower than the DDR controller, which the
+  RV64GC design needs because it does not close timing at 40 MHz.
+
 Wally is held in reset (`reset_ext`) until the DDR initialization firmware
 reports `init_done` without `init_error`, and the board UART is switched from
 the initialization firmware to Wally once the DDR is ready.
-
-A CDC in the bridge was considered and rejected: the bus is wide
-(address + 32-bit data + strobes) and non-posted, so a correct crossing needs a
-bidirectional asynchronous FIFO/handshake (not a two-flop synchronizer), adding
-latency, area and metastability risk. Since Wally is the only master of the
-DDR3, unifying the clock is simpler and sufficient. The trade-off is that Wally
-is limited to the DDR controller's `sys` frequency; that is acceptable because
-the open-source flow already closes at around 50 MHz.
 
 ## Bus bridge: AHB-Lite slave to Wishbone master
 
 `src/uncore/ahbwishbonebridge.sv` connects Wally's external-memory AHB port to
 LiteDRAM's Wishbone slave.
 
-- With caches disabled, `HBURST` is fixed to `SINGLE`, so only single `NONSEQ`
-  transactions occur; no burst support is needed.
+- Every AHB transfer, including each beat of a cache-line burst, becomes one
+  Wishbone transaction. The next beat's address phase coincides with the
+  current beat's Wishbone ack, so the bridge goes straight to the next request
+  instead of returning to idle; otherwise every other burst beat would complete
+  without reaching the DDR.
+- The data width is Wally's `AHBW` (32 or 64 bits); the Wishbone port has the
+  same width and LiteDRAM converts it to its 128-bit native port.
 - Byte enables come from `HWSTRB` (the AHB write strobe used throughout the
   uncore), not from `HSIZE`.
 - The region select is **registered** in the bridge. The SoC exposes the
@@ -117,19 +124,15 @@ LiteDRAM's Wishbone slave.
 
 ## Memory map
 
-To avoid conflicting with the boot ROM, DDR3 is mapped at a dedicated base
-rather than at `0x80000000`:
+The open flow builds one of two configurations, selected with `OPENCONFIG`:
 
-| Region   | Base         | Size   |
-|----------|--------------|--------|
-| IROM     | `0x80000000` | 64 KiB |
-| DDR3     | `0x40000000` | 128 MB |
+| Configuration | ISA | Boot | DDR3 window |
+|---|---|---|---|
+| `fpgaopensource` (default) | RV32IMC | program in the 64 KiB IROM at `0x80000000` | `0x40000000`, 128 MiB |
+| `fpganexysvideo` | RV64GC (as in the Vivado flow) | ZSBL in the boot ROM, Linux from the SD card | `0x80000000`, 512 MiB |
 
-`config/derivlist.txt` sets `EXT_MEM_SUPPORTED=1`, `EXT_MEM_BASE=0x40000000`
-and `EXT_MEM_RANGE=0x07FFFFFF` for the `fpgaopensource` configuration.
-
-The bridge uses `HADDR[26:0]` as the DDR3 word-offset, which is correct because
-`0x40000000` is aligned to the 128 MB window.
+The bridge uses `HADDR[28:0]` as the offset into the 512 MiB device; both bases
+are aligned to their windows.
 
 ## Build flow
 
@@ -143,10 +146,32 @@ The bridge uses `HADDR[26:0]` as the DDR3 word-offset, which is correct because
    `litedram_ddr.v` (with `read_verilog`, which tolerates parameter overrides
    on blackboxes, unlike `read_slang`), then the Wally sources with
    `read_slang`;
-4. runs `synth_xilinx`, deletes `$buf` and `$scopeinfo` cells (left over from
-   reading the DDR3 Verilog hierarchically), and writes the JSON;
-5. runs nextpnr-xilinx at 40 MHz and produces the bitstream with
+4. runs `synth_xilinx` (with DSP48 inference, and with ABC9's final `&verify`
+   disabled: it does not finish on the RV64GC design), deletes `$buf` and
+   `$scopeinfo` cells (left over from reading the DDR3 Verilog hierarchically),
+   and writes the JSON;
+5. runs `fix-carry4-outputs.py`. In a slice, a carry position's sum `O[i]` and
+   carry `CO[i]` leave through the same output mux, so Yosys CARRY4 cells that
+   use both have no legal placement for nextpnr's atomic carry packer. The
+   script recomputes those carries as `O[i+1] ^ S[i+1]` in a LUT2. The atomic
+   packer keeps carry chains on the dedicated CO-to-CI cascade; the legacy
+   `XC7_LEGACY_CARRY4_SPLIT` packer routes each carry bit through the fabric
+   and made a 56-bit comparator take 58 ns;
+6. runs nextpnr-xilinx and produces the bitstream with
    `fasm2frames`/`xc7frames2bit`.
+
+To build the Linux configuration:
+
+```bash
+cd $WALLY/fpga/generator
+make nexysvideo FLOW=opensource OPENCONFIG=fpganexysvideo
+```
+
+This also builds the ZSBL for the open-flow clock (`SYSTEMCLOCK`, 12.5 MHz) and
+passes that clock to the LiteDRAM generator. The ZSBL sets every
+`clock-frequency` and `timebase-frequency` property of the device tree it loads
+from the SD card to `SYSTEMCLOCK`, so an SD card written for the Vivado flow
+(20 MHz) boots unchanged.
 
 ## Hardware bring-up telemetry
 
@@ -176,13 +201,17 @@ the UART sticky bit requires the BIOS to reach `uart_init()`/`printf()`.
   `docs/engineering/experiments/open-ddr3-bringup.md`.
 - On the Nexys Video, the LiteDRAM BIOS passes read leveling and its memory
   test. Wally then reads and writes DDR3 at `0x40000000` without errors.
-- The design runs at 40 MHz, so DDR3 runs at 320 MT/s. nextpnr's HCLK estimate
-  has varied from 38.99 to 44.5 MHz across builds, so closure at 40 MHz is
-  marginal.
-- Programs still boot from the IROM at `0x80000000`. In this configuration
-  the DTIM shares that address, so IROM programs cannot read constant data from
-  the IROM. Booting Linux from DDR3 needs a BootROM/ZSBL reorganization, as in
-  the Vivado flow, and is untested.
+- **Linux boots** with `OPENCONFIG=fpganexysvideo` (2026-10-29): the ZSBL loads
+  OpenSBI and Linux 6.19 from an SD card written for the Vivado flow, the
+  kernel sees 512 MiB, detects the SD card and reaches the BusyBox shell.
+  Wally runs at 12.5 MHz; nextpnr reports 13.3 to 14.9 MHz across builds. The
+  remaining critical path (fetch PC to the `csrc` counters, about 33 LUT
+  levels) is about 90% routing delay, so the next timing work is placement
+  quality rather than RTL.
+- With `fpgaopensource`, the design runs at 40 MHz. Programs boot from the
+  IROM at `0x80000000`, where the DTIM also sits, so IROM programs cannot read
+  constant data from the IROM. Its DDR3 result above predates the DSP and
+  atomic carry changes and has to be rechecked.
 - The LED telemetry above remains as bring-up instrumentation.
 
 ## Future design: run DDR3 bring-up without a service CPU (TODO)

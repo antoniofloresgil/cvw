@@ -25,15 +25,17 @@ from pathlib import Path
 from litedram.core import LiteDRAMCore
 from litedram.frontend.wishbone import LiteDRAMWishbone2Native
 from litedram.gen import LiteDRAMCore as StandaloneCore
+from litedram.gen import get_wishbone_user_port_ios
 from litedram.modules import MT41K256M16
 from litedram.phy.s7ddrphy import A7DDRPHY
+from litex.build.generic_platform import Pins
 from litex.build.xilinx import XilinxPlatform
 from litex.gen import LiteXModule
 from litex.soc.cores.clock import S7IDELAYCTRL, S7MMCM, S7PLL
 from litex.soc.integration.builder import Builder
 from litex.soc.interconnect import wishbone
 from litex_boards.platforms import digilent_nexys_video
-from migen import ClockDomain, Signal
+from migen import ClockDomain, ClockDomainsRenamer, ClockSignal, ResetSignal, Signal
 
 
 class DDRSubsystem(LiteXModule):
@@ -94,12 +96,45 @@ class DDRSubsystem(LiteXModule):
             self.submodules += LiteDRAMWishbone2Native(wb, port)
 
 
+def add_wally_port(core, platform, data_width, clk_freq):
+    """Attach Wally's Wishbone port in its own clock domain.
+
+    The PLL gets one more output for Wally, and the crossbar port crosses into
+    it through LiteDRAM's asynchronous FIFOs (LiteDRAMNativePortCDC).  Wally is
+    held in reset until DDR initialization completes, so the port needs no
+    block_until_ready gating.
+    """
+    core.cd_wally = ClockDomain()
+    core.crg.pll.create_clkout(core.cd_wally, clk_freq)
+    port = core.sdram.crossbar.get_port(data_width=data_width, clock_domain="wally")
+    wb = wishbone.Interface(data_width=port.data_width, adr_width=port.address_width,
+                            addressing="word")
+    core.wally_wb2native = ClockDomainsRenamer("wally")(LiteDRAMWishbone2Native(wb, port))
+    platform.add_extension(get_wishbone_user_port_ios("wally", len(wb.adr), len(wb.dat_w)))
+    platform.add_extension([("wally_clk", 0, Pins(1)), ("wally_rst", 0, Pins(1))])
+    pads = platform.request("user_port_wally")
+    core.comb += [
+        wb.adr.eq(pads.adr), wb.dat_w.eq(pads.dat_w), pads.dat_r.eq(wb.dat_r),
+        wb.sel.eq(pads.sel), wb.cyc.eq(pads.cyc), wb.stb.eq(pads.stb),
+        pads.ack.eq(wb.ack), wb.we.eq(pads.we), pads.err.eq(wb.err),
+        platform.request("wally_clk").eq(ClockSignal("wally")),
+        platform.request("wally_rst").eq(ResetSignal("wally")),
+    ]
+    return len(wb.adr)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate LiteDRAM DDR3 Verilog for CORE-V-Wally.")
     parser.add_argument("--toolchain", default="openxc7", choices=["openxc7", "vivado"],
                         help="Toolchain (selects PLL vs MMCM and constraint dialect).")
     parser.add_argument("--sys-clk-freq", default=40e6, type=float,
                         help="System clock frequency in Hz. This is the clock shared with the SoC.")
+    parser.add_argument("--user-data-width", default=32, type=int,
+                        help="Data width of Wally's Wishbone port (Wally's AHBW).")
+    parser.add_argument("--user-clk-freq", default=None, type=float,
+                        help="Clock for Wally and its Wishbone port, in Hz. By default Wally "
+                             "shares the system clock; otherwise the PLL generates this clock "
+                             "and the port crosses into it through asynchronous FIFOs.")
     parser.add_argument("--output-dir", default=os.path.join(os.path.dirname(__file__), "opensource-litedram"),
                         help="Directory for the generated gateware.")
     args = parser.parse_args()
@@ -116,11 +151,17 @@ def main():
         memtype="DDR3", sdram_module=MT41K256M16, sdram_module_nb=2,
         sdram_rank_nb=1, sdram_phy=A7DDRPHY, input_clk_freq=100e6,
         sys_clk_freq=args.sys_clk_freq, iodelay_clk_freq=200e6, cmd_latency=0,
-        user_ports={"wally": dict(type="wishbone", data_width=32,
+        user_ports={} if args.user_clk_freq else
+                   {"wally": dict(type="wishbone", data_width=args.user_data_width,
                                   block_until_ready=True)},
     )
     core = StandaloneCore(platform, config, integrated_rom_size=0x10000,
                           integrated_sram_size=0x4000)
+    if args.user_clk_freq:
+        wb_adr_width = add_wally_port(core, platform, args.user_data_width, args.user_clk_freq)
+    else:
+        wb_adr_width = core.sdram.crossbar.masters[-1].address_width + \
+            (core.sdram.controller.data_width // args.user_data_width).bit_length() - 1
     builder = Builder(core, output_dir=str(output / "init"),
                       compile_gateware=False, compile_software=True,
                       csr_csv=str(output / "csr.csv"))
@@ -157,18 +198,18 @@ def main():
     # Bring-up diagnostic: expose a sticky bit that latches once the service CPU
     # writes its SRAM (the BIOS clears .bss and builds its stack there, so it
     # only asserts when real firmware is executing).
-    port_marker = "    output wire          user_rst\n);"
-    if text.count(port_marker) != 1 or text.count("endmodule") != 1:
+    port_marker = "\n);"
+    if "module litedram_core" not in text.split(port_marker, 1)[0] or text.count("endmodule") != 1:
         raise RuntimeError("Unexpected LiteDRAM module layout; cannot inject CPU diagnostics")
     text = text.replace(
         port_marker,
-        "    output wire          user_rst,\n"
+        ",\n"
         "    output reg           debug_cpu_active = 1'b0,\n"
         "    output wire [3:0]    debug_cpu_bus,\n"
         "    output reg [3:0]     debug_cpu_boot = 4'b0,\n"
         "    output reg [3:0]     debug_cpu_data = 4'b0,\n"
         "    output reg [3:0]     debug_cpu_copy = 4'b0,\n"
-        "    output reg [31:0]    debug_first_data_addr = 32'b0\n);")
+        "    output reg [31:0]    debug_first_data_addr = 32'b0\n);", 1)
     text = text.replace(
         "endmodule",
         "reg [2:0] debug_bus_seen = 3'b0;\n"
@@ -229,11 +270,20 @@ def main():
         "    else if (|litedramcore_ram_we) debug_cpu_active <= 1'b1;\n\n"
         "endmodule")
     (output / "litedram_core.v").write_text(text)
-    (output / "litedram_ddr.v").write_text("""
-// Generated wrapper: one sys clock for DDR, service CPU, and Wally.
+    dw = args.user_data_width
+    if args.user_clk_freq:
+        wally_clock = ".user_clk(sys_clk), .user_rst(sys_rst), .wally_clk(wally_clk), .wally_rst(wally_rst),"
+        wrapper_comment = "// Generated wrapper: Wally runs on wally_clk; DDR and the service CPU on sys_clk."
+        wally_clock_assigns = ""
+    else:
+        wally_clock = ".user_clk(sys_clk), .user_rst(sys_rst),"
+        wrapper_comment = "// Generated wrapper: one sys clock for DDR, service CPU, and Wally."
+        wally_clock_assigns = "  assign wally_clk = sys_clk;\n  assign wally_rst = sys_rst;\n"
+    (output / "litedram_ddr.v").write_text(f"""
+{wrapper_comment}
 module litedram_ddr (
   input wire clk100, cpu_reset_n, uart_rx,
-  output wire sys_clk, sys_rst, init_done, init_error, uart_tx,
+  output wire sys_clk, sys_rst, wally_clk, wally_rst, init_done, init_error, uart_tx,
   output wire debug_cpu_active,
   output wire [3:0] debug_cpu_bus,
   output wire [3:0] debug_cpu_boot, debug_cpu_data,
@@ -246,14 +296,14 @@ module litedram_ddr (
   inout wire [15:0] ddram_dq,
   inout wire [1:0] ddram_dqs_n, ddram_dqs_p,
   output wire ddram_odt, ddram_ras_n, ddram_reset_n, ddram_we_n,
-  input wire [26:0] wb_adr,
-  input wire [31:0] wb_dat_w,
-  output wire [31:0] wb_dat_r,
-  input wire [3:0] wb_sel,
+  input wire [{wb_adr_width-1}:0] wb_adr,
+  input wire [{dw-1}:0] wb_dat_w,
+  output wire [{dw-1}:0] wb_dat_r,
+  input wire [{dw//8-1}:0] wb_sel,
   input wire wb_we, wb_cyc, wb_stb,
   output wire wb_ack, wb_err
 );
-  // The board has no power-on-reset circuit, but the LiteX core expects an
+{wally_clock_assigns}  // The board has no power-on-reset circuit, but the LiteX core expects an
   // active-high reset pulse at startup. Hold reset for ~10 ms after
   // configuration (or while the CPU reset button is pressed).
   reg [19:0] por_cnt = 20'd0;
@@ -262,7 +312,7 @@ module litedram_ddr (
 
   litedram_core core (
     .clk(clk100), .rst(por_rst | ~cpu_reset_n),
-    .user_clk(sys_clk), .user_rst(sys_rst), .pll_locked(),
+    {wally_clock} .pll_locked(),
     .init_done(init_done), .init_error(init_error),
     .uart_rx(uart_rx), .uart_tx(uart_tx),
     .ddram_a(ddram_a), .ddram_ba(ddram_ba), .ddram_cs_n(),

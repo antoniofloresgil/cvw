@@ -2,6 +2,11 @@ dst := IP
 SHELL := /bin/bash
 
 FLOW ?= vivado
+# Configuration for the open-source flow: fpgaopensource (RV32, programs in the
+# IROM) or fpganexysvideo (RV64GC that boots Linux from the SD card; Nexys
+# Video only).  The latter runs Wally at SYSTEMCLOCK in its own clock domain,
+# boots the ZSBL from the boot ROM, and maps DDR3 at 0x80000000.
+OPENCONFIG ?= fpgaopensource
 
 ifeq ($(FLOW),vivado)
 all: ArtyA7
@@ -62,11 +67,22 @@ nexysvideo: export XILINX_PART := xc7a200tsbg484-1
 nexysvideo: export XILINX_BOARD := digilentinc.com:nexys_video:part0:1.2
 nexysvideo: export XILINX_BOARD_REPO := $(WALLY)/addins/vivado-boards/new/board_files
 nexysvideo: export board := nexysvideo
+# The open-source flow does not close timing at 20 MHz for the RV64GC Linux
+# configuration yet; 12.5 MHz is 1600 MHz / 128 on the LiteDRAM PLL.
+ifeq ($(FLOW),opensource)
+nexysvideo: export SYSTEMCLOCK := 12500000
+else
 nexysvideo: export SYSTEMCLOCK := 20000000
+endif
 nexysvideo: export MAXSDCCLOCK := 10000000
 ifeq ($(FLOW),opensource)
+ifeq ($(OPENCONFIG),fpgaopensource)
 nexysvideo: PreProcessOpenSource
 	./build-opensource.sh "nexysvideo"
+else
+nexysvideo: PreProcessOpenSource zsbl
+	WALLY_CLK_FREQ=$(SYSTEMCLOCK) ./build-opensource.sh "nexysvideo"
+endif
 else
 nexysvideo: FPGA_NEXYSVIDEO
 endif
@@ -79,9 +95,14 @@ qmtechk7: export MAXSDCCLOCK  := 10000000
 qmtechk7: FPGA_QMTECHK7
 
 # variables computed from config
-EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/fpga$(board)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')
+ifeq ($(FLOW),opensource)
+config := $(OPENCONFIG)
+else
+config := fpga$(board)
+endif
+EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/$(config)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')
 
-EXT_MEM_RANGE = $(shell grep 'EXT_MEM_RANGE' ../../config/deriv/fpga$(board)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/\1/g' | sed 's/\(.*\)/base=16;\1+1/g' | bc | sed 's/\(.*\)/0x\1/g')
+EXT_MEM_RANGE = $(shell grep 'EXT_MEM_RANGE' ../../config/deriv/$(config)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/\1/g' | sed 's/\(.*\)/base=16;\1+1/g' | bc | sed 's/\(.*\)/0x\1/g')
 
 
 .PHONY: FPGA_Arty FPGA_VCU
@@ -182,7 +203,7 @@ PreProcessOpenSource:
 	rm -rf ../src/CopiedFiles_do_not_add_to_repo
 	cp -r ../../src/ ../src/CopiedFiles_do_not_add_to_repo/
 	mkdir -p ../src/CopiedFiles_do_not_add_to_repo/config
-	cp ../../config/deriv/fpgaopensource/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
+	cp ../../config/deriv/$(OPENCONFIG)/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
 	cp ../../config/shared/*.vh ../src/CopiedFiles_do_not_add_to_repo/config/
 	cp ../../fpga/src/fpgaOpenSource.sv ../src/CopiedFiles_do_not_add_to_repo/
 	sed -i "s/bit \[DATA_WIDTH-1:0\].*ROM.*/(\* rom_style=\"block\" \*) &/g" ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv

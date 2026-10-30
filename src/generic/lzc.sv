@@ -30,14 +30,13 @@ module lzc #(parameter WIDTH = 1) (
   output logic [$clog2(WIDTH+1)-1:0]  ZeroCnt // the number of leading zeroes
 );
 
-  integer i;
+  // Pad num with ones on the right to a power of two N > WIDTH, so the padded
+  // value is never zero and its leading-zero count (WIDTH when num is zero)
+  // fits in $clog2(N) = $clog2(WIDTH+1) bits.  A balanced tree keeps the depth
+  // logarithmic; a priority loop counting up one bit at a time is WIDTH
+  // incrementers deep in tools that do not restructure it (e.g. Yosys).
+  localparam N = 2**$clog2(WIDTH+1);
+  logic Valid;
 
-  always_comb begin
-    i = 0;
-    // search for leading one
-    while ((i < WIDTH) && (!num[WIDTH-1-i])) begin
-      i = i + 1;
-    end
-    ZeroCnt = i[$clog2(WIDTH+1)-1:0];
-  end
+  lzctree #(N) tree(.num({num, {(N-WIDTH){1'b1}}}), .Valid, .ZeroCnt);
 endmodule

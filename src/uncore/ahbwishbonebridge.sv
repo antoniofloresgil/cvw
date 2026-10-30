@@ -7,9 +7,10 @@
 //          Used by the open-source FPGA flow to connect Wally's external memory
 //          bus to the LiteDRAM DDR3 controller, which exposes a Wishbone slave.
 //
-//          The AHB master in this configuration only issues single NONSEQ
-//          transactions (HBURST is fixed to SINGLE when caches are disabled),
-//          so no burst support is required.  Byte enables are taken from HWSTRB.
+//          Each AHB transfer, including every beat of a cache-line burst, becomes
+//          one Wishbone transaction: the bridge holds HREADYOUT low until the
+//          Wishbone ack, so the next beat's address phase is captured only then.
+//          Byte enables are taken from HWSTRB.
 //
 // Documentation: RISC-V System on Chip Design
 //
@@ -48,7 +49,7 @@ module ahbwishbonebridge #(
   output logic [DATA_WIDTH-1:0]   HRDATA,
   output logic                    HRESP,
   // Wishbone master
-  output logic [ADDR_WIDTH-3:0]   wb_adr,       // word address
+  output logic [ADDR_WIDTH-$clog2(DATA_WIDTH/8)-1:0] wb_adr, // word address
   output logic [DATA_WIDTH-1:0]   wb_dat_w,
   output logic [DATA_WIDTH/8-1:0] wb_sel,
   output logic                    wb_we,
@@ -60,8 +61,10 @@ module ahbwishbonebridge #(
   typedef enum logic {BUS_IDLE, BUS_DATA} busstatetype;
   busstatetype CurrState, NextState;
 
-  logic                  writeD, selD;
-  logic [ADDR_WIDTH-3:0] addrD;
+  localparam OFFSET_BITS = $clog2(DATA_WIDTH/8);
+
+  logic                            writeD, selD;
+  logic [ADDR_WIDTH-OFFSET_BITS-1:0] addrD;
 
   // Start of an AHB transaction (address phase).
   logic initTrans;
@@ -81,7 +84,7 @@ module ahbwishbonebridge #(
     end else if (initTrans) begin
       writeD <= HWRITE;
       selD   <= HSEL;
-      addrD  <= HADDR[ADDR_WIDTH-1:2];
+      addrD  <= HADDR[ADDR_WIDTH-1:OFFSET_BITS];
     end
 
   // Wishbone master
@@ -102,7 +105,9 @@ module ahbwishbonebridge #(
   always_comb begin
     case (CurrState)
       BUS_IDLE: NextState = initTrans           ? BUS_DATA : BUS_IDLE;
-      BUS_DATA: NextState = (~selD | wb_ack)    ? BUS_IDLE : BUS_DATA;
+      // A transfer whose address phase coincides with the end of this one
+      // (the next beat of a burst) starts its Wishbone request right away.
+      BUS_DATA: NextState = (~selD | wb_ack)    ? (initTrans ? BUS_DATA : BUS_IDLE) : BUS_DATA;
       default:  NextState = BUS_IDLE;
     endcase
   end
