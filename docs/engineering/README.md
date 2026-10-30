@@ -8,7 +8,8 @@ integrates `main:1d5677648` (official upstream `89479dd09`) over open-flow
 coexist; the FPGA wrapper retains the default single-hart topology.
 See the [branch integration record](experiments/2026-10-23-open-fpga-main-integration.md)
 for validation and the [DDR3 record](experiments/open-ddr3-bringup.md) for
-unresolved open-flow hardware bring-up. Earlier records retain their original
+the open-flow hardware bring-up, which has since reached DDR3 and Linux on the
+board (see [current work](current-work.md)). Earlier records retain their original
 revision and branch scopes, including the successful Vivado Linux boot.
 
 ## Find the authoritative information

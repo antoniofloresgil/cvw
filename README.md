@@ -118,7 +118,7 @@ The toolchain installation script installs the following tools:
 - [Project X-Ray](https://github.com/f4pga/prjxray): Xilinx 7-series device database and bitstream tools
 - [openFPGALoader](https://github.com/trabucayre/openFPGALoader): FPGA SRAM and flash programmer
 
-The FPGA installation also generates nextpnr chip databases for the `xc7a100t` used by the Arty A7-100T and Nexys A7-100T and the `xc7a200t` used by the Nexys Video. The open-source flow builds a reduced Wally configuration with internal BRAM, UART, GPIO and CLINT; it does not replace the Vivado-generated DDR and clocking IP in the existing FPGA tops.
+The FPGA installation also generates nextpnr chip databases for the `xc7a100t` used by the Arty A7-100T and Nexys A7-100T and the `xc7a200t` used by the Nexys Video. On the Arty A7 and Nexys A7 the open-source flow builds a reduced Wally configuration with internal BRAM, UART, GPIO and CLINT. On the Nexys Video it uses a LiteX/LiteDRAM DDR3 controller instead of Vivado IP, and can build either the reduced RV32 configuration or the RV64GC Linux configuration (`OPENCONFIG=fpganexysvideo`, see [docs/fpga-opensource-litedram.md](docs/fpga-opensource-litedram.md)).
 
 After sourcing `$WALLY/setup.sh`, generate a bitstream with either:
 

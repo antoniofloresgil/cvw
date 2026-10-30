@@ -125,6 +125,24 @@ Five stages: Fetch (F), Decode (D), Execute (E), Memory (M), Writeback (W). Stal
 
 Lockstep mode runs Wally in lock-step against ImperasDV (commercial) or the RISC-V Sail model for instruction-by-instruction comparison.
 
+### FPGA flows
+
+Build from `fpga/generator` (needs `source setup.sh`). Boards: ArtyA7, nexysa7, nexysvideo, vcu108, vcu118, genesys2, qmtechk7.
+```bash
+make nexysvideo FLOW=vivado                                       # Vivado, DDR3 from Xilinx MIG, 20 MHz
+make nexysvideo FLOW=opensource                                   # Yosys + nextpnr-xilinx + LiteDRAM, RV32IMC `fpgaopensource`, 40 MHz
+make nexysvideo FLOW=opensource OPENCONFIG=fpganexysvideo         # same flow, RV64GC Linux, Wally at 12.5 MHz (about 20 min)
+openFPGALoader -b nexysVideo opensource-nexysvideo/nexysvideo.bit # program the board (volatile)
+```
+The open flow writes `opensource-<board>/` (`synthesis.log`, `<board>.json`, `<board>.bit`); read timing and fit from nextpnr's last `Max frequency for clock 'HCLK'` and `Device utilisation` lines. `docs/fpga-opensource-litedram.md` documents the design; `docs/engineering/experiments/open-ddr3-bringup.md` the DDR3 bring-up.
+
+Things that are not obvious from the scripts:
+- The open flow needs openXC7 nextpnr-xilinx 0.9.8 plus `bin/installation/nextpnr-xilinx-lutram-clkinv.patch` (installed by `fpga-toolchain-install.sh`); do not upgrade it casually.
+- `build-opensource.sh` disables ABC9's `&verify` (hangs on RV64GC) and runs `fpga/generator/fix-carry4-outputs.py` on the Yosys netlist: a CARRY4 whose sum `O[i]` and carry `CO[i]` are both used outside the chain has no legal placement for nextpnr's atomic carry packer.
+- `fpga/src/boot.mem` and `data.mem` are git-ignored build products of `make zsbl` (the `fpganexysvideo` ZSBL, built for `SYSTEMCLOCK`). `fpgaopensource` instead runs a program from its IROM through the same files, so back them up before building the other configuration.
+- Every clock-derived constant must match the clock the build achieves (`SYSTEMCLOCK` in `fpga/generator/Makefile`, the LiteDRAM PLL, UART divisor, timebase). The Linux ZSBL rewrites the device-tree clock properties to `SYSTEMCLOCK`, so one SD card image serves both the Vivado (20 MHz) and open (12.5 MHz) builds.
+- DDR3 initialization runs on a VexRiscv service CPU inside the LiteDRAM core; Wally is held in reset until `init_done`. Its BIOS output is on the same UART until Wally takes over.
+
 ### Test Infrastructure
 
 There is no central test list; tests are ELF files passed to `wsim` by path or directory:
