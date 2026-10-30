@@ -42,8 +42,10 @@ DSP48 inference, a CARRY4 netlist pass for nextpnr's atomic carry packer, and
 balanced-tree rewrites of `popcnt` and `lzc` (5.7 to 14.9 MHz). The ZSBL now
 rewrites the device-tree clocks to its own frequency. ACT and periph tests pass
 on rv64gc, rv32gc and rv32imc with Verilator, except `WALLY-uart-01`, which
-also fails on the unchanged branch head. The RV32 open-flow design has not been
-rechecked on hardware since the DSP and carry changes.
+also fails on the unchanged branch head. On 2026-10-30 the RV32 open-flow
+design (`fpgaopensource`, 40 MHz) was rebuilt with these changes and passed 973
+consecutive DDR3 write/verify passes on the board; that build also fixed the
+LiteDRAM generator's shared-clock mode, which the Linux work had broken.
 
 ## Inherited main checkpoint
 

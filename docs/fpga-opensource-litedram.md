@@ -208,10 +208,11 @@ the UART sticky bit requires the BIOS to reach `uart_init()`/`printf()`.
   remaining critical path (fetch PC to the `csrc` counters, about 33 LUT
   levels) is about 90% routing delay, so the next timing work is placement
   quality rather than RTL.
-- With `fpgaopensource`, the design runs at 40 MHz. Programs boot from the
-  IROM at `0x80000000`, where the DTIM also sits, so IROM programs cannot read
-  constant data from the IROM. Its DDR3 result above predates the DSP and
-  atomic carry changes and has to be rechecked.
+- With `fpgaopensource`, the design runs at 40 MHz (nextpnr: 40.7 MHz with
+  DSP inference and the atomic carry packer). Programs boot from the IROM at
+  `0x80000000`, where the DTIM also sits, so IROM programs cannot read
+  constant data from the IROM. Rechecked on 2026-10-30: the DDR3 test program
+  completed 973 consecutive 64 KiB write/verify passes without errors.
 - The LED telemetry above remains as bring-up instrumentation.
 
 ## Future design: run DDR3 bring-up without a service CPU (TODO)

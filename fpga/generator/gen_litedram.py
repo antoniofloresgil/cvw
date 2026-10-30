@@ -19,6 +19,7 @@ SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 
 import argparse
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -120,7 +121,6 @@ def add_wally_port(core, platform, data_width, clk_freq):
         platform.request("wally_clk").eq(ClockSignal("wally")),
         platform.request("wally_rst").eq(ResetSignal("wally")),
     ]
-    return len(wb.adr)
 
 
 def main():
@@ -158,10 +158,7 @@ def main():
     core = StandaloneCore(platform, config, integrated_rom_size=0x10000,
                           integrated_sram_size=0x4000)
     if args.user_clk_freq:
-        wb_adr_width = add_wally_port(core, platform, args.user_data_width, args.user_clk_freq)
-    else:
-        wb_adr_width = core.sdram.crossbar.masters[-1].address_width + \
-            (core.sdram.controller.data_width // args.user_data_width).bit_length() - 1
+        add_wally_port(core, platform, args.user_data_width, args.user_clk_freq)
     builder = Builder(core, output_dir=str(output / "init"),
                       compile_gateware=False, compile_software=True,
                       csr_csv=str(output / "csr.csv"))
@@ -188,6 +185,8 @@ def main():
     # paths to absolute ones *after* copying, so Yosys can find them regardless
     # of its working directory.
     text = (gateware / "litedram_core.v").read_text()
+    # Word-address width of Wally's port, as generated in either clock mode.
+    wb_adr_width = int(re.search(r"\[(\d+):0\] user_port_wally_adr", text).group(1)) + 1
     boot_words = (output / "litedram_core_rom.init").read_text().split()
     boot_checks = "\n".join(
         f"                30'h{index:x}: if (litedramcore_ibus_dat_r != 32'h{word}) debug_cpu_data[3] <= 1'b1;"
