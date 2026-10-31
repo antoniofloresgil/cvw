@@ -58,7 +58,7 @@ def main():
     summary.unlink(missing_ok=True)
     for name in selected:
         (work / name / "results.json").unlink(missing_ok=True)
-    sources = [p for directory in ("src", "config", "testbench", "tests/multicore", "tests/coverage", "linux/smp")
+    sources = [p for directory in ("src", "config", "testbench", "tests/multicore", "tests/coverage64gc", "linux/smp")
                for p in (root / directory).rglob("*") if p.is_file() and p.suffix in (".sv", ".svh", ".vh", ".py", ".S", ".h", ".cpp", ".ld") and "deriv" not in p.parts]
     sources.extend(root / name for name in ("bin/regression-wally", "bin/lint-wally", "bin/derivgen.pl", "config/derivlist.txt",
                                            ".github/workflows/multicore.yml", "config/multicore/schema.json", "setup.sh", "sim/verilator/wrapper.c", "examples/link/link.ld"))
