@@ -47,6 +47,19 @@ design (`fpgaopensource`, 40 MHz) was rebuilt with these changes and passed 973
 consecutive DDR3 write/verify passes on the board; that build also fixed the
 LiteDRAM generator's shared-clock mode, which the Linux work had broken.
 
+## Future work
+
+Complete open flow: add an open-source ASIC flow (Yosys with OpenROAD, through
+OpenROAD-flow-scripts or OpenLane, on an open PDK such as sky130 or gf180) next
+to the open FPGA flow, so Wally can go from RTL to both bitstream and GDS with
+free tools. It belongs on its own branch after the open FPGA optimization pass.
+Today the repository has no OpenROAD integration: `synthDC/` is a
+synthesis-only Design Compiler flow, and no routed ASIC result exists (see
+[implementation status](implementation.md)). Points to plan: the full RV64GC
+core is large for a multi-project wafer shuttle, so a smaller configuration
+such as `rv32imc` is the likely first target; the caches need SRAM macros from
+the PDK through the `USE_SRAM` path; and a submission needs DRC/LVS signoff.
+
 ## Inherited main checkpoint
 
 The following checkpoint is preserved from the main input. Its historical
