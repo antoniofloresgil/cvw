@@ -14,10 +14,10 @@ def check_atomic_walker(root, work):
     """Drive a real AMO translation and observe the selected bus operation."""
     atomic = work / "atomic-walker"
     atomic.mkdir(exist_ok=True)
-    source = root / "tests/coverage/amoADUpdate.S"
+    source = root / "tests/coverage64gc/amoADUpdate.S"
     assembly, obj, elf = [atomic / f"amoADUpdate.{ext}" for ext in ("s", "o", "elf")]
     commands = [
-        ["riscv64-unknown-elf-gcc", "-E", f"-I{root}/tests/coverage", str(source), "-o", str(assembly)],
+        ["riscv64-unknown-elf-gcc", "-E", f"-I{root}/tests/coverage64gc", str(source), "-o", str(assembly)],
         ["riscv64-unknown-elf-as", "-march=rv64ia_zicsr_zifencei", "-mabi=lp64", str(assembly), "-o", str(obj)],
         ["riscv64-unknown-elf-gcc", "-g", "-mcmodel=medany", "-nostdlib", "-nostartfiles", f"-T{root}/examples/link/link.ld", str(obj), "-o", str(elf)],
     ]
@@ -119,9 +119,9 @@ def main():
     evidence_sources.update(root / "config" / cfg / "config.vh" for cfg in ("rv32i", "rv32gc", "rv64gc"))
     evidence_sources.update((root / "testbench/common").glob("*.sv"))
     evidence_sources.update([root / "testbench/testbench.sv", root / "sim/verilator/wrapper.c",
-                             root / "tests/coverage/WALLY-init-lib.h", root / "tests/coverage/WALLY-selfcheck.h",
+                             root / "tests/coverage64gc/WALLY-init-lib.h", root / "tests/coverage64gc/WALLY-selfcheck.h",
                              root / "examples/link/link.ld", Path(__file__).resolve(), root / "tests/multicore/soc_clock_tb.sv",
-                             root / "tests/multicore/atomic_walker_monitor.svh", root / "tests/coverage/amoADUpdate.S"])
+                             root / "tests/multicore/atomic_walker_monitor.svh", root / "tests/coverage64gc/amoADUpdate.S"])
     manifest = {"source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
                 "upstream_commit": reference,
                 "verilator": subprocess.check_output(["verilator", "--version"], text=True).strip(),

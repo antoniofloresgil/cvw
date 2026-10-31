@@ -1,30 +1,19 @@
 ///////////////////////////////////////////
 // tlbcontrol.sv
 //
-// Written: David_Harris@hmc.edu 5 July 2021
-// Modified:
+// Written:  David Harris David_Harris@hmc.edu 5 July 2021
+// Modified: Rose Thompson, Kip Macsai-Goren, Muhammad Zain
 //
-// Purpose: Control signals for TLB
+// Purpose: TLB hit, miss, permission, and page fault logic.
 //
 // Documentation: RISC-V System on Chip Design
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021-23 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2021-26 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 module tlbcontrol import cvw::*;  #(parameter cvw_t P, ITLB = 0) (
@@ -55,7 +44,7 @@ module tlbcontrol import cvw::*;  #(parameter cvw_t P, ITLB = 0) (
 
   // Sections of the page table entry
   logic [1:0]                     PTE_PBMT;
-  logic                           PTE_RESERVED, PTE_D, PTE_A, PTE_U, PTE_X, PTE_W, PTE_R, PTE_V; // Useful PTE Control Bits
+  logic                           PTE_RESERVED, PTE_D, PTE_A, PTE_U, PTE_X, PTE_W, PTE_R; // Useful PTE Control Bits
   logic                           UpperBitsUnequal;
   logic                           TLBAccess;
   logic                           ImproperPrivilege;
@@ -78,7 +67,7 @@ module tlbcontrol import cvw::*;  #(parameter cvw_t P, ITLB = 0) (
   assign PTE_PBMT = PTEAccessBits[10:9];
   assign PTE_RESERVED = PTEAccessBits[8];
   assign {PTE_D, PTE_A} = PTEAccessBits[7:6];
-  assign {PTE_U, PTE_X, PTE_W, PTE_R, PTE_V} = PTEAccessBits[4:0];
+  assign {PTE_U, PTE_X, PTE_W, PTE_R} = PTEAccessBits[4:1];
 
   // Send PMA a 2-bit MemoryType that is PBMT during leaf page table accesses and 0 otherwise
   assign PBMemoryType = PTE_PBMT & {2{Translate & TLBHit & P.SVPBMT_SUPPORTED}};
@@ -119,8 +108,9 @@ module tlbcontrol import cvw::*;  #(parameter cvw_t P, ITLB = 0) (
   // Determine whether to update DA bits.  With SVADU, it is done in hardware
   assign UpdateDA = P.SVADU_SUPPORTED & PreUpdateDA & Translate & TLBHit & ~TLBPageFault & ENVCFG_ADUE;
 
-  // Determine whether page fault occurs
-  assign PrePageFault = UpperBitsUnequal | Misaligned | ~PTE_V | ImproperPrivilege | (P.XLEN == 64 & (BadPBMT | BadNAPOT | BadReserved)) | (PreUpdateDA & (~P.SVADU_SUPPORTED | ~ENVCFG_ADUE));
+  // Determine whether page fault occurs.  The HPTW never writes an invalid (V=0) PTE into the TLB (Svvptc),
+  // so PTE_V is always 1 on a hit and needs no check here.
+  assign PrePageFault = UpperBitsUnequal | Misaligned | ImproperPrivilege | (P.XLEN == 64 & (BadPBMT | BadNAPOT | BadReserved)) | (PreUpdateDA & (~P.SVADU_SUPPORTED | ~ENVCFG_ADUE));
   // A non-canonical address (UpperBitsUnequal, part of PrePageFault) faults before any page table access,
   // so it faults whether or not it hits and is never a miss, which would start a walk
   assign TLBPageFault = Translate & (TLBHit | UpperBitsUnequal) & (PrePageFault | InvalidAccess);
