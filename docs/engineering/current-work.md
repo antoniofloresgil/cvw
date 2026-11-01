@@ -1,5 +1,70 @@
 # Current work
 
+Checkpoint: 2026-10-23, branch `opensource-fpga-bitstream`.
+Integration inputs: feature `f950a775310e7613d22f409bcaaec81f8a8a646e`
+and `main:1d567764895321b64a9b8e28d0b77ca4b9eb0aac` (official upstream
+`89479dd09`). Use `git rev-parse HEAD` for the resulting merge revision.
+
+## Current integration
+
+Merge main into the open FPGA branch to reduce future integration work.
+Retain LiteDRAM, the service CPU, DDR reset gating, AHB/Wishbone bridge and
+32-bit boot-ROM preload. Main's optional multicore implementation is now
+available in this branch; the FPGA wrapper still uses one hart by default.
+The [integration record](experiments/2026-10-23-open-fpga-main-integration.md)
+records this merge's checks and evidence boundaries.
+
+Combined-source validation passed: seven standard configuration lints plus
+`fpgaopensource`, five RV64 directed tests, all four multicore CI profiles
+and their feature-interaction suite, a 32/64-bit ROM preload fixture,
+FPGA wrapper port elaboration with an empty LiteDRAM stub, open/Vivado recipe
+dry runs and all-file pre-commit checks. No new datapath or topology changes
+were added beyond the combined branch inputs. The merge is local; publication
+is a separate operation.
+
+Open-flow DDR3 now works on the connected Nexys Video (2026-10-28). The cause
+was the pinned gatecat nextpnr-xilinx `8f178fc6`. The same Yosys netlist passed
+on hardware when placed and routed by Vivado, and failed with that nextpnr.
+The installer now uses openXC7 nextpnr-xilinx 0.9.8 plus a local placer
+legality patch. With it, the LiteDRAM BIOS passes leveling and its memory test.
+In the full `make nexysvideo FLOW=opensource` bitstream, Wally completed 971
+DDR3 write/verify passes with no errors. HCLK timing at 40 MHz is marginal
+(38.99 to 44.5 MHz across builds). See the
+[DDR3 record](experiments/open-ddr3-bringup.md).
+
+Open-flow Linux boots on the Nexys Video (2026-10-29) with
+`make nexysvideo FLOW=opensource OPENCONFIG=fpganexysvideo`: RV64GC at 12.5 MHz
+in its own clock domain (LiteDRAM CDC), the ZSBL in the boot ROM, and the SD
+card written for the Vivado flow. OpenSBI 1.7 and Linux 6.19.14 reach the
+BusyBox shell with 512 MiB; an 8 MiB file in `/tmp` has the correct MD5.
+Getting there needed an AHB-to-Wishbone bridge fix (burst beats were dropped),
+DSP48 inference, a CARRY4 netlist pass for nextpnr's atomic carry packer, and
+balanced-tree rewrites of `popcnt` and `lzc` (5.7 to 14.9 MHz). The ZSBL now
+rewrites the device-tree clocks to its own frequency. ACT and periph tests pass
+on rv64gc, rv32gc and rv32imc with Verilator, except `WALLY-uart-01`, which
+also fails on the unchanged branch head. On 2026-10-30 the RV32 open-flow
+design (`fpgaopensource`, 40 MHz) was rebuilt with these changes and passed 973
+consecutive DDR3 write/verify passes on the board; that build also fixed the
+LiteDRAM generator's shared-clock mode, which the Linux work had broken.
+
+## Future work
+
+Complete open flow: add an open-source ASIC flow (Yosys with OpenROAD, through
+OpenROAD-flow-scripts or OpenLane, on an open PDK such as sky130 or gf180) next
+to the open FPGA flow, so Wally can go from RTL to both bitstream and GDS with
+free tools. It belongs on its own branch after the open FPGA optimization pass.
+Today the repository has no OpenROAD integration: `synthDC/` is a
+synthesis-only Design Compiler flow, and no routed ASIC result exists (see
+[implementation status](implementation.md)). Points to plan: the full RV64GC
+core is large for a multi-project wafer shuttle, so a smaller configuration
+such as `rv32imc` is the likely first target; the caches need SRAM macros from
+the PDK through the `USE_SRAM` path; and a submission needs DRC/LVS signoff.
+
+## Inherited main checkpoint
+
+The following checkpoint is preserved from the main input. Its historical
+multicore verdicts are not new runs of this combined branch.
+
 Branch: `main`. On 2026-10-22, `multicore-support` source commit
 `06d1baab69435abb13efd195ac675134f787da90` was fast-forwarded into main from
 `origin/multicore-support`; the integration includes current main commit

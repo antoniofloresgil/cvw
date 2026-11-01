@@ -67,6 +67,23 @@ EXT_MEM_RANGE       64'h07FFFFFF
 deriv fpganexysvideo fpga
 EXT_MEM_RANGE       64'h1FFFFFFF
 
+# Open-source FPGA builds use internal memory and exclude Vivado-generated IP.
+deriv fpgaopensource rv32imc
+DTIM_RANGE             64'h0000FFFF
+IROM_RANGE             64'h0000FFFF
+EXT_MEM_SUPPORTED      1
+EXT_MEM_BASE           64'h40000000
+EXT_MEM_RANGE          64'h07FFFFFF
+PLIC_SUPPORTED         0
+SPI_SUPPORTED          0
+PWM_SUPPORTED          0
+GPIO_LOOPBACK_TEST     0
+SPI_LOOPBACK_TEST      0
+UART_PRESCALE          32'd1
+GPIO_SUPPORTED         1
+UART_SUPPORTED         1
+CLINT_SUPPORTED        1
+
 # temporary spitest configuration
 deriv spitest rv64gc
 UNCORE_RAM_RANGE    64'h0FFFFFFF

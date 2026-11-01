@@ -58,7 +58,9 @@ its data for a PTE update. The integration's `fpADUpdate` test passed on
 
 ## Branch-specific architecture
 
-This `multicore-support` checkout combines `f655debae` with `main:82d0b80f7`.
+This `opensource-fpga-bitstream` checkout integrates `main:1d5677648`,
+including the optional multicore implementation and official upstream
+`89479dd09`. The FPGA wrapper keeps the default NCORES=1 topology.
 `NCORES`, central inter-hart atomics and the optional unified physical cache
 remain implemented as described in [ADR 0002](decisions/0002-shared-multicore-cache.md).
 The main-side changes retain `HART_ID` propagation and the shared atomic
@@ -68,12 +70,16 @@ interface connects privileged decode to each core's hazard unit; it does not
 introduce a shared stall between harts. See the
 [integration record](experiments/2026-10-19-multicore-main-integration.md) for
 verification of the combination. Do not apply the shared-cache or software
-A/D assumptions to every base configuration. Main itself still lacks the
-multicore implementation until this feature branch is merged back.
+A/D assumptions to every base configuration. Multicore is already integrated into the main input; its historical
+verification records retain their original source scope.
 
-The open LiteDRAM integration is separately scoped to
-`opensource-fpga-bitstream:23ba9c2a7`; its reset/clock/service-CPU contract is
-linked in the [DDR3 record](experiments/open-ddr3-bringup.md).
+The open LiteDRAM integration from `opensource-fpga-bitstream:23ba9c2a7`
+remains present alongside the imported multicore code. The shared clock,
+service-CPU ownership and reset gating in `fpgaOpenSource` are unchanged;
+its reset/clock/service-CPU contract is linked in the
+[DDR3 record](experiments/open-ddr3-bringup.md). The
+[2026-10-23 integration record](experiments/2026-10-23-open-fpga-main-integration.md)
+distinguishes combined-source checks from hardware qualification.
 
 ## Optional private MSI data-cache mode
 

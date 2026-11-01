@@ -38,6 +38,35 @@ echo \$WALLY set to "${WALLY}"
 # utility functions in Wally repository
 export PATH=$WALLY/bin:$PATH
 
+# Open-source FPGA tools distributed through OSS CAD Suite
+if [ -d "$RISCV/oss-cad-suite/bin" ]; then
+    export PATH=$RISCV/oss-cad-suite/bin:$PATH
+fi
+if [ -d "$RISCV/share/prjxray/database/artix7" ]; then
+    export XRAY_DATABASE_DIR=$RISCV/share/prjxray/database/artix7
+fi
+if [ -f "$RISCV/share/nextpnr/xilinx/xc7a100t.bin" ]; then
+    export NEXTPNR_XILINX_CHIPDB=$RISCV/share/nextpnr/xilinx/xc7a100t.bin
+    export NEXTPNR_XILINX_CHIPDB_XC7A100T=$RISCV/share/nextpnr/xilinx/xc7a100t.bin
+fi
+if [ -f "$RISCV/share/nextpnr/xilinx/xc7a200t.bin" ]; then
+    export NEXTPNR_XILINX_CHIPDB_XC7A200T=$RISCV/share/nextpnr/xilinx/xc7a200t.bin
+fi
+
+# LiteX / LiteDRAM: Python generator used by the open-source FPGA flow to build
+# the DDR3 controller and PHY for boards with external DRAM.
+if [ -d "$RISCV/litex-venv" ]; then
+    export LITEX_VENV=$RISCV/litex-venv
+fi
+# LiteX appends the device family (artix7) to PRJXRAY_DB_DIR, unlike XRAY_DATABASE_DIR.
+if [ -d "$RISCV/share/prjxray/database/artix7" ]; then
+    export PRJXRAY_DB_DIR=$RISCV/share/prjxray/database
+fi
+# LiteX expects a CHIPDB directory holding <part>.bin chip databases.
+if [ -d "$RISCV/share/nextpnr/xilinx" ]; then
+    export CHIPDB=$RISCV/share/nextpnr/xilinx
+fi
+
 # Verilator needs a larger core file size to simulate CORE-V Wally
 ulimit -c 300000
 

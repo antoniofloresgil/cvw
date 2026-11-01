@@ -2,32 +2,15 @@
 
 Start with [AGENTS.md](../../AGENTS.md), then this index and
 [current-work.md](current-work.md). Read the remaining documents only when
-relevant to the task. Documentation/status reconciliation: 2026-10-22; this checkout is
-`multicore-support`. Publication and current main divergence are recorded in
-[current work](current-work.md). Historical integration
-of `main:4ce065926` (including official upstream `89479dd09`) into
-`f9f7a83be` passed focused and native Linux validation; see the
-[current integration record](experiments/2026-10-20-multicore-upstream-integration.md).
-Historical results below retain their original source scope. See the [multicore integration record](experiments/2026-10-19-multicore-main-integration.md)
-for validation of the combined sources. The optional private MSI data-cache
-implementation now follows [ADR 0003](decisions/0003-private-msi-data-caches.md);
-see its [working-tree validation](experiments/2026-10-19-private-msi.md).
-The [Linux MSI integration](experiments/2026-10-19-linux-msi.md) is a separate
-completed two-hart RTL PASS at 629,148,416 cycles with both shared counters
-equal to 128.
-The optional stage-5 [private instruction/read-hit design](decisions/0004-private-instruction-caches.md)
-and its [verification record](experiments/2026-10-19-private-l1.md) extend that baseline.
-The later [independent read/write overlap](decisions/0005-independent-read-write-overlap.md)
-has a [separate verification record](experiments/2026-10-19-independent-read-write.md).
-The [local M-store extension](decisions/0006-local-modified-stores.md) and
-[its validation](experiments/2026-10-19-local-modified-stores.md) add explicit
-commit notifications and a separate Linux test for items 2 and 3.
-The [multiword I/D-line design](decisions/0007-multiword-private-cache-lines.md)
-and [its verification](experiments/2026-10-19-multiword-lines.md) extend the
-private banks while retaining the one-word default.
-The earlier
-[main integration record](experiments/2026-10-18-upstream-integration.md) and
-source audits retain their original revision labels.
+relevant to the task. Snapshot: 2026-10-23, `opensource-fpga-bitstream`
+integrates `main:1d5677648` (official upstream `89479dd09`) over open-flow
+`f950a7753`. The open LiteDRAM flow and optional multicore implementation now
+coexist; the FPGA wrapper retains the default single-hart topology.
+See the [branch integration record](experiments/2026-10-23-open-fpga-main-integration.md)
+for validation and the [DDR3 record](experiments/open-ddr3-bringup.md) for
+the open-flow hardware bring-up, which has since reached DDR3 and Linux on the
+board (see [current work](current-work.md)). Earlier records retain their original
+revision and branch scopes, including the successful Vivado Linux boot.
 
 ## Find the authoritative information
 

@@ -11,7 +11,7 @@ documentation task.
 | Flow | Source of truth / checked facts | Evidence boundary |
 | --- | --- | --- |
 | Nexys Video, Vivado | [FPGA Makefile](../../fpga/generator/Makefile), [board constraints](../../fpga/constraints/constraints-nexysvideo.xdc), [DDR3 script](../../fpga/generator/ddr3-nexysvideo.tcl); target `xc7a200tsbg484-1`, 20 MHz system clock | Main commit `4985b3c6a` added boot preparation/documentation; that commit is not evidence of a successful board boot |
-| Nexys Video, open tools | `23ba9c2a7`, [DDR3 experiment](experiments/open-ddr3-bringup.md) and its pinned flow document | Service-CPU/DDR initialization remains unresolved; do not transfer Vivado validation to this flow |
+| Nexys Video, open tools | `23ba9c2a7`, [DDR3 experiment](experiments/open-ddr3-bringup.md) and its pinned flow document | Verified on the connected Nexys Video at `0513738ad`/`e8a62d239` (branch `opensource-fpga-bitstream`): `fpgaopensource` (RV32, 40 MHz) passed 973 DDR3 write/verify passes; `fpganexysvideo` (RV64GC, 12.5 MHz) booted OpenSBI and Linux to a BusyBox shell. Do not transfer these results to other boards, branches or clocks, or Vivado validation to this flow |
 | ASIC synthesis | [synthDC/Makefile](../../synthDC/Makefile), [synth.tcl](../../synthDC/scripts/synth.tcl), [PPA tooling](../../synthDC/ppa) | Design Compiler synthesis/PPA tooling is present; no new area, timing or power results recovered here |
 
 The Nexys Video boot explanation already documents the built-in initramfs and
