@@ -42,7 +42,7 @@ module msifabric_tb import cvw::*; import multicore_observation::*; #(
         .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) dut(
         .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHMASTLOCK,
         .CoreHSIZE, .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHATOMIC,
-        .CoreHRDATA, .CoreHREADY, .CoreHRESP, .CoreSCFail,
+        .CoreHRDATA, .CoreHREADY, .CoreHRESP, .CoreSCFail, .DataMiss(), .InstrMiss(),
         .HADDR(downaddr), .HWDATA(downwdata), .HWSTRB(downstrb), .HWRITE(downwrite), .HMASTLOCK(),
         .HSIZE(downsize), .HBURST(downburst), .HPROT(), .HTRANS(downtrans),
         .HRDATA(downrdata), .HREADY(downready), .HRESP(downresp));

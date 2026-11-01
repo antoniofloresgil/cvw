@@ -14,6 +14,8 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
   input  logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC,
   output logic [NCORES-1:0] CoreSCFail, CoreHREADY, CoreHRESP,
   output logic [NCORES-1:0][P.AHBW-1:0] CoreHRDATA,
+  // Per-hart PMU events of the private caches: {ICacheMiss, ICacheAccess, DCacheMiss, DCacheAccess}.
+  output logic [NCORES-1:0][3:0] CoreCacheEvents,
   // Uncore-side AHB master; clock/reset ownership remains with the SoC.
   output logic [P.PA_BITS-1:0] HADDR,
   output logic [P.AHBW-1:0] HWDATA,
@@ -41,6 +43,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
   logic [2:0] BusHSIZE, BusHBURST;
   logic [3:0] BusHPROT;
   logic [1:0] BusHTRANS;
+  logic [NCORES-1:0] DataMiss, InstrMiss;
 
   if (NCORES == 1 && !SHARED_CACHE) begin : singlecore
     // Preserve the original bus latency and allow all existing configurations.
@@ -56,6 +59,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
     assign CacheWriteCommit = '0;
     assign CacheWriteData = '0;
     assign CacheWriteStrb = '0;
+    assign InstrMiss = '0;
   end else if (MSI_ENABLED && COHERENCE_BANKS > 1) begin : banked
     ahbmsifabric #(.P(P), .NCORES(NCORES), .BANKS(COHERENCE_BANKS),
       .DCACHE_WORDS(PRIVATE_DCACHE_WORDS), .DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
@@ -64,7 +68,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
       .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) fabric(
       .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHMASTLOCK,
       .CoreHSIZE, .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHATOMIC,
-      .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
+      .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP, .DataMiss, .InstrMiss,
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HRDATA, .HREADY, .HRESP);
     assign {BusHADDR, BusHWDATA, BusHWSTRB, BusHWRITE, BusHSIZE, BusHBURST, BusHPROT, BusHTRANS, BusHMASTLOCK, BusHOWNER} = '0;
     assign CacheReadAddr = '0;
@@ -78,7 +82,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
       .LOCAL_DCACHE_READS(MSI_ENABLED && LOCAL_DCACHE_READS),
       .LOCAL_DCACHE_WRITES(MSI_ENABLED && LOCAL_DCACHE_WRITES)) bus(
       .ReservationClear('0), .CacheReadAddr, .CacheReadHit, .CacheReadData,
-      .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
+      .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb, .InstrMiss,
       .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHSIZE,
       .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHMASTLOCK, .CoreHATOMIC, .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
       .HOWNER(BusHOWNER), .HADDR(BusHADDR), .HWDATA(BusHWDATA), .HWSTRB(BusHWSTRB), .HWRITE(BusHWRITE), .HSIZE(BusHSIZE), .HBURST(BusHBURST), .HPROT(BusHPROT), .HTRANS(BusHTRANS), .HMASTLOCK(BusHMASTLOCK),
@@ -92,7 +96,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
       .IFILL_WORDS(PRIVATE_ICACHE ? PRIVATE_ICACHE_LINE_WORDS : 1),
       .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
       .CacheReadAddr, .CacheReadHit, .CacheReadData,
-      .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
+      .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb, .DataMiss,
       .HCLK, .HRESETn, .UpHOWNER(BusHOWNER),
       .UpHADDR(BusHADDR), .UpHWDATA(BusHWDATA), .UpHWSTRB(BusHWSTRB),
       .UpHWRITE(BusHWRITE), .UpHSIZE(BusHSIZE), .UpHBURST(BusHBURST),
@@ -112,6 +116,21 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
     assign {HADDR, HWDATA, HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK} =
       {BusHADDR, BusHWDATA, BusHWSTRB, BusHWRITE, BusHSIZE, BusHBURST, BusHPROT, BusHTRANS, BusHMASTLOCK};
     assign {BusHRDATA, BusHREADY, BusHRESP} = {HRDATA, HREADY, HRESP};
+  end
+
+  if (!MSI_ENABLED) begin : nodatamiss
+    assign DataMiss = '0;
+  end
+
+  // The PMU counts each accepted cacheable request of a hart as one access of
+  // its private D- or I-cache; misses come from the coherence engines. Without
+  // private caches the core's own cache events are the only ones.
+  for (genvar h = 0; h < NCORES; h++) begin : cacheevents
+    logic Access;
+    assign Access = MSI_ENABLED && CoreHREADY[h] && CoreHTRANS[h][1] &&
+      multicore_cacheable(P, 64'(CoreHADDR[h]));
+    assign CoreCacheEvents[h] = {InstrMiss[h] && MSI_ENABLED && PRIVATE_ICACHE,
+      Access && PRIVATE_ICACHE && !CoreHPROT[h][0], DataMiss[h], Access && CoreHPROT[h][0]};
   end
 
   if (!MSI_ENABLED || COHERENCE_BANKS > 1) begin : nolocalreads

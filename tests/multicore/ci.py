@@ -31,14 +31,14 @@ def execute(command, log, cwd=None):
         subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, check=True, cwd=cwd)
 
 
-def lint(root, work, config, params, cores):
+def lint(root, work, config, params, cores, prefix=""):
     """Use lint-wally's warning policy with explicit topology parameters."""
     command = ["verilator", "--lint-only", "--top-module", "wallywrapper", f"-GNCORES={cores}", *params,
                f"-I{root}/config/shared", f"-I{root}/config/{config}", str(root / "src/cvw.sv"),
                str(root / "testbench/wallywrapper.sv"),
                *map(str, sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")),
                "-Wall", "-Wno-UNUSEDSIGNAL", "-Wno-VARHIDDEN", "-Wno-GENUNNAMED", "-Wno-PINCONNECTEMPTY"]
-    execute(command, work / f"lint-{cores}.log")
+    execute(command, work / f"lint-{prefix}{cores}.log")
 
 
 def main():
@@ -87,6 +87,8 @@ def main():
                          '--work-dir', str(casework / 'policy')], casework / 'policy.log')
             for cores in ([1] if name == "single-default" else [2, 3]):
                 lint(root, casework, config, params, cores)
+                if name != "single-default":
+                    lint(root, casework, "deriv/multicore_pmu", params, cores, "pmu-")
             if name == "single-default":
                 execute([sys.executable, str(root / "tests/multicore/check_singlecore.py"), "--upstream-ref", UPSTREAM_REF,
                          "--work-dir", str(casework / "compatibility"), "--atomic-walker"], casework / "run.log")
@@ -111,6 +113,9 @@ def main():
                              "--work-dir", str(casework / "adapter")], casework / "adapter.log")
                 execute([sys.executable, str(root / "tests/multicore/run.py"), "--skip-deriv", "--suite", "atomic",
                          "--latency", "0", "3", *options, "--work-dir", str(casework)], casework / "run.log")
+                # Per-hart counters and Sscofpmf; cache events where private caches exist.
+                execute([sys.executable, str(root / "tests/multicore/run.py"), "--skip-deriv", "--suite", "pmu", "--focus", "soc",
+                         "--latency", "0", "3", *options, "--work-dir", str(casework)], casework / "pmu.log")
             effective = [profiles.probe(config, {**values, 'NCORES': n}, casework / f'config-{n}') for n in core_counts]
             scope = {'environment': 'verilator', 'full_core_harts': core_counts,
                      'full_core_widths': sorted({c['core']['XLEN'] for c in effective}),
@@ -120,7 +125,7 @@ def main():
                      'hart_count_qualification': 'executed_counts_only'}
             result = {"validation_scope": scope, "effective_configurations": effective, "case": name, "config": config, "options": options, "lint_parameters": params,
                       "config_sha256": hashlib.sha256((root / "config" / config / "config.vh").read_bytes()).hexdigest(),
-                      "suite": "translated AMO, cached and uncacheable" if name == "single-default" else "atomic and smoke",
+                      "suite": "translated AMO, cached and uncacheable" if name == "single-default" else "atomic, smoke and PMU",
                       "latencies": [] if name == "single-default" else [0, 3],
                       "verdict": "PASS", "elapsed_seconds": round(time.monotonic() - started, 2)}
             (casework / "results.json").write_text(json.dumps(result, indent=2) + "\n")

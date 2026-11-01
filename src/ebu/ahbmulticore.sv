@@ -32,6 +32,7 @@ module ahbmulticore import cvw::*; #(
   output logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData,
   output logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb,
   input  logic [NCORES-1:0][P.AHBW-1:0] CacheReadData,
+  output logic [NCORES-1:0] InstrMiss,           // PMU: an instruction bank starts a line fill
   output logic [NCORES-1:0] CoreSCFail,
   output logic [NCORES-1:0][P.AHBW-1:0] CoreHRDATA,
   output logic [NCORES-1:0] CoreHREADY, CoreHRESP,
@@ -162,6 +163,10 @@ module ahbmulticore import cvw::*; #(
     .CompleteSize(Size[Owner]), .CompleteOp(Op[Owner]), .CompleteWrite(Write[Owner]), .CompleteError(HRESP),
     .ReservationClear, .LocalStoreCommit(CacheWriteCommit), .LocalStoreAddr(Addr), .SCFail(CoreSCFail));
   assign FailedSC = Op[NextOwner] == COREBUS_SC && !SCValid;
+  always_comb begin
+    InstrMiss = '0;
+    if (!DataPhase && Found && HREADY && !IFillActive && IFillRequest) InstrMiss[NextOwner] = 1'b1;
+  end
   assign BadAMOWrite = Op[NextOwner] == COREBUS_AMO && Write[NextOwner] && !LockActive;
   assign AddressOwner = DataPhase ? Owner : NextOwner;
   assign HOWNER = AddressOwner;

@@ -27,9 +27,9 @@ def run(command, log=None):
         raise SystemExit(f"Test command failed with exit code {error.returncode}. {detail}") from error
 
 
-def build_image(source, elf, march, cores, linker):
+def build_image(source, elf, march, cores, linker, defines=()):
     """Build a little-endian RV64 image for the shared RAM testbench."""
-    run(["riscv64-unknown-elf-gcc", f"-march={march}", "-mabi=lp64", "-nostdlib", "-nostartfiles", "-Wl,--no-relax", f"-DNCORES={cores}", f"-T{linker}", source, "-o", elf])
+    run(["riscv64-unknown-elf-gcc", f"-march={march}", "-mabi=lp64", "-nostdlib", "-nostartfiles", "-Wl,--no-relax", f"-DNCORES={cores}", *defines, f"-T{linker}", source, "-o", elf])
     binary = elf.with_suffix(".bin")
     image = elf.with_suffix(".memfile")
     run(["riscv64-unknown-elf-objcopy", "-O", "binary", elf, binary])
@@ -43,7 +43,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     profiles.add_arguments(parser, multiple_cores=True)
     parser.add_argument("--latency", type=int, nargs="+", default=[0, 3])
-    parser.add_argument("--suite", choices=["smoke", "atomic", "uart", "exclusive"], default="smoke")
+    parser.add_argument("--suite", choices=["smoke", "atomic", "uart", "exclusive", "pmu"], default="smoke")
     parser.add_argument("--work-dir", type=Path, help="Build/log directory; use native Linux storage on case-insensitive hosts")
     parser.add_argument("--skip-deriv", action="store_true", help="Use already generated configurations; for an enclosing regression that builds them once")
     parser.add_argument("--unit-only", action="store_true", help="Run bus/cache/peripheral tests without full-core models")
@@ -140,10 +140,14 @@ def main():
         config = "multicore_coherent"
     if args.private_dcache:
         config = "multicore_msi"
-    assembly = tests / ("atomics.S" if args.suite == "atomic" else "uart.S" if args.suite == "uart" else "exclusive.S" if args.suite == "exclusive" else "smoke.S")
+    if args.suite == "pmu":
+        config = "multicore_pmu"
+    assembly = tests / ("atomics.S" if args.suite == "atomic" else "uart.S" if args.suite == "uart" else "exclusive.S" if args.suite == "exclusive" else "pmu.S" if args.suite == "pmu" else "smoke.S")
     march = "rv64ia_zicsr_zifencei" if args.suite == "atomic" else "rv64i_zicsr"
     for cores in args.cores:
-        image = build_image(assembly, work / f"{args.suite}-{cores}.elf", march, cores, tests / "link.ld")
+        # Cache events exist only with caches; check them where the private caches are.
+        defines = ["-DCACHE_EVENTS"] if args.suite == "pmu" and args.private_dcache and cores > 1 else []
+        image = build_image(assembly, work / f"{args.suite}-{cores}.elf", march, cores, tests / "link.ld", defines)
         smoke_image = build_image(tests / "smoke.S", work / f"smoke-{cores}.elf", "rv64i_zicsr", cores, tests / "link.ld") if args.suite == "atomic" else None
         for latency in args.latency:
             executable = build_test(

@@ -25,6 +25,8 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
    // Privileged
    input  logic                  MTimerInt, MExtInt, SExtInt, MSwInt,
    input  logic [63:0]           MTIME_CLINT,
+   // PMU events of caches outside the core: {ICacheMiss, ICacheAccess, DCacheMiss, DCacheAccess}
+   input  logic [3:0]            ExtCacheEvents,
    // Bus Interface
    input  logic [P.AHBW-1:0]     HRDATA,
    input  logic                  HREADY, HRESP,
@@ -293,7 +295,8 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
       .FRegWriteM, .LoadStallD, .StoreStallD,
       .BPDirWrongM, .BTAWrongM, .BPWrongM,
       .RASPredPCWrongM, .IClassWrongM, .DivBusyE, .FDivBusyE,
-      .IClassM, .DCacheMiss, .DCacheAccess, .ICacheMiss, .ICacheAccess, .PrivilegedM,
+      .IClassM, .DCacheMiss(DCacheMiss | ExtCacheEvents[1]), .DCacheAccess(DCacheAccess | ExtCacheEvents[0]),
+      .ICacheMiss(ICacheMiss | ExtCacheEvents[3]), .ICacheAccess(ICacheAccess | ExtCacheEvents[2]), .PrivilegedM,
       .InstrPageFaultF, .LoadPageFaultM, .StoreAmoPageFaultM,
       .InstrMisalignedFaultM, .IllegalIEUFPUInstrD,
       .LoadMisalignedFaultM, .StoreAmoMisalignedFaultM,

@@ -25,6 +25,7 @@ module ahbmsicache import cvw::*; #(
   input  logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData,
   input  logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb,
   output logic [NCORES-1:0][P.AHBW-1:0] CacheReadData,
+  output logic [NCORES-1:0] DataMiss,            // PMU: a cacheable data request found no line in its owner's bank
   input  logic [(NCORES > 1 ? $clog2(NCORES) : 1)-1:0] UpHOWNER,
   input  logic [P.PA_BITS-1:0] UpHADDR,
   input  logic [P.AHBW-1:0] UpHWDATA,
@@ -199,6 +200,12 @@ module ahbmsicache import cvw::*; #(
       end
     end
   end
+  // Count the miss once, at lookup; a permission upgrade of a present line is a hit.
+  always_comb begin
+    DataMiss = '0;
+    if (State == LOOKUP && Cacheable && Prot[0] && !Hit[Owner]) DataMiss[Owner] = 1'b1;
+  end
+
   assign UpHREADY = HRESETn && (State == IDLE || State == REPLY);
   assign STrans = HRESETn && State == ADDRESS ? 2'b10 : 2'b00;
 

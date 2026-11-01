@@ -1791,3 +1791,9 @@ RESET_VECTOR 64'h00001000
 # Private per-hart physical data caches with serialized MSI bus snooping.
 # Legacy IFU/LSU caches stay off; enable the SoC PRIVATE_DCACHE parameter.
 deriv multicore_msi multicore_coherent
+
+# Multicore PMU checks: every per-hart counter extension on the coherent SoC.
+deriv multicore_pmu multicore_coherent
+SSCOFPMF_SUPPORTED 1
+SMCNTRPMF_SUPPORTED 1
+SMCDELEG_SUPPORTED 1
