@@ -210,6 +210,10 @@ PreProcessOpenSource:
 	sed -i 's|\$$WALLY|$(WALLY)|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
 	sed -i 's|\$$WALLY|$(WALLY)|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv
 	sed -i '/write("%c", *Din);/d' ../src/CopiedFiles_do_not_add_to_repo/uncore/uartPC16550D.sv
+	# Preload the DTIM from data.mem, also with 32-bit words (RV32 programs in the
+	# IROM keep their constant data there; see fpga/ddrinit).
+	sed -i 's/\(ram1p1rwbe #(.USE_SRAM(P.USE_SRAM), .DEPTH(DEPTH), .WIDTH(P.LLEN)\))/\1, .PRELOAD_ENABLED(1))/' ../src/CopiedFiles_do_not_add_to_repo/lsu/dtim.sv
+	sed -i 's/if (WIDTH == 64) begin/if (WIDTH == 64 || WIDTH == 32) begin/' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv
 
 # Generate the LiteDRAM DDR3 controller/PHY Verilog for the open-source flow
 .PHONY: litedram

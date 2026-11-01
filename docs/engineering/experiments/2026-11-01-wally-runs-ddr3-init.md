@@ -2,8 +2,8 @@
 
 Date: 2026-11-01. Branch `wally-ddr3-init`, from `main` at `c2fa6bd94`.
 
-Status: **steps 1 and 2 done** (generator option; RTL path for RV32, checked in
-simulation and synthesis). Firmware and board work are not started. Nothing
+Status: **steps 1 to 3 done** (generator option; RTL path for RV32, checked in
+simulation and synthesis; firmware built, not run). Board work is not started. Nothing
 here has run on the board yet, including the service-CPU build with the new top.
 
 ## Goal
@@ -55,7 +55,7 @@ follows, because its control bus needs a clock-domain crossing.
      (or fail visibly) until `init_done` rises;
    - `init_done` and `init_error` become CSRs that Wally writes; the LEDs and
      the UART mux that today follow the service CPU need a Wally equivalent.
-3. **Firmware.** Port `init_sequence()` (generated into `sdram_phy.h`) and
+3. **Firmware (done, see below).** Port `init_sequence()` (generated into `sdram_phy.h`) and
    `sdram_leveling()` (write leveling, read leveling, command-delay scan,
    bit-slip; about 600 lines of `liblitedram`) to Wally's bare-metal
    environment, with a `cdelay` calibrated for Wally's clock (the values are
@@ -225,3 +225,61 @@ Options to decide before step 5:
    work avoids for upstream merges.
 3. **Keep the VexRiscv for RV64.** RV32 uses Wally-run init; the Linux build
    keeps the service CPU, which is already an option of the generator.
+
+## Step 3: the firmware (`fpga/ddrinit/`)
+
+`fpga/ddrinit/` builds one RV32 image that Wally runs from the IROM:
+
+- LiteX's own `sdram_init()` (`liblitedram/sdram.c` and `accessors.c`) is
+  compiled from the installed, pinned LiteX package, not copied into the
+  repository. It runs `init_sequence()` from the generated `sdram_phy.h`, then
+  read leveling and bit-slip (the A7 PHY of the Nexys Video has no write
+  leveling), and writes `ddrctrl.init_done`/`init_error`.
+- The headers come from the generator's output for `--init-cpu none`
+  (`GENERATED`, by default `fpga/generator/opensource-litedram/init/software/include`);
+  `CSR_BASE` is set to the Wally window, `0x48000000`, and `MAIN_RAM_BASE` to
+  `0x40000000`.
+- Own parts: `start.S` (gp, sp, `.bss`), `link.ld`, `main.c` (UART set-up,
+  then `sdram_init()`, then a 64 KiB write/verify pass at `0x40000000` printed
+  once per pass, forever), `printf.c` (the conversions liblitedram uses) and
+  `shim/system.h` (empty cache hooks; RV32 has no caches).
+- `SDRAM_TEST_DISABLE` drops LiteX's memtest/memspeed, which need a LiteX
+  timer that does not exist without the CPU; `main.c` tests the memory instead.
+- The image is 3.4 KiB (code and strings). The LiteX BIOS on the VexRiscv is
+  about 29 KiB because it also carries a console, commands and the memory test.
+
+```bash
+source setup.sh
+cd fpga/generator && ./gen-litedram.sh --init-cpu none   # headers
+cd ../ddrinit && make && make install                     # overwrites fpga/src/boot.mem and data.mem
+```
+
+`make install` overwrites `fpga/src/boot.mem` and `data.mem`, which also hold
+the Linux ZSBL for `fpganexysvideo`; back them up first.
+
+### IROM, DTIM and constant data
+
+In `fpgaopensource` the IROM and the DTIM both start at `0x80000000`:
+instruction fetches go to the IROM and loads and stores to the DTIM. The DTIM
+was never preloaded (`src/lsu/dtim.sv` has no `PRELOAD_ENABLED`, and
+`ram1p1rwbe` only reads `data.mem` for 64-bit words), so an IROM program read
+its strings and initialized data as zeros, as the earlier RV32 test showed.
+
+Fix without touching `src/`: `PreProcessOpenSource` (`fpga/generator/Makefile`)
+already patches the staged copy of the sources; two more `sed` lines enable the
+DTIM preload and accept 32-bit words. The linker places code, read-only data
+and initialized data contiguously from `0x80000000`, and the same image is
+written to both `boot.mem` and `data.mem`: the IROM serves the code and the
+DTIM the data at the same addresses. No other RAM in the design preloads, so the
+patch only affects the DTIM.
+
+### Not checked yet
+
+- Nothing has run: there is no simulation model of the A7 DDR3 PHY in this
+  flow, so the first run is on the board (step 4).
+- `cdelay()` stays LiteX's busy loop. Its counts were chosen for a VexRiscv;
+  Wally runs the loop in fewer cycles per iteration, so the delays are shorter.
+  The JEDEC waits in `init_sequence()` (`cdelay(50000)` after reset, 10000 after
+  CKE) still last milliseconds at 40 MHz against the 200/500 us required, but the
+  short settle delays inside leveling (15 and 100 iterations) are a candidate
+  if leveling misbehaves.
