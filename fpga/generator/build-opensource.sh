@@ -36,7 +36,7 @@ yosys_xilinx="$(yosys-config --datdir)/xilinx"
 # the DDR controller's 40 MHz clock; WALLY_CLK_FREQ (Hz) gives Wally its own
 # clock instead.
 if [ "$board" = "nexysvideo" ]; then
-    ./gen-litedram.sh --user-data-width "$xlen" ${WALLY_CLK_FREQ:+--user-clk-freq "$WALLY_CLK_FREQ"}
+    ./gen-litedram.sh --init-cpu "${INIT_CPU:-vexriscv}" --user-data-width "$xlen" ${WALLY_CLK_FREQ:+--user-clk-freq "$WALLY_CLK_FREQ"}
     ddr_dir="opensource-litedram"
     # Merge the DDR3 pin constraints into the board constraints, dropping the
     # clk100/cpu_reset_n entries (the board XDC already constrains those under

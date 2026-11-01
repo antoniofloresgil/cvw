@@ -2,8 +2,9 @@
 
 Date: 2026-11-01. Branch `wally-ddr3-init`, from `main` at `c2fa6bd94`.
 
-Status: **step 1 of 5 done** (the generator option). The RTL, firmware and board
-work are not started. Nothing here has run on the board yet.
+Status: **steps 1 and 2 done** (generator option; RTL path for RV32, checked in
+simulation and synthesis). Firmware and board work are not started. Nothing
+here has run on the board yet, including the service-CPU build with the new top.
 
 ## Goal
 
@@ -43,7 +44,7 @@ first. RV64 `fpganexysvideo` (Wally at 12.5 MHz in its own clock domain)
 follows, because its control bus needs a clock-domain crossing.
 
 1. **Generator (done).** `gen_litedram.py --init-cpu {vexriscv,none}`.
-2. **RTL.** A second AHB-to-Wishbone path from Wally's external bus to
+2. **RTL (done for RV32, see below).** A second AHB-to-Wishbone path from Wally's external bus to
    `wb_ctrl`, decoded in `fpgaOpenSource.sv` (not in the uncore), in a new
    module. Open points to settle here:
    - which Wally address window reaches the CSRs (the generated map starts at
@@ -145,3 +146,82 @@ Use a scratch output directory (`--output-dir`) so the generated files in
 - Wally is currently held in reset by `ddr_ready` in `fpgaOpenSource.sv`; that
   line and the `UARTSout` mux are the two places the service CPU is visible at
   the top level.
+
+## Step 2: the control path in the RTL (RV32)
+
+No file under `src/` changed. What changed:
+
+- `fpga/src/extbussplit.sv` (new): splits Wally's one external region
+  (`HSELEXT`) into the DDR3 window (low half) and the CSR window (high half) by
+  one address bit, and merges the two AHB responses. Each side is an unchanged
+  `ahbwishbonebridge`; a bridge that is not selected returns `HREADYOUT = 1`, so
+  the merged `HREADY` is the AND of both and the data comes from the side
+  captured in the address phase.
+- `fpga/src/fpgaOpenSource.sv`: instantiates the split and a second bridge
+  (32-bit, 64 KiB window) to the generated wrapper's `ctrl_*` port. The window
+  select bit is the top bit of `EXT_MEM_RANGE`, so the range must cover twice
+  the visible DDR3. With a 64-bit bus (RV64) the control path is not wired
+  (see below). Wally's reset no longer waits for `init_done` when
+  `init_by_wally` is set, and the UART goes to Wally from power-up.
+- `gen_litedram.py`: the wrapper now has the same ports in both modes
+  (`init_by_wally`, `ctrl_*`, `uart_*`, `debug_cpu_*`); the unused ones are tied
+  off. The SoC top instantiates it once and synthesis removes the dead side.
+- `config/derivlist.txt`, `fpgaopensource` only: `EXT_MEM_RANGE` from
+  `0x07FFFFFF` (128 MiB) to `0x0FFFFFFF` (256 MiB). DDR3 stays at
+  `0x40000000`-`0x47FFFFFF`; the CSRs are at **`0x48000000`** (`ddrctrl` at
+  `0x48000000`, `ddrphy` at `0x48000800`, `sdram` at `0x48001000`). Without a
+  CPU in LiteDRAM the window reads as zeros.
+- `build-opensource.sh`: `INIT_CPU=none` passes `--init-cpu none` to the
+  generator (default `vexriscv`). `Makefile`: copies `extbussplit.sv` with the
+  top.
+
+While Wally initializes the DDR3, an access to the DDR3 window waits in
+LiteDRAM's user port (`block_until_ready`) until the firmware writes
+`init_done`, so a premature access hangs rather than returning garbage.
+
+### Checks done
+
+- `tests/fpga/tb_extbussplit.sv` (Verilator, self-checking): 13 pipelined AHB
+  transfers through the split and both bridges, with a 4-cycle DDR slave and a
+  2-cycle CSR slave: writes and read-backs on both sides, back-to-back on the
+  same side, alternating sides, and one transfer outside the external region
+  that must reach neither. It passes, and it fails on two injected bugs (data
+  always taken from the DDR side; CSR select not qualified by `HSELEXT`).
+- RV32 `fpgaopensource`, full Yosys synthesis (`synth_xilinx -flatten -abc9`)
+  of the whole design, both modes:
+
+  | Init | LUT | FF | RAMB36 | RAMB18 | RAM32M |
+  |---|---|---|---|---|---|
+  | `vexriscv` | 13021 | 10048 | 20 | 44 | 98 |
+  | `none` | 10937 | 8641 | 16 | 29 | 62 |
+
+  2084 LUT (16 %), 1407 FF, 4 RAMB36 and 15 RAMB18 less, before Wally's
+  initialization code is added to its IROM.
+- RV64 `fpganexysvideo` elaborates with the new top (service CPU, 64-bit bus,
+  control path tied off).
+
+Not checked yet: place and route, and the board. The service-CPU build with the
+new top must pass the existing RV32 DDR3 test on the board again before the
+default changes.
+
+## Open problem for RV64: the CSR window would be cacheable
+
+On RV64 (`fpganexysvideo`) the data cache is on, and Wally's PMA marks the whole
+external region as cacheable and idempotent (`src/mmu/pmachecker.sv`). A CSR
+window inside that region would be read and written through the D$: reads could
+return stale lines, writes would reach the registers only on eviction, and a
+line fill or write-back touches 64 bytes of registers at once. The firmware runs
+in M-mode, where the core has no other way to mark an address uncached. RV32
+(`fpgaopensource`, `rv32imc`) has no caches, so the problem does not exist there.
+
+Options to decide before step 5:
+
+1. **Svpbmt from the ZSBL.** Wally supports Svpbmt. The ZSBL could build a
+   one-page table that maps the CSR window with `PBMT = IO` and run the
+   initialization with `MPRV = 1`, `MPP = S`, so its loads and stores are
+   translated and uncached. No RTL change, but it is the most complex firmware.
+2. **A non-cacheable external region in Wally's RTL.** The cleanest hardware
+   answer, but it changes `src/` (PMA and address decoders), which is what this
+   work avoids for upstream merges.
+3. **Keep the VexRiscv for RV64.** RV32 uses Wally-run init; the Linux build
+   keeps the service CPU, which is already an option of the generator.

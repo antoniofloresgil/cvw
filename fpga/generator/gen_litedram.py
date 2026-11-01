@@ -287,52 +287,69 @@ def main():
         wally_clock = ".user_clk(sys_clk), .user_rst(sys_rst),"
         wrapper_comment = "// Generated wrapper: one sys clock for DDR, the control bus, and Wally."
         wally_clock_assigns = "  assign wally_clk = sys_clk;\n  assign wally_rst = sys_rst;\n"
+    # Both modes give the wrapper the same ports, so the SoC top instantiates it
+    # once and chooses behavior from the constant init_by_wally: the unused
+    # service-CPU outputs are tied off without a CPU, and the control bus
+    # (ctrl_*, 32-bit data, 30-bit word address) is answered with zeros and an
+    # immediate ack when a service CPU owns the CSRs.
     if service_cpu:
         wrapper_comment = wrapper_comment.replace("the control bus", "the service CPU")
-        init_ports = """  input wire clk100, cpu_reset_n, uart_rx,
-  output wire sys_clk, sys_rst, wally_clk, wally_rst, init_done, init_error, uart_tx,
-  output wire debug_cpu_active,
-  output wire [3:0] debug_cpu_bus,
-  output wire [3:0] debug_cpu_boot, debug_cpu_data,
-  output wire [3:0] debug_cpu_copy,
-  output wire [31:0] debug_first_data_addr,"""
         init_conns = """    .init_done(init_done), .init_error(init_error),
     .uart_rx(uart_rx), .uart_tx(uart_tx),"""
         init_tail = """.user_port_wally_err(wb_err), .debug_cpu_active(debug_cpu_active),
     .debug_cpu_bus(debug_cpu_bus), .debug_cpu_boot(debug_cpu_boot),
     .debug_cpu_data(debug_cpu_data), .debug_cpu_copy(debug_cpu_copy),
     .debug_first_data_addr(debug_first_data_addr)"""
-        ctrl_ports = ""
+        init_assigns = """  assign init_by_wally = 1'b0;
+  assign ctrl_dat_r = 32'b0;
+  assign ctrl_ack = ctrl_cyc & ctrl_stb;
+  assign ctrl_err = 1'b0;
+"""
     else:
-        # Wally drives the CSR bus (wb_ctrl, word-addressed, 32-bit) and writes
-        # ddrctrl.init_done/init_error itself; init_done/init_error are outputs.
+        # Wally drives the CSR bus and writes ddrctrl.init_done/init_error
+        # itself; init_done and init_error are outputs for the top to observe.
         ctrl_adr_width = int(re.search(r"\[(\d+):0\] wb_ctrl_adr", text).group(1)) + 1
-        init_ports = """  input wire clk100, cpu_reset_n,
-  output wire sys_clk, sys_rst, wally_clk, wally_rst, init_done, init_error,"""
+        if ctrl_adr_width != 30:
+            raise RuntimeError(f"Unexpected wb_ctrl address width {ctrl_adr_width}")
         init_conns = """    .init_done(init_done), .init_error(init_error),"""
         init_tail = """.user_port_wally_err(wb_err),
     .wb_ctrl_adr(ctrl_adr), .wb_ctrl_dat_w(ctrl_dat_w), .wb_ctrl_dat_r(ctrl_dat_r),
     .wb_ctrl_sel(ctrl_sel), .wb_ctrl_cyc(ctrl_cyc), .wb_ctrl_stb(ctrl_stb),
     .wb_ctrl_ack(ctrl_ack), .wb_ctrl_we(ctrl_we), .wb_ctrl_cti(3'b000),
     .wb_ctrl_bte(2'b00), .wb_ctrl_err(ctrl_err)"""
-        ctrl_ports = f"""
-  input wire [{ctrl_adr_width-1}:0] ctrl_adr,
-  input wire [31:0] ctrl_dat_w,
-  output wire [31:0] ctrl_dat_r,
-  input wire [3:0] ctrl_sel,
-  input wire ctrl_we, ctrl_cyc, ctrl_stb,
-  output wire ctrl_ack, ctrl_err,"""
+        init_assigns = """  assign init_by_wally = 1'b1;
+  assign uart_tx = 1'b1;
+  assign debug_cpu_active = 1'b0;
+  assign debug_cpu_bus = 4'b0;
+  assign debug_cpu_boot = 4'b0;
+  assign debug_cpu_data = 4'b0;
+  assign debug_cpu_copy = 4'b0;
+  assign debug_first_data_addr = 32'b0;
+"""
     (output / "litedram_ddr.v").write_text(f"""
 {wrapper_comment}
 module litedram_ddr (
-{init_ports}
+  input wire clk100, cpu_reset_n, uart_rx,
+  output wire sys_clk, sys_rst, wally_clk, wally_rst, init_done, init_error, uart_tx,
+  output wire init_by_wally,
+  output wire debug_cpu_active,
+  output wire [3:0] debug_cpu_bus,
+  output wire [3:0] debug_cpu_boot, debug_cpu_data,
+  output wire [3:0] debug_cpu_copy,
+  output wire [31:0] debug_first_data_addr,
   output wire [14:0] ddram_a,
   output wire [2:0] ddram_ba,
   output wire ddram_cas_n, ddram_cke, ddram_clk_n, ddram_clk_p,
   output wire [1:0] ddram_dm,
   inout wire [15:0] ddram_dq,
   inout wire [1:0] ddram_dqs_n, ddram_dqs_p,
-  output wire ddram_odt, ddram_ras_n, ddram_reset_n, ddram_we_n,{ctrl_ports}
+  output wire ddram_odt, ddram_ras_n, ddram_reset_n, ddram_we_n,
+  input wire [29:0] ctrl_adr,
+  input wire [31:0] ctrl_dat_w,
+  output wire [31:0] ctrl_dat_r,
+  input wire [3:0] ctrl_sel,
+  input wire ctrl_we, ctrl_cyc, ctrl_stb,
+  output wire ctrl_ack, ctrl_err,
   input wire [{wb_adr_width-1}:0] wb_adr,
   input wire [{dw-1}:0] wb_dat_w,
   output wire [{dw-1}:0] wb_dat_r,
@@ -340,7 +357,7 @@ module litedram_ddr (
   input wire wb_we, wb_cyc, wb_stb,
   output wire wb_ack, wb_err
 );
-{wally_clock_assigns}  // The board has no power-on-reset circuit, but the LiteX core expects an
+{wally_clock_assigns}{init_assigns}  // The board has no power-on-reset circuit, but the LiteX core expects an
   // active-high reset pulse at startup. Hold reset for ~10 ms after
   // configuration (or while the CPU reset button is pressed).
   reg [19:0] por_cnt = 20'd0;

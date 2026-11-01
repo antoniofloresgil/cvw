@@ -205,7 +205,7 @@ PreProcessOpenSource:
 	mkdir -p ../src/CopiedFiles_do_not_add_to_repo/config
 	cp ../../config/deriv/$(OPENCONFIG)/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
 	cp ../../config/shared/*.vh ../src/CopiedFiles_do_not_add_to_repo/config/
-	cp ../../fpga/src/fpgaOpenSource.sv ../src/CopiedFiles_do_not_add_to_repo/
+	cp ../../fpga/src/fpgaOpenSource.sv ../../fpga/src/extbussplit.sv ../src/CopiedFiles_do_not_add_to_repo/
 	sed -i "s/bit \[DATA_WIDTH-1:0\].*ROM.*/(\* rom_style=\"block\" \*) &/g" ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
 	sed -i 's|\$$WALLY|$(WALLY)|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
 	sed -i 's|\$$WALLY|$(WALLY)|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv
