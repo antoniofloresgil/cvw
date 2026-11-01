@@ -4,6 +4,8 @@
 #   make                build build/ddrinit.elf and build/ddrinit.mem
 #   make install        copy the image to fpga/src/boot.mem and data.mem
 #                       (the IROM and DTIM preload files; back them up first)
+#   make SKIP_INIT=1    only the memory test, for a build whose LiteDRAM still
+#                       has the service CPU (--init-cpu vexriscv)
 #
 # The LiteDRAM headers (csr.h, sdram_phy.h, ...) come from the generator's
 # output, so run `gen-litedram.sh --init-cpu none` (or the open build with
@@ -31,7 +33,8 @@ ARCH    := -march=rv32imc_zicsr -mabi=ilp32
 DEFINES := -DCSR_BASE=$(CSR_BASE)L -DMAIN_RAM_BASE=$(MAIN_RAM_BASE)L \
            -DMAIN_RAM_BASE_VA=$(MAIN_RAM_BASE)L -DSDRAM_TEST_DISABLE \
            -DUART_BASE=$(UART_BASE) -DUART_PRESCALE=$(UART_PRESCALE) \
-           -DSYSTEMCLOCK=$(SYSTEMCLOCK) -DBAUD=$(BAUD)
+           -DSYSTEMCLOCK=$(SYSTEMCLOCK) -DBAUD=$(BAUD) \
+           $(if $(filter 1,$(SKIP_INIT)),-DDDRINIT_SKIP)
 CFLAGS  := $(ARCH) -Os -g -ffreestanding -fno-common -ffunction-sections -fdata-sections \
            -Wall -Wno-unused-function $(DEFINES) \
            -Ishim -I$(GENERATED) -I$(LITEX_SW)/include -I$(LITEX_SW)
@@ -42,7 +45,7 @@ SOURCES := start.S main.c printf.c \
 
 all: build/ddrinit.mem
 
-build/ddrinit.elf: $(SOURCES) link.ld shim/system.h $(GENERATED)/generated/csr.h | build
+build/ddrinit.elf: $(SOURCES) link.ld shim/system.h $(GENERATED)/generated/csr.h FORCE | build
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES) -lgcc
 	$(OBJDUMP) -d $@ > build/ddrinit.objdump
 	$(SIZE) $@
@@ -67,4 +70,5 @@ build:
 clean:
 	rm -rf build
 
-.PHONY: all install clean
+.PHONY: all install clean FORCE
+FORCE:

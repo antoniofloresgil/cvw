@@ -2,9 +2,10 @@
 
 Date: 2026-11-01. Branch `wally-ddr3-init`, from `main` at `c2fa6bd94`.
 
-Status: **steps 1 to 3 done** (generator option; RTL path for RV32, checked in
-simulation and synthesis; firmware built, not run). Board work is not started. Nothing
-here has run on the board yet, including the service-CPU build with the new top.
+Status: **steps 1 to 4 done: on RV32 (`fpgaopensource`) Wally initializes the
+DDR3 itself on the Nexys Video**, and that is now the default for RV32 builds.
+Step 5 (RV64, Linux) is open: the RV64 build keeps the VexRiscv service CPU, and
+the RV64 build with the new top has not been rebuilt or booted yet.
 
 ## Goal
 
@@ -61,9 +62,9 @@ follows, because its control bus needs a clock-domain crossing.
    environment, with a `cdelay` calibrated for Wally's clock (the values are
    minimum delays, so erring long is safe). RV32: it runs from the IROM. RV64:
    it goes into the ZSBL, which already lives in the boot ROM.
-4. **Board, RV32.** Read and write leveling, the memory test and the 973-pass
-   write/verify run that the VexRiscv build already passes. Measure the real
-   area after place and route. Flip the default to `none` if it works.
+4. **Board, RV32 (done, see below).** Read leveling, the memory test and the
+   64 KiB write/verify run that the VexRiscv build already passes. Measure the
+   real area after place and route. Flip the default to `none` if it works.
 5. **RV64.** A clock-domain crossing for the control bus (Wally at 12.5 MHz,
    control bus in the 40 MHz system domain), the ZSBL change, and the Linux boot
    again.
@@ -283,3 +284,54 @@ patch only affects the DTIM.
   CKE) still last milliseconds at 40 MHz against the 200/500 us required, but the
   short settle delays inside leveling (15 and 100 iterations) are a candidate
   if leveling misbehaves.
+
+## Step 4: on the board (RV32, 2026-11-01)
+
+Two bitstreams from the same sources, `make nexysvideo FLOW=opensource`
+(`fpgaopensource`, 40 MHz, default nextpnr seed), each programmed on the Nexys
+Video and its UART recorded for 60 s:
+
+- **A, service CPU** (`INIT_CPU=vexriscv`, `ddrinit` built with `SKIP_INIT=1`):
+  checks that the new top did not break the existing path. The LiteDRAM BIOS
+  ran read leveling and `Memtest OK`; Wally then printed its banner (the first
+  RV32 IROM program whose strings print, thanks to the DTIM preload) and
+  completed 1575 passes of 64 KiB write/verify with 0 errors.
+- **B, Wally initializes** (`INIT_CPU=none`, `ddrinit`): Wally printed its
+  banner, ran `sdram_init()` through the CSR window at `0x48000000`, found the
+  same read-leveling result as the VexRiscv (bit-slip 1, delay 20+-10, both
+  modules, clean windows), wrote `init_done`, and completed 1727 passes of
+  64 KiB write/verify with 0 errors.
+
+nextpnr after place and route (one seed each; the frequency difference is
+within seed-to-seed variation):
+
+| Build | SLICE_LUTX | SLICE_FFX | RAMB36 | RAMB18 | CARRY4 | HCLK |
+|---|---|---|---|---|---|---|
+| A, VexRiscv | 18308 | 10048 | 20 | 44 | 588 | 40.55 MHz |
+| B, Wally | 15545 | 8641 | 16 | 29 | 515 | 42.58 MHz |
+| Saved | 2763 (15 %) | 1407 | 4 | 15 | 73 | |
+
+The `cdelay()` concern from step 3 did not show: leveling matched the service
+CPU's. Each build took about 3 minutes.
+
+### Defaults after this step
+
+- `build-opensource.sh` picks `INIT_CPU=none` for RV32 and `vexriscv` for RV64;
+  `INIT_CPU=vexriscv` brings the service CPU back for debugging.
+- With `none`, the DDR3 is usable only after a program in the IROM has run the
+  initialization: `fpga/ddrinit` is that program, and other RV32 programs must
+  start with its `sdram_init()` call (or be built on top of it).
+- `gen_litedram.py` itself still defaults to `vexriscv`, so running the
+  generator by hand behaves as before.
+
+### Repeating it
+
+```bash
+source setup.sh
+cp fpga/src/boot.mem fpga/src/data.mem <backup dir>/   # the Linux ZSBL lives there
+cd fpga/generator && ./gen-litedram.sh --init-cpu none
+make -C ../ddrinit install
+make nexysvideo FLOW=opensource                        # RV32, INIT_CPU=none by default
+openFPGALoader -b nexysVideo opensource-nexysvideo/nexysvideo.bit
+# UART at 115200: banner, read leveling, then "pass N errors 0 total 0"
+```

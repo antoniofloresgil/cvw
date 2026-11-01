@@ -47,12 +47,17 @@ static uint32_t pattern(uint32_t pass, uint32_t i) {
 
 int main(void) {
   uart_init();
+#ifdef DDRINIT_SKIP
+  // The LiteDRAM service CPU has already initialized the DDR3; only test it.
+  printf("\nddrinit: DDR3 initialized by the service CPU\n");
+#else
   printf("\nddrinit: Wally runs the DDR3 initialization (CSRs at 0x%08lx)\n",
          (unsigned long)CSR_BASE);
   if (!sdram_init()) {
     printf("ddrinit: SDRAM initialization FAILED\n");
     return 1;
   }
+#endif
   printf("ddrinit: SDRAM ready, testing 64 KiB at 0x%08lx\n", (unsigned long)MAIN_RAM_BASE);
   volatile uint32_t *ram = (volatile uint32_t *)MAIN_RAM_BASE;
   uint32_t total = 0;
