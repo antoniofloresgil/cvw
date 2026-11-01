@@ -79,9 +79,11 @@ index is brought into another branch, refresh its checkout-specific notes and
 The proposed [SBI PMU counting integration](decisions/0013-sbi-pmu-perf-stat.md)
 and [its experiment](experiments/2026-10-20-sbi-pmu.md) belong to
 `adding-mpu-support`, with main integrated through `4ce065926` and again on
-2026-11-01 (main `568a9ed65`, which brings the multicore RTL; the PMU has not
-been checked in multicore configurations). The post-merge checks are tracked in the
-[PMU/main integration record](experiments/2026-10-21-pmu-main-integration.md).
+2026-11-01 (main `568a9ed65`, which brings the multicore RTL). The branch was
+merged into `main` by PR #25 (`da9e9c21c`) and deleted. The post-merge checks are tracked in the
+[PMU/main integration record](experiments/2026-10-21-pmu-main-integration.md),
+and the multicore PMU checks in the
+[multicore PMU record](experiments/2026-11-01-pmu-multicore.md).
 Optional counter overflow and filtering on this branch are tracked in
 [ADR 0014](decisions/0014-sscofpmf-counter-overflow.md) and the
 [Sscofpmf verification record](experiments/2026-10-21-sscofpmf.md).
