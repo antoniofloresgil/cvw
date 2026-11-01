@@ -199,6 +199,11 @@ the UART sticky bit requires the BIOS to reach `uart_init()`/`printf()`.
   `bin/installation/fpga-toolchain-install.sh`. The earlier gatecat revision
   produced bitstreams whose DDR3 reads always failed. See
   `docs/engineering/experiments/open-ddr3-bringup.md`.
+- nextpnr's default seed does not route the RV64GC netlist (`fpganexysvideo`):
+  router2 stalls at 27-36 overused wires. `build-opensource.sh` therefore
+  passes `--seed 2` for that configuration (13.64 MHz estimated, Linux boots).
+  `NEXTPNR_SEED=<n>` overrides it for any board; a different netlist may need
+  another seed.
 - On the Nexys Video, the LiteDRAM BIOS passes read leveling and its memory
   test. Wally then reads and writes DDR3 at `0x40000000` without errors.
 - **Linux boots** with `OPENCONFIG=fpganexysvideo` (2026-10-29): the ZSBL loads

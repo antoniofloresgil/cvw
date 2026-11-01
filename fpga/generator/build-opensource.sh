@@ -77,6 +77,10 @@ python3 fix-carry4-outputs.py "$out/$board.json" "$out/$board.json"
 
 freq=25
 [ "$board" = "nexysvideo" ] && freq=40
+# The RV64GC netlist does not route with nextpnr's default seed (router2 stalls
+# at about 30 overused wires); seed 2 converges. NEXTPNR_SEED overrides it.
+seed="${NEXTPNR_SEED:-}"
+[ -z "$seed" ] && [ "$board" = "nexysvideo" ] && [ "$xlen" = 64 ] && seed=2
 nextpnr-xilinx \
     --chipdb "$chipdb" \
     --xdc "$constraints" \
@@ -84,7 +88,8 @@ nextpnr-xilinx \
     --freq "$freq" \
     --write "$out/$board-routed.json" \
     --report "$out/$board-report.json" \
-    --fasm "$out/$board.fasm"
+    --fasm "$out/$board.fasm" \
+    ${seed:+--seed "$seed"}
 
 PYTHONPATH="$RISCV/prjxray" fasm2frames \
     --db-root "$xray_db" \
