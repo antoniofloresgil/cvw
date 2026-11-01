@@ -47,6 +47,15 @@ design (`fpgaopensource`, 40 MHz) was rebuilt with these changes and passed 973
 consecutive DDR3 write/verify passes on the board; that build also fixed the
 LiteDRAM generator's shared-clock mode, which the Linux work had broken.
 
+## In progress: Wally runs the DDR3 initialization
+
+Branch `wally-ddr3-init`. The VexRiscv service CPU inside the LiteDRAM core
+becomes optional (`gen_litedram.py --init-cpu {vexriscv,none}`) and Wally runs
+the initialization and leveling code itself; the VexRiscv stays as a debugging
+alternative. Step 1 of 5 (the generator option) is done; plan, area estimate
+(about 2000 LUT saved) and open points are in
+[experiments/2026-11-01-wally-runs-ddr3-init.md](experiments/2026-11-01-wally-runs-ddr3-init.md).
+
 ## Future work
 
 Complete open flow: add an open-source ASIC flow (Yosys with OpenROAD, through
