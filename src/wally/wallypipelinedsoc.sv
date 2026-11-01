@@ -74,6 +74,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic [NCORES-1:0][2:0] CoreHSIZE, CoreHBURST;
   logic [NCORES-1:0][3:0] CoreHPROT;
   logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC;
+  logic [NCORES-1:0][3:0] CoreCacheEvents;
 
   // Preserve the upstream no-bus outputs; bus-enabled harts share clock/reset.
   assign HCLK = P.BUS_SUPPORTED ? clk : 1'b0;
@@ -81,6 +82,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset,
     .SCFail(CoreSCFail[0]), .HATOMIC(CoreHATOMIC[0]),
     .MTimerInt(MTimerInt[0]), .MExtInt(MExtInt[0]), .SExtInt(SExtInt[0]), .MSwInt(MSwInt[0]), .MTIME_CLINT,
+    .ExtCacheEvents(CoreCacheEvents[0]),
     .HRDATA(CoreHRDATA[0]), .HREADY(CoreHREADY[0]), .HRESP(CoreHRESP[0]), .HCLK(), .HRESETn(),
     .HADDR(CoreHADDR[0]), .HWDATA(CoreHWDATA[0]), .HWSTRB(CoreHWSTRB[0]),
     .HWRITE(CoreHWRITE[0]), .HSIZE(CoreHSIZE[0]), .HBURST(CoreHBURST[0]), .HPROT(CoreHPROT[0]),
@@ -90,6 +92,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     wallypipelinedcore #(.P(P), .HART_ID(h), .SHARED_ATOMICS(1)) core(.clk, .reset,
       .SCFail(CoreSCFail[h]), .HATOMIC(CoreHATOMIC[h]),
       .MTimerInt(MTimerInt[h]), .MExtInt(MExtInt[h]), .SExtInt(SExtInt[h]), .MSwInt(MSwInt[h]), .MTIME_CLINT,
+      .ExtCacheEvents(CoreCacheEvents[h]),
       .HRDATA(CoreHRDATA[h]), .HREADY(CoreHREADY[h]), .HRESP(CoreHRESP[h]), .HCLK(), .HRESETn(),
       .HADDR(CoreHADDR[h]), .HWDATA(CoreHWDATA[h]), .HWSTRB(CoreHWSTRB[h]),
       .HWRITE(CoreHWRITE[h]), .HSIZE(CoreHSIZE[h]), .HBURST(CoreHBURST[h]), .HPROT(CoreHPROT[h]),
@@ -100,7 +103,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   multicore_memory_system #(.P(P), `CVW_MULTICORE_CONNECT) memory_system(
     .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHMASTLOCK,
     .CoreHSIZE, .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHATOMIC,
-    .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
+    .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP, .CoreCacheEvents,
     .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK,
     .HRDATA, .HREADY, .HRESP);
 

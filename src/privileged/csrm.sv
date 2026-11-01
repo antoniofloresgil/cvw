@@ -24,12 +24,13 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
   input  logic [P.XLEN-1:0]        NextEPCM, NextXtvalM, MSTATUS_REGW, MSTATUSH_REGW,
   input  logic [5:0]               NextCauseM,
   input  logic [P.XLEN-1:0]        CSRWriteValM,
-  input  logic [11:0]              MIP_REGW, MIE_REGW,
+  input  logic                     CSRSWriteM,
+  input  logic [13:0]              MIP_REGW, MIE_REGW,
   output logic [P.XLEN-1:0]        CSRMReadValM, MTVEC_REGW,
   output logic [P.XLEN-1:0]        MEPC_REGW,
   output logic [31:0]              MCOUNTEREN_REGW, MCOUNTINHIBIT_REGW,
   output logic [15:0]              MEDELEG_REGW,
-  output logic [11:0]              MIDELEG_REGW,
+  output logic [13:0]              MIDELEG_REGW,
   /* verilator lint_off UNDRIVEN */ // PMP registers are only used when PMP_ENTRIES > 0
   output var logic [P.PA_BITS-3:0] PMPADDR_ARRAY_REGW[P.PMP_ENTRIES-1:0],
   output var logic [7:0]           PMPCFG_ARRAY_REGW[P.PMP_ENTRIES-1:0],
@@ -46,7 +47,8 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
   logic [P.XLEN-1:0]               TVECWriteValM;
   logic                            WriteMTVECM, WriteMEDELEGM, WriteMIDELEGM;
   logic                            WriteMSCRATCHM, WriteMEPCM, WriteMCAUSEM, WriteMTVALM;
-  logic                            WriteMCOUNTERENM, WriteMCOUNTINHIBITM;
+  logic                            WriteMCOUNTERENM, WriteMCOUNTINHIBITM, WriteSCOUNTINHIBITM;
+  logic [31:0]                     CounterInhibitWriteValM;
 
   // Machine CSRs
   localparam MVENDORID     = 12'hF11;
@@ -65,6 +67,7 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
   localparam MSTATUSH      = 12'h310;
   localparam MENVCFGH      = 12'h31A;
   localparam MCOUNTINHIBIT = 12'h320;
+  localparam SCOUNTINHIBIT = 12'h120;
   localparam MSCRATCH      = 12'h340;
   localparam MEPC          = 12'h341;
   localparam MCAUSE        = 12'h342;
@@ -88,7 +91,7 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
   // Delegable exceptions: causes 0-9, 12, 13, 15.  Cause 11 (ecall from M-mode) cannot be delegated and 10, 14 are reserved.
   // when compressed instructions are supported, there can't be misaligned instructions
   localparam MEDELEG_MASK  = P.ZCA_SUPPORTED ? 16'hB3FE : 16'hB3FF;
-  localparam MIDELEG_MASK  = 12'h222; // we choose to not make machine interrupts delegable
+  localparam MIDELEG_MASK  = 14'h0222 | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0);
   // only nonzero counters can be inhibited; TM (bit 1) is read-only 0 because the time counter lives in the CLINT
   localparam COUNTERINHIBIT_MASK = (32'hFFFFFFFF >> (32 - P.COUNTERS)) & 32'hFFFFFFFD;
   // mcounteren can only be written for counters that are supported by Zicntr or Zihpm and are nonzero
@@ -155,6 +158,11 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
   assign WriteMTVALM         = MTrapM | (CSRMWriteM & (CSRAdrM == MTVAL));
   assign WriteMCOUNTERENM    = CSRMWriteM & (CSRAdrM == MCOUNTEREN);
   assign WriteMCOUNTINHIBITM = CSRMWriteM & (CSRAdrM == MCOUNTINHIBIT);
+  assign WriteSCOUNTINHIBITM = P.SMCDELEG_SUPPORTED & MENVCFG_REGW[60] &
+                               CSRSWriteM & (CSRAdrM == SCOUNTINHIBIT);
+  assign CounterInhibitWriteValM = WriteSCOUNTINHIBITM ?
+      ((MCOUNTINHIBIT_REGW & ~MCOUNTEREN_REGW) | (CSRWriteValM[31:0] & MCOUNTEREN_REGW)) :
+      CSRWriteValM[31:0];
 
   assign IllegalCSRMWriteReadonlyM = UngatedCSRMWriteM & (CSRAdrM == MVENDORID | CSRAdrM == MARCHID | CSRAdrM == MIMPID | CSRAdrM == MHARTID | CSRAdrM == MCONFIGPTR);
 
@@ -164,14 +172,15 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
   flopenr #(P.XLEN) MTVECreg(clk, reset, WriteMTVECM, TVECWriteValM, MTVEC_REGW);
   if (P.S_SUPPORTED) begin : deleg // DELEG registers should exist
     flopenr #(16) MEDELEGreg(clk, reset, WriteMEDELEGM, CSRWriteValM[15:0] & MEDELEG_MASK, MEDELEG_REGW);
-    flopenr #(12) MIDELEGreg(clk, reset, WriteMIDELEGM, CSRWriteValM[11:0] & MIDELEG_MASK, MIDELEG_REGW);
+    flopenr #(14) MIDELEGreg(clk, reset, WriteMIDELEGM, CSRWriteValM[13:0] & MIDELEG_MASK, MIDELEG_REGW);
   end else assign {MEDELEG_REGW, MIDELEG_REGW} = '0;
 
   flopenr #(P.XLEN) MSCRATCHreg(clk, reset, WriteMSCRATCHM, CSRWriteValM, MSCRATCH_REGW);
   flopenr #(P.XLEN) MEPCreg(clk, reset, WriteMEPCM, NextEPCM, MEPC_REGW);
   flopenr #(P.XLEN) MCAUSEreg(clk, reset, WriteMCAUSEM, {NextCauseM[5], {(P.XLEN-6){1'b0}}, NextCauseM[4:0]}, MCAUSE_REGW);
   flopenr #(P.XLEN) MTVALreg(clk, reset, WriteMTVALM, NextXtvalM, MTVAL_REGW);
-  flopenr #(32)     MCOUNTINHIBITreg(clk, reset, WriteMCOUNTINHIBITM, CSRWriteValM[31:0] & COUNTERINHIBIT_MASK, MCOUNTINHIBIT_REGW);
+  flopenr #(32)     MCOUNTINHIBITreg(clk, reset, WriteMCOUNTINHIBITM | WriteSCOUNTINHIBITM,
+                                    CounterInhibitWriteValM & COUNTERINHIBIT_MASK, MCOUNTINHIBIT_REGW);
   if (P.U_SUPPORTED & P.ZICNTR_SUPPORTED) begin : mcounteren // MCOUNTEREN only writable when user mode and Zicntr are supported
     flopenr #(32)   MCOUNTERENreg(clk, reset, WriteMCOUNTERENM, CSRWriteValM[31:0] & COUNTEREN_MASK, MCOUNTEREN_REGW);
   end else assign MCOUNTEREN_REGW = '0;
@@ -188,7 +197,8 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
       MENVCFG_PreWriteValM[63]  & P.SSTC_SUPPORTED,
       MENVCFG_PreWriteValM[62]  & P.SVPBMT_SUPPORTED,
       MENVCFG_PreWriteValM[61]  & P.SVADU_SUPPORTED,
-      53'b0,
+      MENVCFG_PreWriteValM[60]  & P.SMCDELEG_SUPPORTED & P.S_SUPPORTED,
+      52'b0,
       MENVCFG_PreWriteValM[7]   & P.ZICBOZ_SUPPORTED,
       MENVCFG_PreWriteValM[6]   & P.ZICBOM_SUPPORTED,
       LegalizedCBIE             & {2{P.ZICBOM_SUPPORTED}},
@@ -253,9 +263,9 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
                      else IllegalCSRMAccessM = 1'b1;
       MTVEC:         CSRMReadValM = MTVEC_REGW;
       MEDELEG:       CSRMReadValM = {{(P.XLEN-16){1'b0}}, MEDELEG_REGW};
-      MIDELEG:       CSRMReadValM = {{(P.XLEN-12){1'b0}}, MIDELEG_REGW};
-      MIP:           CSRMReadValM = {{(P.XLEN-12){1'b0}}, MIP_REGW};
-      MIE:           CSRMReadValM = {{(P.XLEN-12){1'b0}}, MIE_REGW};
+      MIDELEG:       CSRMReadValM = {{(P.XLEN-14){1'b0}}, MIDELEG_REGW};
+      MIP:           CSRMReadValM = {{(P.XLEN-14){1'b0}}, MIP_REGW};
+      MIE:           CSRMReadValM = {{(P.XLEN-14){1'b0}}, MIE_REGW};
       MSCRATCH:      CSRMReadValM = MSCRATCH_REGW;
       MEPC:          CSRMReadValM = MEPC_REGW;
       MCAUSE:        CSRMReadValM = MCAUSE_REGW;

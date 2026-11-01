@@ -1715,6 +1715,49 @@ derive rv32gc_novm_cache_4way_64KB_512Bline  rv32gc_novm_cache_4way_64KB_256Blin
 DCACHE_LINELENINBITS   32'd512
 ICACHE_LINELENINBITS   32'd512
 
+# Isolated single-core SBI PMU/Linux verification, native private L1 caches.
+deriv pmu_linux buildroot
+UNCORE_RAM_RANGE 64'h07FFFFFF
+
+# Optional counter overflow and privilege filtering, kept out of existing targets.
+deriv sscofpmf_rv64gc rv64gc
+SSCOFPMF_SUPPORTED 1
+
+deriv sscofpmf_rv32gc rv32gc
+SSCOFPMF_SUPPORTED 1
+
+# Filter the fixed cycle/instret counters independently or alongside Sscofpmf.
+deriv smcntrpmf_rv64gc rv64gc
+SMCNTRPMF_SUPPORTED 1
+
+deriv smcntrpmf_rv32gc rv32gc
+SMCNTRPMF_SUPPORTED 1
+
+deriv pmf_rv64gc sscofpmf_rv64gc
+SMCNTRPMF_SUPPORTED 1
+
+deriv pmf_rv32gc sscofpmf_rv32gc
+SMCNTRPMF_SUPPORTED 1
+
+# Counter delegation and its supervisor indirect CSR interface.
+deriv smcdeleg_rv64gc rv64gc
+SMCDELEG_SUPPORTED 1
+
+deriv smcdeleg_rv32gc rv32gc
+SMCDELEG_SUPPORTED 1
+
+deriv pmu_deleg_rv64gc pmf_rv64gc
+SMCDELEG_SUPPORTED 1
+
+deriv pmu_deleg_rv32gc pmf_rv32gc
+SMCDELEG_SUPPORTED 1
+
+# Same 128 MiB native-cache SoC used by the Linux PMU integration image.
+deriv pmu_deleg_linux pmu_linux
+SSCOFPMF_SUPPORTED 1
+SMCNTRPMF_SUPPORTED 1
+SMCDELEG_SUPPORTED 1
+
 # Uncached shared-memory prototype; NCORES is a SoC parameter, not an ISA field.
 deriv multicore rv64gc
 DCACHE_SUPPORTED 0
@@ -1748,3 +1791,9 @@ RESET_VECTOR 64'h00001000
 # Private per-hart physical data caches with serialized MSI bus snooping.
 # Legacy IFU/LSU caches stay off; enable the SoC PRIVATE_DCACHE parameter.
 deriv multicore_msi multicore_coherent
+
+# Multicore PMU checks: every per-hart counter extension on the coherent SoC.
+deriv multicore_pmu multicore_coherent
+SSCOFPMF_SUPPORTED 1
+SMCNTRPMF_SUPPORTED 1
+SMCDELEG_SUPPORTED 1

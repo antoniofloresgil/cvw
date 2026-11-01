@@ -24,12 +24,15 @@ module csrs import cvw::*; #(parameter cvw_t P) (
   input  logic [5:0]        NextCauseM,
   input  logic              STATUS_TVM,
   input  logic [P.XLEN-1:0] CSRWriteValM,
+  input  logic [31:0]       MCOUNTEREN_REGW, MCOUNTINHIBIT_REGW,
+  input  logic              CounterDelegationEnabled,
   input  logic [1:0]        PrivilegeModeW,
   output logic [P.XLEN-1:0] CSRSReadValM, STVEC_REGW,
   output logic [P.XLEN-1:0] SEPC_REGW,
   output logic [31:0]       SCOUNTEREN_REGW,
+  output logic [P.XLEN-1:0] SISELECT_REGW,
   output logic [P.XLEN-1:0] SATP_REGW,
-  input  logic [11:0]       MIP_REGW, MIE_REGW, MIDELEG_REGW,
+  input  logic [13:0]       MIP_REGW, MIE_REGW, MIDELEG_REGW,
   input  logic [63:0]       MTIME_CLINT,
   input  logic              STCE,
   output logic              WriteSSTATUSM,
@@ -43,6 +46,8 @@ module csrs import cvw::*; #(parameter cvw_t P) (
   localparam SIE        = 12'h104;
   localparam STVEC      = 12'h105;
   localparam SCOUNTEREN = 12'h106;
+  localparam SCOUNTINHIBIT = 12'h120;
+  localparam SISELECT   = 12'h150;
   localparam SENVCFG    = 12'h10A;
   localparam SSCRATCH   = 12'h140;
   localparam SEPC       = 12'h141;
@@ -86,6 +91,10 @@ module csrs import cvw::*; #(parameter cvw_t P) (
   end else  // RV32
     assign WriteSATPM     = CSRSWriteM & (CSRAdrM == SATP) & (PrivilegeModeW == P.M_MODE | ~STATUS_TVM);
   assign WriteSCOUNTERENM = CSRSWriteM & (CSRAdrM == SCOUNTEREN);
+  if (P.SMCDELEG_SUPPORTED)
+    flopenr #(P.XLEN) SISELECTreg(clk, reset, CSRSWriteM & (CSRAdrM == SISELECT),
+                                  CSRWriteValM & P.XLEN'('hfff), SISELECT_REGW);
+  else assign SISELECT_REGW = '0;
   assign WriteSENVCFGM    = CSRSWriteM & (CSRAdrM == SENVCFG);
   assign WriteSTIMECMPM   = CSRSWriteM & (CSRAdrM == STIMECMP) & STCE;
   assign WriteSTIMECMPHM  = CSRSWriteM & (CSRAdrM == STIMECMPH) & STCE & (P.XLEN == 32);
@@ -141,8 +150,8 @@ module csrs import cvw::*; #(parameter cvw_t P) (
     case (CSRAdrM)
       SSTATUS:    CSRSReadValM = SSTATUS_REGW;
       STVEC:      CSRSReadValM = STVEC_REGW;
-      SIP:        CSRSReadValM = {{(P.XLEN-12){1'b0}}, MIP_REGW & 12'h222 & MIDELEG_REGW}; // only read supervisor fields
-      SIE:        CSRSReadValM = {{(P.XLEN-12){1'b0}}, MIE_REGW & 12'h222 & MIDELEG_REGW}; // only read supervisor fields
+      SIP:        CSRSReadValM = {{(P.XLEN-14){1'b0}}, MIP_REGW & (14'h0222 | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0)) & MIDELEG_REGW}; // only read supervisor fields
+      SIE:        CSRSReadValM = {{(P.XLEN-14){1'b0}}, MIE_REGW & (14'h0222 | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0)) & MIDELEG_REGW}; // only read supervisor fields
       SSCRATCH:   CSRSReadValM = SSCRATCH_REGW;
       SEPC:       CSRSReadValM = SEPC_REGW;
       SCAUSE:     CSRSReadValM = SCAUSE_REGW;
@@ -150,6 +159,11 @@ module csrs import cvw::*; #(parameter cvw_t P) (
       SATP:       if (PrivilegeModeW == P.M_MODE | ~STATUS_TVM) CSRSReadValM = SATP_REGW;
                   else IllegalCSRSAccessM = 1'b1;
       SCOUNTEREN: CSRSReadValM = {{(P.XLEN-32){1'b0}}, SCOUNTEREN_REGW};
+      SCOUNTINHIBIT: if (CounterDelegationEnabled)
+                       CSRSReadValM = {{(P.XLEN-32){1'b0}}, (MCOUNTINHIBIT_REGW & MCOUNTEREN_REGW)};
+                     else IllegalCSRSAccessM = 1'b1;
+      SISELECT:   if (P.SMCDELEG_SUPPORTED) CSRSReadValM = SISELECT_REGW;
+                 else IllegalCSRSAccessM = 1'b1;
       SENVCFG:    CSRSReadValM = SENVCFG_REGW;
       STIMECMP:   if (STCE) CSRSReadValM = STIMECMP_REGW[P.XLEN-1:0];
                   else IllegalCSRSAccessM = 1'b1;

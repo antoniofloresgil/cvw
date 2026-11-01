@@ -21,7 +21,7 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   input  logic              StallE, StallM, StallW,
   input  logic              FlushM,
   input  logic              InstrValidNotFlushedM, LoadStallD, StoreStallD,
-  input  logic              CSRMWriteM, CSRWriteM,
+  input  logic              CSRMWriteM, CSRSWriteM, CSRWriteM,
   input  logic              BPDirWrongM,
   input  logic              BTAWrongM,
   input  logic              RASPredPCWrongM,
@@ -44,17 +44,27 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   input  logic [1:0]        PrivilegeModeW,
   input  logic [P.XLEN-1:0] CSRWriteValM,
   input  logic [31:0]       MCOUNTINHIBIT_REGW, MCOUNTEREN_REGW, SCOUNTEREN_REGW,
+  input  logic [P.XLEN-1:0] SISELECT_REGW,
+  input  logic              CounterDelegationEnabled,
   input  logic [63:0]       MTIME_CLINT,
   output logic [P.XLEN-1:0] CSRCReadValM,
-  output logic              IllegalCSRCAccessM
+  output logic              IllegalCSRCAccessM,
+  output logic              LCOFIPSetM
 );
 
   localparam MHPMCOUNTERBASE  = 12'hB00;
   localparam MTIME            = 12'hB01;               // this is a memory-mapped register; no such CSR exists, and access should fault
   localparam MHPMCOUNTERHBASE = 12'hB80;
   localparam MTIMEH           = 12'hB81;               // this is a memory-mapped register; no such CSR exists, and access should fault
+  localparam MCYCLECFG        = 12'h321;
+  localparam MINSTRETCFG      = 12'h322;
+  localparam MCYCLECFGH       = 12'h721;
+  localparam MINSTRETCFGH     = 12'h722;
   localparam MHPMEVENTBASE    = 12'h323;
   localparam MHPMEVENTLAST    = 12'h33F;
+  localparam MHPMEVENTHBASE   = 12'h723;
+  localparam MHPMEVENTHLAST   = 12'h73F;
+  localparam SCOUNTOVF        = 12'hDA0;
   // SystemVerilog has no zero-width array, so keep one unused element when no hpmevents exist
   localparam HPMEVENTTOP      = P.COUNTERS > 3 ? P.COUNTERS - 1 : 3;
   localparam HPMCOUNTERBASE   = 12'hC00;
@@ -63,78 +73,65 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   localparam TIMEH            = 12'hC81;
 
   logic [4:0]              CounterNumM;
+  logic [4:0]              SelectedCounterM;
+  logic                    WriteSIREGM, WriteSIREG2M, WriteSIREG4M, WriteSIREG5M;
+  logic                    IndirectCSRAdrM, IndirectIllegalM;
+  logic [P.XLEN-1:0]       IndirectReadValM;
   logic [P.XLEN-1:0]       HPMCOUNTER_REGW[P.COUNTERS-1:0];
   logic [P.XLEN-1:0]       HPMCOUNTERH_REGW[P.COUNTERS-1:0];
-  logic [P.XLEN-1:0]       MHPMEVENT_REGW[HPMEVENTTOP:3];
-  logic                    LoadStallE, LoadStallM;
-  logic                    StoreStallE, StoreStallM;
+  logic [63:0]             MHPMEVENT_REGW[HPMEVENTTOP:3];
+  logic [63:0]             MCYCLECFG_REGW, MINSTRETCFG_REGW;
   logic [P.COUNTERS-1:0]   WriteHPMCOUNTERM;
   logic [P.COUNTERS-1:0]   WriteHPMCOUNTERHM;
   logic [HPMEVENTTOP:3]    WriteMHPMEVENTM;
+  logic [HPMEVENTTOP:3]    WriteMHPMEVENTHM;
+  logic [31:0]             VisibleOverflowFlags;
+  logic [P.COUNTERS-1:0]   CounterOverflow;
   logic [31:0]             CounterEvent; // keep all events here even if P.COUNTERS < 32
+  logic [1:0]              CounterEventMode[31:0];
   logic [P.COUNTERS-1:0]   CounterInc;
   logic [63:0]             HPMCOUNTERPlusM[P.COUNTERS-1:0];
   logic [P.XLEN-1:0]       NextHPMCOUNTERHM[P.COUNTERS-1:0];
   logic [P.XLEN-1:0]       NextHPMCOUNTERM[P.COUNTERS-1:0];
-  logic [P.XLEN-1:0]       NextMHPMEVENTM[HPMEVENTTOP:3];
+  logic [63:0]             NextMHPMEVENTM[HPMEVENTTOP:3];
 
   genvar                   i;
 
-  // Interface signals
-  flopenrc #(1) LoadStallEReg(.clk, .reset, .clear(1'b0), .en(~StallE), .d(LoadStallD), .q(LoadStallE));  // don't flush the load stall during a load stall.
-  flopenrc #(1) LoadStallMReg(.clk, .reset, .clear(FlushM), .en(~StallM), .d(LoadStallE), .q(LoadStallM));
+  assign SelectedCounterM = SISELECT_REGW[4:0];
+  pmuevents #(P) events(
+    .clk, .reset, .StallE, .StallM, .StallW, .FlushM,
+    .InstrValidNotFlushedM, .LoadStallD, .StoreStallD, .CSRWriteM,
+    .BPDirWrongM, .BTAWrongM, .RASPredPCWrongM, .IClassWrongM, .BPWrongM,
+    .IClassM, .DCacheMiss, .DCacheAccess, .ICacheMiss, .ICacheAccess,
+    .ICacheStallF, .DCacheStallM, .sfencevmaM, .InterruptM, .TrapM,
+    .InvalidateICacheM, .DivBusyE, .FDivBusyE, .PrivilegeModeW,
+    .CounterEvent, .CounterEventMode);
 
-  flopenrc #(1) StoreStallEReg(.clk, .reset, .clear(1'b0), .en(~StallE), .d(StoreStallD), .q(StoreStallE));  // don't flush the store stall during a store stall.
-  flopenrc #(1) StoreStallMReg(.clk, .reset, .clear(FlushM), .en(~StallM), .d(StoreStallE), .q(StoreStallM));
-
-  // Determine when to increment each counter
-  assign CounterEvent[0]    = 1'b1;                                                      // MCYCLE always increments
-  assign CounterEvent[1]    = 1'b0;                                                      // Counter 1 doesn't exist
-  assign CounterEvent[2]    = InstrValidNotFlushedM;                                     // MINSTRET instructions retired
-  if (P.COUNTERS > 3) begin : cevent                                                   // User-defined counters
-    // Ideally all events would be counted in the M stage, but the pipelining is costly. The counters may
-    // count an event in a previous pipeline stage.
-    assign CounterEvent[3]  = IClassM[0] & InstrValidNotFlushedM;                        // branch instruction
-    assign CounterEvent[4]  = IClassM[1] & ~IClassM[2] & InstrValidNotFlushedM;          // jump and not return instructions
-    assign CounterEvent[5]  = IClassM[2] & InstrValidNotFlushedM;                        // return instructions
-    assign CounterEvent[6]  = BPWrongM & InstrValidNotFlushedM;                          // branch predictor wrong
-    assign CounterEvent[7]  = BPDirWrongM & InstrValidNotFlushedM;                       // Branch predictor wrong direction
-    assign CounterEvent[8]  = BTAWrongM & InstrValidNotFlushedM;                         // branch predictor wrong target
-    assign CounterEvent[9]  = RASPredPCWrongM & InstrValidNotFlushedM;                   // return address stack wrong address
-    assign CounterEvent[10] = IClassWrongM & InstrValidNotFlushedM;                      // instruction class predictor wrong
-    assign CounterEvent[11] = LoadStallM;                                                // Load Stalls. don't want to suppress on flush as this only happens if flushed.
-    assign CounterEvent[12] = StoreStallM;                                               // Store Stall
-    assign CounterEvent[13] = DCacheAccess;                                              // data cache access
-    assign CounterEvent[14] = DCacheMiss;                                                // data cache miss. Miss asserted 1 cycle at start of cache miss
-    assign CounterEvent[15] = DCacheStallM;                                              // D$ miss cycles
-    assign CounterEvent[16] = ICacheAccess;                                              // instruction cache access
-    assign CounterEvent[17] = ICacheMiss;                                                // instruction cache miss. Miss asserted 1 cycle at start of cache miss
-    assign CounterEvent[18] = ICacheStallF;                                              // I$ miss cycles
-    assign CounterEvent[19] = CSRWriteM & InstrValidNotFlushedM;                         // CSR writes
-    assign CounterEvent[20] = InvalidateICacheM & InstrValidNotFlushedM;                 // fence.i
-    assign CounterEvent[21] = sfencevmaM & InstrValidNotFlushedM;                        // sfence.vma
-    assign CounterEvent[22] = TrapM & ~StallW & InterruptM;                              // interrupts taken, counted once; InstrValidNotFlushedM will be low
-    assign CounterEvent[23] = TrapM & ~StallW & ~InterruptM;                             // exceptions taken, counted once; InstrValidNotFlushedM will be low
-    // DivBusyE is never asserted on rv64gc, which divides integers in the FPU; coverage-exclusions-rv64gc.do excludes that row
-    assign CounterEvent[24] = DivBusyE | FDivBusyE;                                      // division cycles
-    assign CounterEvent[31:25] = '0; // eventually give these sources, including FP instructions, I$/D$ misses, branches and mispredictions
-  end else begin : cevent
-    assign CounterEvent[31:3] = '0;
-  end
+  pmucountercontrol #(P) control(
+    .clk, .reset, .CSRMWriteM, .CSRSWriteM,
+    .CSRAdrM, .SelectedCounterM, .CSRWriteValM, .PrivilegeModeW,
+    .MCOUNTINHIBIT_REGW, .MCOUNTEREN_REGW, .SISELECT_REGW,
+    .CounterDelegationEnabled, .CounterEvent, .CounterEventMode,
+    .HPMCOUNTER_REGW, .HPMCOUNTERH_REGW, .MHPMEVENT_REGW,
+    .HPMCOUNTERPlusM, .WriteHPMCOUNTERM, .WriteHPMCOUNTERHM,
+    .MCYCLECFG_REGW, .MINSTRETCFG_REGW, .CounterInc, .CounterOverflow,
+    .VisibleOverflowFlags, .LCOFIPSetM,
+    .WriteSIREGM, .WriteSIREG2M, .WriteSIREG4M, .WriteSIREG5M,
+    .IndirectCSRAdrM, .IndirectIllegalM, .IndirectReadValM);
 
   // Counter update and write logic
   for (i = 0; i < P.COUNTERS; i = i + 1) begin : cntr
-    assign WriteHPMCOUNTERM[i] = CSRMWriteM & (CSRAdrM == MHPMCOUNTERBASE + i); // coverage tag: MTIME traps
+    assign WriteHPMCOUNTERM[i] = (CSRMWriteM & (CSRAdrM == MHPMCOUNTERBASE + i)) |
+                                 (WriteSIREGM & SelectedCounterM == i); // coverage tag: MTIME traps
     assign NextHPMCOUNTERM[i][P.XLEN-1:0] = WriteHPMCOUNTERM[i] ? CSRWriteValM : HPMCOUNTERPlusM[i][P.XLEN-1:0];
-    if (i < 3) assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i]; // MCYCLE, CYCLE, and MINSTRET are always incremented if not inhibited
-    else       assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i] & (MHPMEVENT_REGW[i] != 0); // user-defined counters are incremented only if the event is enabled
     always_ff @(posedge clk)
       if (reset) HPMCOUNTER_REGW[i][P.XLEN-1:0] <= '0;
       else       HPMCOUNTER_REGW[i][P.XLEN-1:0] <= NextHPMCOUNTERM[i];
 
     if (P.XLEN == 32) begin // write high and low separately
       assign HPMCOUNTERPlusM[i] = {HPMCOUNTERH_REGW[i], HPMCOUNTER_REGW[i]} + {63'b0, CounterInc[i]};
-      assign WriteHPMCOUNTERHM[i] = CSRMWriteM & (CSRAdrM == MHPMCOUNTERHBASE + i);
+      assign WriteHPMCOUNTERHM[i] = (CSRMWriteM & (CSRAdrM == MHPMCOUNTERHBASE + i)) |
+                                    (WriteSIREG4M & SelectedCounterM == i);
       assign NextHPMCOUNTERHM[i] = WriteHPMCOUNTERHM[i] ? CSRWriteValM : HPMCOUNTERPlusM[i][63:32];
       always_ff @(posedge clk)
         if (reset) HPMCOUNTERH_REGW[i][P.XLEN-1:0] <= '0;
@@ -142,20 +139,41 @@ module csrc import cvw::*; #(parameter cvw_t P) (
     end else begin // XLEN=64; write entire register
       assign HPMCOUNTERPlusM[i] = HPMCOUNTER_REGW[i] + {63'b0, CounterInc[i]};
       assign HPMCOUNTERH_REGW[i] = '0; // disregard for RV64
+      assign WriteHPMCOUNTERHM[i] = 1'b0;
     end
   end
 
   // hpmevent update and write logic
   if (P.COUNTERS > 3) begin : mhpmeventgen
     for (i = 3; i < P.COUNTERS; i = i + 1) begin : mhpmevent
-      assign WriteMHPMEVENTM[i] = CSRMWriteM & (CSRAdrM == MHPMEVENTBASE + i - 3);
-      assign NextMHPMEVENTM[i] = WriteMHPMEVENTM[i] ? CSRWriteValM : MHPMEVENT_REGW[i];
+      assign WriteMHPMEVENTM[i] = (CSRMWriteM & (CSRAdrM == MHPMEVENTBASE + i - 3)) |
+                                  (WriteSIREG2M & SelectedCounterM == i);
+      assign WriteMHPMEVENTHM[i] = P.SSCOFPMF_SUPPORTED & (P.XLEN == 32) &
+                                   ((CSRMWriteM & (CSRAdrM == MHPMEVENTHBASE + i - 3)) |
+                                    (WriteSIREG5M & SelectedCounterM == i));
+      always_comb begin
+        NextMHPMEVENTM[i] = MHPMEVENT_REGW[i];
+        if (WriteMHPMEVENTM[i]) NextMHPMEVENTM[i][P.XLEN-1:0] = CSRWriteValM;
+        if (WriteMHPMEVENTHM[i]) NextMHPMEVENTM[i][63:32] = CSRWriteValM[31:0];
+        if (WriteSIREG2M | WriteSIREG5M)
+          NextMHPMEVENTM[i][62] = MHPMEVENT_REGW[i][62]; // S-mode cannot change MINH
+        // OF is sticky on a hardware overflow and software-writable. VS/VU and
+        // reserved fields are hardwired zero because Wally has no H extension.
+        if (P.SSCOFPMF_SUPPORTED) begin
+          NextMHPMEVENTM[i][59:56] = '0;
+          if (!P.S_SUPPORTED) NextMHPMEVENTM[i][61] = 1'b0;
+          if (!P.U_SUPPORTED) NextMHPMEVENTM[i][60] = 1'b0;
+          // A hardware increment still wins if software writes the selector in this cycle.
+          if (CounterOverflow[i]) NextMHPMEVENTM[i][63] = 1'b1;
+        end
+      end
       always_ff @(posedge clk)
         if (reset) MHPMEVENT_REGW[i] <= '0;
         else       MHPMEVENT_REGW[i] <= NextMHPMEVENTM[i];
     end
   end else begin : mhpmeventgen // no hpmevents exist; drive the placeholder element HPMEVENTTOP reserves
     assign WriteMHPMEVENTM = '0;
+    assign WriteMHPMEVENTHM = '0;
     assign NextMHPMEVENTM[3] = '0;
     assign MHPMEVENT_REGW[3] = '0;
   end
@@ -165,9 +183,30 @@ module csrc import cvw::*; #(parameter cvw_t P) (
   always_comb begin
     CSRCReadValM = '0; // default value
     IllegalCSRCAccessM = 1'b0;
-    if (PrivilegeModeW == P.M_MODE & (CSRAdrM >= MHPMEVENTBASE & CSRAdrM <= MHPMEVENTLAST)) begin
-      if (CSRAdrM < MHPMEVENTBASE+P.COUNTERS-3) CSRCReadValM = MHPMEVENT_REGW[CounterNumM];
+    if (P.SSCOFPMF_SUPPORTED & P.S_SUPPORTED & CSRAdrM == SCOUNTOVF) begin
+      if (CSRWriteM | PrivilegeModeW == P.U_MODE) IllegalCSRCAccessM = 1'b1;
+      else CSRCReadValM = P.XLEN'(VisibleOverflowFlags);
+    end
+    else if (IndirectCSRAdrM) begin
+      CSRCReadValM = IndirectReadValM;
+      IllegalCSRCAccessM = IndirectIllegalM;
+    end
+    else if (P.SMCNTRPMF_SUPPORTED & PrivilegeModeW == P.M_MODE &
+             (CSRAdrM == MCYCLECFG | CSRAdrM == MINSTRETCFG)) begin
+      CSRCReadValM = (CSRAdrM == MCYCLECFG) ? MCYCLECFG_REGW[P.XLEN-1:0] : MINSTRETCFG_REGW[P.XLEN-1:0];
+    end
+    else if (P.SMCNTRPMF_SUPPORTED & (P.XLEN == 32) & PrivilegeModeW == P.M_MODE &
+             (CSRAdrM == MCYCLECFGH | CSRAdrM == MINSTRETCFGH)) begin
+      CSRCReadValM = (CSRAdrM == MCYCLECFGH) ? P.XLEN'(MCYCLECFG_REGW[63:32]) : P.XLEN'(MINSTRETCFG_REGW[63:32]);
+    end
+    else if (PrivilegeModeW == P.M_MODE & (CSRAdrM >= MHPMEVENTBASE & CSRAdrM <= MHPMEVENTLAST)) begin
+      if (CSRAdrM < MHPMEVENTBASE+P.COUNTERS-3) CSRCReadValM = MHPMEVENT_REGW[CounterNumM][P.XLEN-1:0];
       else CSRCReadValM = '0; // unused event selectors are read-only zero
+    end
+    else if (P.SSCOFPMF_SUPPORTED & (P.XLEN == 32) & PrivilegeModeW == P.M_MODE &
+             (CSRAdrM >= MHPMEVENTHBASE & CSRAdrM <= MHPMEVENTHLAST)) begin
+      if (CSRAdrM < MHPMEVENTHBASE+P.COUNTERS-3) CSRCReadValM = P.XLEN'(MHPMEVENT_REGW[CounterNumM][63:32]);
+      else CSRCReadValM = '0;
     end
     else if (PrivilegeModeW == P.M_MODE |
       MCOUNTEREN_REGW[CounterNumM] & (!P.S_SUPPORTED | PrivilegeModeW == P.S_MODE | SCOUNTEREN_REGW[CounterNumM])) begin

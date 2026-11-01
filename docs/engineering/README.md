@@ -20,6 +20,7 @@ revision and branch scopes, including the successful Vivado Linux boot.
 | Architecture overview and source layout | [CLAUDE.md](../../CLAUDE.md), [architecture pointers](architecture.md) |
 | Verification scope | [Existing test plan](../testplans/testplan.md), [revision-specific verification notes](verification.md) |
 | FPGA, Linux, ASIC flows | [Implementation notes](implementation.md), linking the existing flow documentation |
+| PMU kernel and OpenSBI versions | [PMU software compatibility](pmu-software-compatibility.md) |
 | Significant decisions | [ADR 0001: knowledge organization](decisions/0001-knowledge-organization.md), [ADR 0002: multicore cache](decisions/0002-shared-multicore-cache.md), [ADR 0003: private MSI](decisions/0003-private-msi-data-caches.md) |
 | Results | [Multicore/main integration](experiments/2026-10-19-multicore-main-integration.md), [upstream integration](experiments/2026-10-18-upstream-integration.md), [Linux SMP](experiments/2026-10-18-linux-smp.md), [open DDR3 bring-up](experiments/open-ddr3-bringup.md) |
 | Active work, branch boundaries, unresolved questions | [Current work](current-work.md) |
@@ -74,6 +75,26 @@ Historical branch references below use immutable commits. For local inspection,
 use `git show <commit>:<path>`; no branch switch or merge is required. If this
 index is brought into another branch, refresh its checkout-specific notes and
 `current-work.md` before treating them as current state.
+
+The proposed [SBI PMU counting integration](decisions/0013-sbi-pmu-perf-stat.md)
+and [its experiment](experiments/2026-10-20-sbi-pmu.md) belong to
+`adding-mpu-support`, with main integrated through `4ce065926` and again on
+2026-11-01 (main `568a9ed65`, which brings the multicore RTL; the PMU has not
+been checked in multicore configurations). The post-merge checks are tracked in the
+[PMU/main integration record](experiments/2026-10-21-pmu-main-integration.md).
+Optional counter overflow and filtering on this branch are tracked in
+[ADR 0014](decisions/0014-sscofpmf-counter-overflow.md) and the
+[Sscofpmf verification record](experiments/2026-10-21-sscofpmf.md).
+Fixed-counter mode filtering is tracked in
+[ADR 0015](decisions/0015-smcntrpmf-fixed-counter-filter.md) and the
+[Smcntrpmf verification record](experiments/2026-10-21-smcntrpmf.md), with a
+separate [Linux perf integration result](experiments/2026-10-21-smcntrpmf-linux.md).
+Counter delegation is tracked in
+[ADR 0016](decisions/0016-smcdeleg-ssccfg-counter-delegation.md) and the
+[Smcdeleg/Ssccfg experiment](experiments/2026-10-21-smcdeleg-ssccfg.md).
+The proposed PMU module boundary is tracked in
+[ADR 0017](decisions/0017-pmu-module-boundary.md) and its
+[refactor experiment](experiments/2026-10-21-pmu-modules.md).
 
 The optional [cache-to-cache supply](decisions/0008-cache-to-cache-supply.md)
 and [its experiment](experiments/2026-10-20-cache-to-cache.md) extend MSI;

@@ -102,7 +102,7 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
 
   logic [4:0]               CauseM;                                         // trap cause
   logic [15:0]              MEDELEG_REGW;                                   // exception delegation CSR
-  logic [11:0]              MIDELEG_REGW;                                   // interrupt delegation CSR
+  logic [13:0]              MIDELEG_REGW;                                   // interrupt delegation CSR
   logic                     sretM, mretM;                                   // supervisor / machine return instruction
   logic                     IllegalCSRAccessM;                              // Illegal access to CSR
   logic                     IllegalIEUFPUInstrM;                            // Illegal IEU or FPU instruction, delayed to Mem stage
@@ -111,7 +111,7 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   logic                     IllegalInstrFaultM;                             // Illegal instruction fault
   logic                     STATUS_SPP, STATUS_TSR, STATUS_TW, STATUS_TVM;  // Status bits needed within privileged unit
   logic                     STATUS_MIE, STATUS_SIE;                         // status bits: interrupt enables
-  logic [11:0]              MIP_REGW, MIE_REGW;                             // interrupt pending and enable bits
+  logic [13:0]              MIP_REGW, MIE_REGW;                             // interrupt pending and enable bits
   logic [1:0]               NextPrivilegeModeM;                             // next privilege mode based on trap or return
   logic                     DelegateM;                                      // trap should be delegated
   logic                     InterruptM;                                     // interrupt occurring

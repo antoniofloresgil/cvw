@@ -66,6 +66,78 @@ Both level the DDR3 exactly as the service CPU did. Plan, design, measurements
 and the verification are in
 [experiments/2026-11-01-wally-runs-ddr3-init.md](experiments/2026-11-01-wally-runs-ddr3-init.md).
 
+## PMU counters (`adding-mpu-support`)
+
+Branch `adding-mpu-support`. Main `4ce065926` (official upstream through
+`89479dd09`) was integrated into PMU feature parent `8cb89bab9`; main
+`568a9ed65` (multicore, open FPGA flow, Wally-run DDR3 initialization, `EXT_IO`)
+was merged in again on 2026-11-01, and the checks below predate that merge. Synthesizable
+Zicntr/Zihpm counters, the OpenSBI event map and Linux `perf stat` support are
+preserved. `csrc.sv` kept the PMU parent's non-comment RTL tokens.
+
+Combined-source checks PASS: six PMU CSR/event configurations, eight board
+DTS, ten RTL lints and the full-core HPM test. A fresh single-core Linux PMU
+run also passed at 121,617,639 cycles with seven counter checks and actual
+`perf stat`. See the
+[PMU/main integration record](experiments/2026-10-21-pmu-main-integration.md)
+for parent revisions, model and image hashes, commands and evidence limits.
+
+Optional Sscofpmf hardware is committed as `f1a5b7744` with RV32/RV64
+derived configs. The directed 14-case PMU run, nine RTL lints and a full-core
+`hpmcounters.elf` simulation passed; see
+[ADR 0014](decisions/0014-sscofpmf-counter-overflow.md) and the
+[verification record](experiments/2026-10-21-sscofpmf.md).
+
+Smcntrpmf fixed-counter filtering is committed as `776ae473b`.
+Eighteen directed cases, 13 RTL lint elaborations and the
+full-core M/U/M transition and HPM regression checks pass. See
+[ADR 0015](decisions/0015-smcntrpmf-fixed-counter-filter.md) and its
+[verification record](experiments/2026-10-21-smcntrpmf.md). Linux `perf` with
+fixed-counter privilege filters subsequently passed at 163,215,722 RTL
+cycles; see the [Linux experiment](experiments/2026-10-21-smcntrpmf-linux.md).
+FPGA synthesis/timing and physical-board behavior remain unverified.
+The multicore RTL arrived with the 2026-11-01 merge of main; the PMU has not
+been checked in multicore configurations.
+
+Smcdeleg/Ssccfg counter delegation is committed as `45911b806`, with one
+configuration switch for the required pair. The
+directed RV32/RV64 CSR suite, six RTL lint elaborations and the RV64
+full-core M/S/M test have passed. A separate `pmu_deleg_linux` Linux image
+and kernel S-mode direct-CSR probe passed in a Linux RTL boot at
+123,214,564 cycles, followed by the existing `perf stat` integration.
+The first image used `loglevel=6`, which suppressed the probe's `pr_info`
+message; a `loglevel=7` rerun made the direct-access PASS marker visible.
+Normal Linux `perf` still programs counters through SBI, so no performance
+benefit from direct programming has been measured. FPGA timing and board
+operation remain unverified. See [ADR 0016](decisions/0016-smcdeleg-ssccfg-counter-delegation.md)
+and the [experiment](experiments/2026-10-21-smcdeleg-ssccfg.md).
+
+An Sscofpmf Linux sampling image using Linux 6.19.14 and OpenSBI 1.7 has
+passed on `pmu_deleg_linux` RTL at 143,791,780 cycles. Privilege-filtered
+branch counts, direct overflow samples, actual `perf stat`, and actual
+`perf record` with 147 sample records all passed. See the
+[sampling experiment](experiments/2026-10-21-sscofpmf-linux.md) and the
+[software compatibility matrix](pmu-software-compatibility.md). The latter
+also records that this Linux PMU driver still uses SBI for programming,
+despite hardware support for Smcdeleg/Ssccfg.
+
+The PMU mode-attribution change tags early-stage and multicycle events with
+their initiating privilege mode for Sscofpmf filtering. Directed RV32/RV64
+tests and three full-core lint configurations pass. **Pending:** repeat the
+full-core HPM simulation with a Verilator version that compiles the testbench's
+dynamic-string `$system` call. The installed 5.022 generates an undefined
+`VL_SYSTEM_IN` call; the current attempt never started the simulation and is
+not a PASS. See the
+[mode-attribution experiment](experiments/2026-10-21-pmu-event-modes.md).
+
+The PMU modularization moves fixed events/mode tags and optional
+counter control/delegation into two new modules while retaining the existing
+`csrc` CSR interface and storage. All 22 directed PMU cases, board DTB checks
+and ten full-core lint configurations passed; see
+[ADR 0017](decisions/0017-pmu-module-boundary.md) and the
+[refactor experiment](experiments/2026-10-21-pmu-modules.md). Full-core
+simulation remains pending on the Verilator `$system` compilation issue above.
+
 ## Future work
 
 Complete open flow: add an open-source ASIC flow (Yosys with OpenROAD, through

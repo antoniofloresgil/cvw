@@ -63,7 +63,7 @@ module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID =
   output logic                     STATUS_SPP, STATUS_TSR, STATUS_TVM,
   output logic [15:0]              MEDELEG_REGW,
   output logic [P.XLEN-1:0]        SATP_REGW,
-  output logic [11:0]              MIP_REGW, MIE_REGW, MIDELEG_REGW,
+  output logic [13:0]              MIP_REGW, MIE_REGW, MIDELEG_REGW,
   output logic                     STATUS_MIE, STATUS_SIE,
   output logic                     STATUS_MXR, STATUS_SUM, STATUS_MPRV, STATUS_TW,
   output logic [1:0]               STATUS_FS,
@@ -105,7 +105,8 @@ module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID =
   logic                    InsufficientCSRPrivilegeM;
   logic                    IllegalCSRMWriteReadonlyM;
   logic [P.XLEN-1:0]       CSRReadVal2M;
-  logic [11:0]             MIP_REGW_writeable;
+  logic [13:0]             MIP_REGW_writeable;
+  logic                    LCOFIPSetM;
   logic [P.XLEN-1:0]       TVecM, NextFaultXtvalM;
   logic                    MTrapM, STrapM;
   logic                    SelMtvecM;
@@ -113,6 +114,8 @@ module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID =
   logic                    InstrValidNotFlushedM;
   logic                    STimerInt;
   logic [63:0]             MENVCFG_REGW;
+  logic [P.XLEN-1:0]       SISELECT_REGW;
+  logic                    CounterDelegationEnabled;
   logic [P.XLEN-1:0]       SENVCFG_REGW;
   logic                    ENVCFG_STCE; // supervisor timer counter enable
   logic                    ENVCFG_FIOM; // fence implies io (presently not used)
@@ -167,7 +170,7 @@ module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID =
     CSRSrcM = InstrM[14] ? {{(P.XLEN-5){1'b0}}, InstrM[19:15]} : SrcAM;
 
     // CSR set and clear for MIP/SIP should only touch internal state, not interrupt inputs
-    if (CSRAdrM == MIP | CSRAdrM == SIP) CSRReadVal2M = {{(P.XLEN-12){1'b0}}, MIP_REGW_writeable};
+    if (CSRAdrM == MIP | CSRAdrM == SIP) CSRReadVal2M = {{(P.XLEN-14){1'b0}}, MIP_REGW_writeable};
     else                                 CSRReadVal2M = CSRReadValM;
 
     // Compute AND/OR modification
@@ -206,7 +209,7 @@ module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID =
   csri #(P) csri(.clk, .reset,
     .CSRMWriteM, .CSRSWriteM, .CSRWriteValM, .CSRAdrM,
     .MExtInt, .SExtInt, .MTimerInt, .STimerInt, .MSwInt,
-    .MIDELEG_REGW, .ENVCFG_STCE, .MIP_REGW, .MIE_REGW, .MIP_REGW_writeable);
+    .MIDELEG_REGW, .ENVCFG_STCE, .LCOFIPSetM, .MIP_REGW, .MIE_REGW, .MIP_REGW_writeable);
 
   csrsr #(P) csrsr(.clk, .reset, .StallW,
     .WriteMSTATUSM, .WriteMSTATUSHM, .WriteSSTATUSM,
@@ -218,7 +221,7 @@ module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID =
     .STATUS_FS, .BigEndianM);
 
   csrm #(.P(P), .HART_ID(HART_ID)) csrm(.clk, .reset,
-    .UngatedCSRMWriteM, .CSRMWriteM, .MTrapM, .CSRAdrM,
+    .UngatedCSRMWriteM, .CSRMWriteM, .CSRSWriteM, .MTrapM, .CSRAdrM,
     .NextEPCM, .NextCauseM, .NextXtvalM, .MSTATUS_REGW, .MSTATUSH_REGW,
     .CSRWriteValM, .CSRMReadValM, .MTVEC_REGW,
     .MEPC_REGW, .MCOUNTEREN_REGW, .MCOUNTINHIBIT_REGW,
@@ -235,6 +238,7 @@ module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID =
       .NextEPCM, .NextCauseM, .NextXtvalM, .SSTATUS_REGW,
       .STATUS_TVM,
       .CSRWriteValM, .PrivilegeModeW,
+      .MCOUNTEREN_REGW, .MCOUNTINHIBIT_REGW, .CounterDelegationEnabled, .SISELECT_REGW,
       .CSRSReadValM, .STVEC_REGW, .SEPC_REGW,
       .SCOUNTEREN_REGW,
       .SATP_REGW, .MIP_REGW, .MIE_REGW, .MIDELEG_REGW, .MTIME_CLINT, .STCE,
@@ -249,6 +253,7 @@ module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID =
     assign IllegalCSRSAccessM = 1'b1;
     assign STimerInt = '0;
     assign SENVCFG_REGW = '0;
+    assign SISELECT_REGW = '0;
   end
 
   // Floating Point CSRs in User Mode only needed if Floating Point is supported
@@ -267,16 +272,18 @@ module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID =
 
   // counters are always instantiated but may read as zero if not supported
   csrc #(P) counters(.clk, .reset, .StallE, .StallM, .StallW, .FlushM,
-    .InstrValidNotFlushedM, .LoadStallD, .StoreStallD, .CSRWriteM, .CSRMWriteM,
+    .InstrValidNotFlushedM, .LoadStallD, .StoreStallD, .CSRWriteM, .CSRMWriteM, .CSRSWriteM,
     .BPDirWrongM, .BTAWrongM, .RASPredPCWrongM, .IClassWrongM, .BPWrongM,
     .IClassM, .DCacheMiss, .DCacheAccess, .ICacheMiss, .ICacheAccess, .sfencevmaM,
     .InterruptM, .TrapM, .InvalidateICacheM, .ICacheStallF, .DCacheStallM, .DivBusyE, .FDivBusyE,
     .CSRAdrM, .PrivilegeModeW, .CSRWriteValM,
     .MCOUNTINHIBIT_REGW, .MCOUNTEREN_REGW, .SCOUNTEREN_REGW,
-    .MTIME_CLINT, .CSRCReadValM, .IllegalCSRCAccessM);
+    .SISELECT_REGW, .CounterDelegationEnabled,
+    .MTIME_CLINT, .CSRCReadValM, .IllegalCSRCAccessM, .LCOFIPSetM);
 
   // Broadcast appropriate environment configuration based on privilege mode
   assign ENVCFG_STCE =  MENVCFG_REGW[63]; // supervisor timer counter enable
+  assign CounterDelegationEnabled = P.SMCDELEG_SUPPORTED & MENVCFG_REGW[60];
   assign ENVCFG_PBMTE = MENVCFG_REGW[62]; // page-based memory types enable
   assign ENVCFG_ADUE  = MENVCFG_REGW[61]; // Hardware A/D Update enable
   assign ENVCFG_CBE =   (PrivilegeModeW == P.M_MODE) ? 4'b1111 :
