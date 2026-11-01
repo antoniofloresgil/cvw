@@ -67,7 +67,7 @@ jobs:
           "$RUNNER_TEMP/hooks/bin/pre-commit" install
       - name: Restore Verilator
         id: verilator
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/riscv
           key: multicore-${{ runner.os }}-${{ runner.arch }}-ubuntu24-verilator-v5.036
