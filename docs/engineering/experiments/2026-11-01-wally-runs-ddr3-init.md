@@ -335,3 +335,71 @@ make nexysvideo FLOW=opensource                        # RV32, INIT_CPU=none by 
 openFPGALoader -b nexysVideo opensource-nexysvideo/nexysvideo.bit
 # UART at 115200: banner, read leveling, then "pass N errors 0 total 0"
 ```
+
+## Step 5 decision: option 2, a non-cacheable I/O window in Wally's PMA
+
+Decided on 2026-11-01: RV64 gets option 2 (the cleanest hardware answer), once
+the RV64 build with the new top has booted Linux on the board. The other two
+options stay documented above. The constraint is the same as for the whole
+branch: keep the changes orthogonal to what arrives from upstream.
+
+### Why the problem exists (summary)
+
+With caches on, Wally's PMA marks all of `EXT_MEM` cacheable and idempotent. A
+CSR window inside it would be read and written through the D$ in 64-byte lines:
+reads return stale copies, writes reach the registers late and drag 15
+neighbors with them, and some LiteX CSRs act on every write (DFII command
+issue). The ZSBL runs in M-mode, where only the PMA decides cacheability.
+Cache-block operations (Zicbom) do not help, because they also work on whole
+lines.
+
+### Design
+
+A new optional PMA region, `EXT_IO`, that lies **inside** `EXT_MEM` and that the
+PMA treats as I/O: not cacheable, not idempotent, no atomics. It does not change
+how the bus is decoded: the accesses still leave the core through `HSELEXT`, and
+the FPGA top keeps splitting them as it does for RV32. So:
+
+| File | Change |
+|---|---|
+| `src/cvw.sv` | three fields next to `EXT_MEM_*`: `EXT_IO_SUPPORTED`, `EXT_IO_BASE`, `EXT_IO_RANGE` |
+| `config/shared/parameter-defs.vh` | the three matching lines |
+| `config/<base>/config.vh` (6 files) | `EXT_IO_SUPPORTED = 0` plus base and range, next to `EXT_MEM_*` (derivgen can only override parameters that exist in the base configuration) |
+| `src/mmu/pmachecker.sv` | one more `adrdec` for `EXT_IO`; `Cacheable`, `Idempotent` and `AtomicAllowed` exclude it |
+| `config/derivlist.txt` | the FPGA configurations set `EXT_IO_*` |
+
+Not touched: `adrdecs.sv` and its `SelRegions` width, the uncore, the SoC ports,
+the testbenches. With `EXT_IO_SUPPORTED = 0` the decoder is constant 0 and
+every existing configuration is unchanged; the regression must show that.
+
+All additions are new lines next to `EXT_MEM_*`, so an upstream change conflicts
+only if it edits those same lines. The change is generic (any SoC with a
+peripheral behind the external port needs it), so it is also a candidate to
+propose upstream.
+
+### The rest of step 5
+
+- **Top decode from the parameters.** `fpgaOpenSource.sv` selects the CSR side
+  with `EXT_IO_BASE`/`EXT_IO_RANGE` instead of "top bit of `EXT_MEM_RANGE`", so
+  RV32 and RV64 use the same rule. RV32 sets `EXT_IO_*` too (it has no PMA, so
+  only the top uses them).
+- **RV64 memory map.** `fpganexysvideo`: `EXT_MEM_RANGE` grows from 512 MiB to
+  1 GiB so the window at `0xA0000000` is inside it. The ZSBL keeps its own
+  `EXT_MEM_RANGE` (passed by `fpga/generator/Makefile`, 512 MiB), so the device
+  tree and the Linux memory size do not change.
+- **Bus width.** Wally's bus is 64-bit and the CSR bus 32-bit: a small adapter
+  in the top picks the 32-bit half by `HADDR[2]` (uncached accesses are single
+  words).
+- **Clock crossing.** Wally runs at 12.5 MHz and the CSR bus at the 40 MHz DDR
+  system clock. LiteX already has `wishbone.ClockDomainCrossing`; the generator
+  puts it on `wb_ctrl` when it builds the separate Wally clock, so no new RTL is
+  needed.
+- **Firmware in the boot ROM.** The RV64 boot ROM is 4 KiB (`BOOTROM_RANGE =
+  0xFFF`) and the ZSBL already fills it; `fpga/zsbl` is upstream code and its
+  `splitfile.sh` hard-codes the 4 KiB split. The plan is to keep `fpga/zsbl`
+  untouched: enlarge `BOOTROM_RANGE` for `fpganexysvideo` only and build one ROM
+  image in which an RV64 build of `fpga/ddrinit` runs first and then jumps to
+  the ZSBL. How the ZSBL is relinked or placed for that is the open design point
+  of this step.
+- **Verification.** Regression (`regression-wally`) for the PMA change, lint,
+  the split testbench, then the RV64 build and a Linux boot on the board.

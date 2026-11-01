@@ -82,7 +82,10 @@ Branch: `main`. On 2026-10-22, `multicore-support` source commit
 `06d1baab69435abb13efd195ac675134f787da90` was fast-forwarded into main from
 `origin/multicore-support`; the integration includes current main commit
 `a6f312a2d8f7ccff54f6353d846751aae0e5c200`. This replaces the pre-integration
-snapshot below. The remote Multicore workflow passed on feature commit
+snapshot below. The `multicore-support` branch was deleted (local and
+`origin`) on 2026-11-01; its commits, including those cited below as
+`multicore-support:<hash>`, are all reachable from `main`, and its last commit
+`06d1baab6` can recreate it. The remote Multicore workflow passed on feature commit
 `75c805457c29c1ba992027ab934d84f48b55085b`; Lint passed on integration commit
 `06d1baab6`. No full ACT regression, new Linux boot, FPGA qualification, DMA
 coherence or precise CPU bus-error implementation is claimed.
