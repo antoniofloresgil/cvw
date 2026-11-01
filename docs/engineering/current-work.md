@@ -11,6 +11,10 @@ continued by `wally-ddr3-init`, PR #23) and deleted (local and `origin`) on
 `opensource-fpga-bitstream:<hash>`, are all reachable from `main`, and its last
 commit `2043ea59a` can recreate it.
 
+The `adding-mpu-support` branch (PMU counters) was merged into `main` (PR #25,
+`da9e9c21c`) and deleted (local and `origin`) on 2026-11-01. Its commits are
+all reachable from `main`, and its last commit `d0d11792c` can recreate it.
+
 ## Current integration
 
 Merge main into the open FPGA branch to reduce future integration work.
@@ -53,9 +57,9 @@ design (`fpgaopensource`, 40 MHz) was rebuilt with these changes and passed 973
 consecutive DDR3 write/verify passes on the board; that build also fixed the
 LiteDRAM generator's shared-clock mode, which the Linux work had broken.
 
-## In progress: Wally runs the DDR3 initialization
+## Wally runs the DDR3 initialization (merged, PR #23)
 
-Branch `wally-ddr3-init`. The VexRiscv service CPU inside the LiteDRAM core
+Branch `wally-ddr3-init`, merged into `main` by PR #23. The VexRiscv service CPU inside the LiteDRAM core
 becomes optional (`gen_litedram.py --init-cpu {vexriscv,none}`) and Wally runs
 the initialization and leveling code itself; the VexRiscv stays as a debugging
 alternative. Done on the Nexys Video for RV32 (`fpgaopensource`: Wally runs
@@ -66,9 +70,9 @@ Both level the DDR3 exactly as the service CPU did. Plan, design, measurements
 and the verification are in
 [experiments/2026-11-01-wally-runs-ddr3-init.md](experiments/2026-11-01-wally-runs-ddr3-init.md).
 
-## PMU counters (`adding-mpu-support`)
+## PMU counters (merged, PR #25)
 
-Branch `adding-mpu-support`. Main `4ce065926` (official upstream through
+Branch `adding-mpu-support`, merged into `main` by PR #25 (`da9e9c21c`). Main `4ce065926` (official upstream through
 `89479dd09`) was integrated into PMU feature parent `8cb89bab9`; main
 `568a9ed65` (multicore, open FPGA flow, Wally-run DDR3 initialization, `EXT_IO`)
 was merged in again on 2026-11-01, and the checks below predate that merge. Synthesizable
@@ -96,8 +100,10 @@ full-core M/U/M transition and HPM regression checks pass. See
 fixed-counter privilege filters subsequently passed at 163,215,722 RTL
 cycles; see the [Linux experiment](experiments/2026-10-21-smcntrpmf-linux.md).
 FPGA synthesis/timing and physical-board behavior remain unverified.
-The multicore RTL arrived with the 2026-11-01 merge of main; the PMU has not
-been checked in multicore configurations.
+The multicore RTL arrived with the 2026-11-01 merge of main. The PMU now
+also counts the cache events of the private multicore caches, and per-hart
+counters, Sscofpmf interrupts and cache events pass with 2 and 3 harts; see the
+[multicore PMU record](experiments/2026-11-01-pmu-multicore.md).
 
 Smcdeleg/Ssccfg counter delegation is committed as `45911b806`, with one
 configuration switch for the required pair. The
@@ -329,7 +335,7 @@ has since been implemented below and recommendation 12 is implemented in this
 update.
 
 FPGA synthesis/timing and dual-core Nexys Video boot remain unverified. PMU
-support remains on `adding-mpu-support`; other branches are unchanged.
+support was later merged into `main` (PR #25).
 
 Recommendation 10 is implemented in the current `multicore-support` worktree:
 the automated CI adds ten focused RV64 cache/SoC interactions and a JSON report

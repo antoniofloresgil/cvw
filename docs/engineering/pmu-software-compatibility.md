@@ -1,4 +1,6 @@
-# PMU software compatibility on `adding-mpu-support`
+# PMU software compatibility
+
+Checked on branch `adding-mpu-support`, merged into `main` by PR #25.
 
 RTL checked at Wally `2184dc91c` with the subsequent harness-only Smcntrpmf
 Linux test on 2026-10-21. These are **examined versions**, not
