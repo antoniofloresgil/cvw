@@ -5,6 +5,12 @@ Integration inputs: feature `f950a775310e7613d22f409bcaaec81f8a8a646e`
 and `main:1d567764895321b64a9b8e28d0b77ca4b9eb0aac` (official upstream
 `89479dd09`). Use `git rev-parse HEAD` for the resulting merge revision.
 
+The `opensource-fpga-bitstream` branch was merged into `main` (PR #22, then
+continued by `wally-ddr3-init`, PR #23) and deleted (local and `origin`) on
+2026-11-01. Its commits, including those cited in these documents as
+`opensource-fpga-bitstream:<hash>`, are all reachable from `main`, and its last
+commit `2043ea59a` can recreate it.
+
 ## Current integration
 
 Merge main into the open FPGA branch to reduce future integration work.
