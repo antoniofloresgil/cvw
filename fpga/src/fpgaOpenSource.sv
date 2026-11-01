@@ -53,8 +53,9 @@ module fpgaOpenSource import cvw::*; (
   logic [3:0] ddr_cpu_copy;
   logic [31:0] ddr_first_data_addr;
   logic reset;
-  logic [P.AHBW-1:0] HRDATAEXT;
-  logic HREADYEXT, HRESPEXT;
+  logic [P.AHBW-1:0] HRDATAEXT, HRDATADDR, HRDATACtrl;
+  logic HREADYEXT, HRESPEXT, HREADYDDR, HREADYCtrl, HRESPDDR, HRESPCtrl;
+  logic HSELDDR, HSELCtrl;
   logic [P.PA_BITS-1:0] HADDR;
   logic [P.AHBW-1:0] HWDATA;
   logic [P.XLEN/8-1:0] HWSTRB;
@@ -80,6 +81,23 @@ module fpgaOpenSource import cvw::*; (
   logic        wb_we, wb_cyc, wb_stb, wb_ack;
   logic wb_err;
 
+  // LiteDRAM control/status registers (CSRs) as a 32-bit Wishbone slave.  They
+  // exist only when the gateware is generated with --init-cpu none, when Wally
+  // runs the DDR3 initialization itself (init_by_wally); the generated wrapper
+  // answers this port with zeros otherwise.  Wally reaches them through the
+  // configuration's EXT_IO window, an uncached part of the external region
+  // (EXT_IO_BASE/EXT_IO_RANGE); without EXT_IO the whole region is DDR3.
+  localparam CTRL_WIN_BITS = 16;                       // 64 KiB window
+  localparam bit HAS_CTRL  = P.EXT_IO_SUPPORTED;
+  logic SelCtrlWin;
+  assign SelCtrlWin = HAS_CTRL &
+    ((HADDR & ~P.EXT_IO_RANGE[P.PA_BITS-1:0]) == P.EXT_IO_BASE[P.PA_BITS-1:0]);
+  logic init_by_wally;
+  logic [29:0] ctrl_adr;
+  logic [31:0] ctrl_dat_w, ctrl_dat_r;
+  logic [3:0]  ctrl_sel;
+  logic        ctrl_we, ctrl_cyc, ctrl_stb, ctrl_ack, ctrl_err;
+
   BUFGCTRL input_clock_buffer (
     .I0(default_100mhz_clk), .CE0(1'b1), .S0(1'b1), .O(clk100)
   );
@@ -90,7 +108,9 @@ module fpgaOpenSource import cvw::*; (
   // LiteDRAM crosses the Wishbone port into it with asynchronous FIFOs.
   litedram_ddr litedram (
     .clk100, .cpu_reset_n(resetn), .sys_clk, .sys_rst, .wally_clk, .wally_rst,
-    .init_done(ddr_init_done), .init_error(ddr_init_error),
+    .init_done(ddr_init_done), .init_error(ddr_init_error), .init_by_wally,
+    .ctrl_adr, .ctrl_dat_w, .ctrl_dat_r, .ctrl_sel, .ctrl_we, .ctrl_cyc, .ctrl_stb,
+    .ctrl_ack, .ctrl_err,
     .debug_cpu_active(ddr_cpu_active),
     .debug_cpu_bus(ddr_cpu_bus),
     .debug_cpu_boot(ddr_cpu_boot), .debug_cpu_data(ddr_cpu_data),
@@ -104,10 +124,13 @@ module fpgaOpenSource import cvw::*; (
     .wb_err
   );
 
-  // The upstream initialization firmware owns DDR until JEDEC initialization,
-  // leveling, and its memory test complete. Keep Wally in reset on failure.
+  // With a service CPU, its initialization firmware owns DDR until JEDEC
+  // initialization, leveling, and its memory test complete. Keep Wally in reset
+  // until then (and on failure). When Wally runs the initialization itself it
+  // must start at power-up, and its DDR accesses wait in the controller's user
+  // port until the firmware writes init_done.
   assign ddr_ready = ddr_init_done & ~ddr_init_error & ~sys_rst;
-  assign UARTSout = ddr_ready ? wally_uart_tx : init_uart_tx;
+  assign UARTSout = (init_by_wally | ddr_ready) ? wally_uart_tx : init_uart_tx;
 
   // As in the Vivado Nexys tops: card detect at GPIO 6, no write protect.
   assign GPIOIN = {25'b0, SDCCD, 1'b0, 1'b0, GPI};
@@ -157,17 +180,78 @@ module fpgaOpenSource import cvw::*; (
       default: GPO = {4'b0, led_cnt100[25]};
     endcase
 
-  // AHB -> Wishbone bridge for the external (DDR3) memory region (EXT_MEM_BASE).
+  // The external region (EXT_MEM_BASE) holds the DDR3 data path and, in the
+  // EXT_IO window, the LiteDRAM CSRs; each has an AHB -> Wishbone bridge.
+  extbussplit #(.DATA_WIDTH(P.AHBW)) extsplit (
+    .HCLK(wally_clk), .HRESETn(~reset), .HSELEXT, .SelCtrl(SelCtrlWin),
+    .HREADY, .HTRANS, .HSELDDR, .HSELCtrl,
+    .HRDATADDR, .HRDATACtrl, .HREADYDDR, .HREADYCtrl, .HRESPDDR, .HRESPCtrl,
+    .HRDATAEXT, .HREADYEXT, .HRESPEXT
+  );
+
   ahbwishbonebridge #(.ADDR_WIDTH(DDR_ADDR_BITS), .DATA_WIDTH(P.AHBW)) extbridge (
-    .HCLK(wally_clk), .HRESETn(~reset), .HSEL(HSELEXT),
+    .HCLK(wally_clk), .HRESETn(~reset), .HSEL(HSELDDR),
     .HADDR(HADDR[DDR_ADDR_BITS-1:0]), .HTRANS, .HWRITE, .HWDATA, .HWSTRB, .HREADY,
-    .HREADYOUT(HREADYEXT), .HRDATA(HRDATAEXT), .HRESP(HRESPEXT),
+    .HREADYOUT(HREADYDDR), .HRDATA(HRDATADDR), .HRESP(HRESPDDR),
     .wb_adr, .wb_dat_w, .wb_sel, .wb_we, .wb_cyc, .wb_stb, .wb_dat_r, .wb_ack
   );
 
+  if (HAS_CTRL) begin : ctrlbus
+    // Bridge at Wally's bus width; a 64-bit bus picks one 32-bit register per
+    // access by its byte strobes (CSRs are accessed as 32-bit words).  The
+    // transfer then crosses from Wally's clock to LiteDRAM's system clock (also
+    // correct when they are the same clock).
+    localparam OFFSET = $clog2(P.AHBW/8);
+    logic [CTRL_WIN_BITS-OFFSET-1:0] bus_word;
+    logic [P.AHBW-1:0]   bus_dat_w, bus_dat_r;
+    logic [P.AHBW/8-1:0] bus_sel;
+    logic                bus_we, bus_cyc, bus_stb, bus_ack;
+    logic [29:0]         m_adr;
+    logic [31:0]         m_dat_w, m_dat_r;
+    logic [3:0]          m_sel;
+    ahbwishbonebridge #(.ADDR_WIDTH(CTRL_WIN_BITS), .DATA_WIDTH(P.AHBW)) ctrlbridge (
+      .HCLK(wally_clk), .HRESETn(~reset), .HSEL(HSELCtrl),
+      .HADDR(HADDR[CTRL_WIN_BITS-1:0]), .HTRANS, .HWRITE, .HWDATA, .HWSTRB, .HREADY,
+      .HREADYOUT(HREADYCtrl), .HRDATA(HRDATACtrl), .HRESP(HRESPCtrl),
+      .wb_adr(bus_word), .wb_dat_w(bus_dat_w), .wb_sel(bus_sel), .wb_we(bus_we),
+      .wb_cyc(bus_cyc), .wb_stb(bus_stb), .wb_dat_r(bus_dat_r), .wb_ack(bus_ack)
+    );
+    if (P.AHBW == 64) begin : narrow
+      logic hi;
+      assign hi = |bus_sel[7:4];
+      assign m_adr = 30'({bus_word, hi});
+      assign m_dat_w = hi ? bus_dat_w[63:32] : bus_dat_w[31:0];
+      assign m_sel = hi ? bus_sel[7:4] : bus_sel[3:0];
+      assign bus_dat_r = {m_dat_r, m_dat_r};
+    end else begin : same
+      assign m_adr = 30'(bus_word);
+      assign m_dat_w = bus_dat_w;
+      assign m_sel = bus_sel;
+      assign bus_dat_r = m_dat_r;
+    end
+    wbcdc #(.ADR_WIDTH(30), .DATA_WIDTH(32)) ctrlcdc (
+      .m_clk(wally_clk), .m_rst(reset), .m_adr, .m_dat_w, .m_sel, .m_we(bus_we),
+      .m_cyc(bus_cyc), .m_stb(bus_stb), .m_dat_r, .m_ack(bus_ack),
+      .s_clk(sys_clk), .s_rst(sys_rst), .s_adr(ctrl_adr), .s_dat_w(ctrl_dat_w),
+      .s_sel(ctrl_sel), .s_we(ctrl_we), .s_cyc(ctrl_cyc), .s_stb(ctrl_stb),
+      .s_dat_r(ctrl_dat_r), .s_ack(ctrl_ack)
+    );
+  end else begin : noctrlbus
+    // No EXT_IO window: the control bus is not wired.
+    assign ctrl_adr = '0;
+    assign ctrl_dat_w = '0;
+    assign ctrl_sel = '0;
+    assign ctrl_we = 1'b0;
+    assign ctrl_cyc = 1'b0;
+    assign ctrl_stb = 1'b0;
+    assign HREADYCtrl = 1'b1;
+    assign HRESPCtrl = 1'b0;
+    assign HRDATACtrl = '0;
+  end
+
   wallypipelinedsoc #(P) soc (
     .clk(wally_clk),
-    .reset_ext(!resetn | wally_rst | ~ddr_ready),
+    .reset_ext(!resetn | wally_rst | (~init_by_wally & ~ddr_ready)),
     .reset,
     .HRDATAEXT,
     .HREADYEXT,

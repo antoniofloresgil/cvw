@@ -222,6 +222,16 @@ the UART sticky bit requires the BIOS to reach `uart_init()`/`printf()`.
 
 ## Future design: run DDR3 bring-up without a service CPU (TODO)
 
+> **Done (2026-11-01):** the open build generates LiteDRAM without the service
+> CPU and Wally runs the initialization (`fpga/ddrinit`), verified on the board:
+> from the IROM on RV32 (`fpgaopensource`), and as a stage 0 before the ZSBL on
+> RV64 (`OPENCONFIG=fpganexysvideoopen`), which reaches the CSRs through an
+> uncached `EXT_IO` window in Wally's PMA and boots Linux. `INIT_CPU=vexriscv`
+> brings the service CPU back; `fpganexysvideo` (shared with Vivado) keeps it.
+> Design, measurements and how it was built are in
+> [experiments/2026-11-01-wally-runs-ddr3-init.md](engineering/experiments/2026-11-01-wally-runs-ddr3-init.md).
+> The text below is the original design note.
+
 > **Do this only after the current blocker is resolved and Wally+DDR3 runs on
 > hardware with the VexRiscv service CPU.** Keeping the service CPU for now
 > minimizes the number of variables during bring-up; this migration removes it

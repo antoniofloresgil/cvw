@@ -47,6 +47,19 @@ design (`fpgaopensource`, 40 MHz) was rebuilt with these changes and passed 973
 consecutive DDR3 write/verify passes on the board; that build also fixed the
 LiteDRAM generator's shared-clock mode, which the Linux work had broken.
 
+## In progress: Wally runs the DDR3 initialization
+
+Branch `wally-ddr3-init`. The VexRiscv service CPU inside the LiteDRAM core
+becomes optional (`gen_litedram.py --init-cpu {vexriscv,none}`) and Wally runs
+the initialization and leveling code itself; the VexRiscv stays as a debugging
+alternative. Done on the Nexys Video for RV32 (`fpgaopensource`: Wally runs
+LiteX's `sdram_init()` from its IROM, saves 2763 LUT and 1407 FF) and RV64
+(`fpganexysvideoopen`: a stage 0 initializes the DDR3 through a new uncached
+`EXT_IO` PMA window, then the ZSBL boots Linux; saves 2334 LUT and 1151 FF).
+Both level the DDR3 exactly as the service CPU did. Plan, design, measurements
+and the verification are in
+[experiments/2026-11-01-wally-runs-ddr3-init.md](experiments/2026-11-01-wally-runs-ddr3-init.md).
+
 ## Future work
 
 Complete open flow: add an open-source ASIC flow (Yosys with OpenROAD, through
@@ -69,7 +82,10 @@ Branch: `main`. On 2026-10-22, `multicore-support` source commit
 `06d1baab69435abb13efd195ac675134f787da90` was fast-forwarded into main from
 `origin/multicore-support`; the integration includes current main commit
 `a6f312a2d8f7ccff54f6353d846751aae0e5c200`. This replaces the pre-integration
-snapshot below. The remote Multicore workflow passed on feature commit
+snapshot below. The `multicore-support` branch was deleted (local and
+`origin`) on 2026-11-01; its commits, including those cited below as
+`multicore-support:<hash>`, are all reachable from `main`, and its last commit
+`06d1baab6` can recreate it. The remote Multicore workflow passed on feature commit
 `75c805457c29c1ba992027ab934d84f48b55085b`; Lint passed on integration commit
 `06d1baab6`. No full ACT regression, new Linux boot, FPGA qualification, DMA
 coherence or precise CPU bus-error implementation is claimed.

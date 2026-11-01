@@ -135,11 +135,17 @@ def main():
                         help="Clock for Wally and its Wishbone port, in Hz. By default Wally "
                              "shares the system clock; otherwise the PLL generates this clock "
                              "and the port crosses into it through asynchronous FIFOs.")
+    parser.add_argument("--init-cpu", default="vexriscv", choices=["vexriscv", "none"],
+                        help="Who runs DDR3 initialization and leveling. vexriscv: a service CPU "
+                             "inside the LiteDRAM core (with its ROM/SRAM/UART). none: no CPU; "
+                             "the core exposes its CSRs as a Wishbone slave (wb_ctrl) and Wally "
+                             "runs the initialization code.")
     parser.add_argument("--output-dir", default=os.path.join(os.path.dirname(__file__), "opensource-litedram"),
                         help="Directory for the generated gateware.")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
+    service_cpu = args.init_cpu == "vexriscv"
 
     # Use the official standalone generator: its service CPU executes the
     # upstream JEDEC/leveling routines through the PHY/DFII CSRs. Raw
@@ -147,7 +153,8 @@ def main():
     output = Path(args.output_dir).resolve()
     platform = XilinxPlatform("xc7a200tsbg484-1", io=[], toolchain=args.toolchain)
     config = dict(
-        cpu="vexriscv", cpu_variant="minimal", uart="rs232", speedgrade=-1,
+        cpu="vexriscv" if service_cpu else None, cpu_variant="minimal", uart="rs232",
+        speedgrade=-1,
         memtype="DDR3", sdram_module=MT41K256M16, sdram_module_nb=2,
         sdram_rank_nb=1, sdram_phy=A7DDRPHY, input_clk_freq=100e6,
         sys_clk_freq=args.sys_clk_freq, iodelay_clk_freq=200e6, cmd_latency=0,
@@ -155,12 +162,13 @@ def main():
                    {"wally": dict(type="wishbone", data_width=args.user_data_width,
                                   block_until_ready=True)},
     )
+    # Without a CPU, litedram.gen drops the ROM, SRAM, UART, timer and ctrl block.
     core = StandaloneCore(platform, config, integrated_rom_size=0x10000,
                           integrated_sram_size=0x4000)
     if args.user_clk_freq:
         add_wally_port(core, platform, args.user_data_width, args.user_clk_freq)
     builder = Builder(core, output_dir=str(output / "init"),
-                      compile_gateware=False, compile_software=True,
+                      compile_gateware=False, compile_software=service_cpu,
                       csr_csv=str(output / "csr.csv"))
     builder.build(build_name="litedram_core", run=False)
     # Keep the CPU Verilog and ROM initialization beside the generated core.
@@ -187,102 +195,143 @@ def main():
     text = (gateware / "litedram_core.v").read_text()
     # Word-address width of Wally's port, as generated in either clock mode.
     wb_adr_width = int(re.search(r"\[(\d+):0\] user_port_wally_adr", text).group(1)) + 1
-    boot_words = (output / "litedram_core_rom.init").read_text().split()
-    boot_checks = "\n".join(
-        f"                30'h{index:x}: if (litedramcore_ibus_dat_r != 32'h{word}) debug_cpu_data[3] <= 1'b1;"
-        for index, word in enumerate(boot_words[:0x114 // 4])
-    )
-    for source in output.glob("*.init"):
-        text = text.replace('"' + source.name + '"', '"' + str(source) + '"')
-    # Bring-up diagnostic: expose a sticky bit that latches once the service CPU
-    # writes its SRAM (the BIOS clears .bss and builds its stack there, so it
-    # only asserts when real firmware is executing).
-    port_marker = "\n);"
-    if "module litedram_core" not in text.split(port_marker, 1)[0] or text.count("endmodule") != 1:
-        raise RuntimeError("Unexpected LiteDRAM module layout; cannot inject CPU diagnostics")
-    text = text.replace(
-        port_marker,
-        ",\n"
-        "    output reg           debug_cpu_active = 1'b0,\n"
-        "    output wire [3:0]    debug_cpu_bus,\n"
-        "    output reg [3:0]     debug_cpu_boot = 4'b0,\n"
-        "    output reg [3:0]     debug_cpu_data = 4'b0,\n"
-        "    output reg [3:0]     debug_cpu_copy = 4'b0,\n"
-        "    output reg [31:0]    debug_first_data_addr = 32'b0\n);", 1)
-    text = text.replace(
-        "endmodule",
-        "reg [2:0] debug_bus_seen = 3'b0;\n"
-        "reg debug_first_data_seen = 1'b0;\n"
-        "assign debug_cpu_bus = {debug_bus_seen, sys_rst | litedramcore_reset};\n"
-        "always @(posedge sys_clk) begin\n"
-        "    if (sys_rst) debug_bus_seen <= 3'b0;\n"
-        "    else begin\n"
-        "        if (litedramcore_ibus_cyc & litedramcore_ibus_stb) begin\n"
-        "            debug_bus_seen[0] <= 1'b1;\n"
-        "            if (litedramcore_ibus_ack) debug_bus_seen[1] <= 1'b1;\n"
-        "            if (litedramcore_ibus_err) debug_bus_seen[2] <= 1'b1;\n"
-        "        end\n"
-        "    end\n"
-        "end\n"
-        "always @(posedge sys_clk) begin\n"
-        "    if (sys_rst) begin\n"
-        "        debug_cpu_boot <= 4'b0;\n"
-        "        debug_cpu_data <= 4'b0;\n"
-        "        debug_cpu_copy <= 4'b0;\n"
-        "        debug_first_data_seen <= 1'b0;\n"
-        "        debug_first_data_addr <= 32'b0;\n"
-        "    end else begin\n"
-        "        if (litedramcore_ibus_cyc & litedramcore_ibus_stb & litedramcore_ibus_ack) begin\n"
-        "            if (litedramcore_ibus_adr == 0) begin\n"
-        "                debug_cpu_boot[0] <= 1'b1;\n"
-        "                if (litedramcore_ibus_dat_r == 32'h0b00006f) debug_cpu_boot[1] <= 1'b1;\n"
-        "            end\n"
-        "            if (litedramcore_ibus_adr == 30'h2c) begin\n"
-        "                debug_cpu_boot[2] <= 1'b1;\n"
-        "            end\n"
-        "            case (litedramcore_ibus_adr)\n"
-        + boot_checks + "\n"
-        "            endcase\n"
-        "            if (litedramcore_ibus_adr == 30'h8) debug_cpu_data[2] <= 1'b1;\n"
-        "        end\n"
-        "        if (litedramcore_dbus_cyc & litedramcore_dbus_stb) begin\n"
-        "            if (!debug_first_data_seen) begin\n"
-        "                debug_first_data_addr <= {litedramcore_dbus_adr, 2'b0};\n"
-        "                debug_first_data_seen <= 1'b1;\n"
-        "            end\n"
-        "            debug_cpu_boot[3] <= 1'b1;\n"
-        "            if (litedramcore_dbus_ack) debug_cpu_data[0] <= 1'b1;\n"
-        "            if (litedramcore_dbus_err) debug_cpu_data[1] <= 1'b1;\n"
-        "            if (!litedramcore_dbus_we & (litedramcore_dbus_adr == 30'h1ca8)) begin\n"
-        "                debug_cpu_copy[0] <= 1'b1;\n"
-        "                if (litedramcore_dbus_ack) debug_cpu_copy[1] <= 1'b1;\n"
-        "            end\n"
-        "            if (litedramcore_dbus_we & (litedramcore_dbus_adr == 30'h4000000)) begin\n"
-        "                debug_cpu_copy[2] <= 1'b1;\n"
-        "                if (litedramcore_dbus_ack) debug_cpu_copy[3] <= 1'b1;\n"
-        "            end\n"
-        "        end\n"
-        "    end\n"
-        "end\n"
-        "always @(posedge sys_clk)\n"
-        "    if (sys_rst) debug_cpu_active <= 1'b0;\n"
-        "    else if (|litedramcore_ram_we) debug_cpu_active <= 1'b1;\n\n"
-        "endmodule")
+    if service_cpu:
+        boot_words = (output / "litedram_core_rom.init").read_text().split()
+        boot_checks = "\n".join(
+            f"                30'h{index:x}: if (litedramcore_ibus_dat_r != 32'h{word}) debug_cpu_data[3] <= 1'b1;"
+            for index, word in enumerate(boot_words[:0x114 // 4])
+        )
+        for source in output.glob("*.init"):
+            text = text.replace('"' + source.name + '"', '"' + str(source) + '"')
+        # Bring-up diagnostic: expose a sticky bit that latches once the service CPU
+        # writes its SRAM (the BIOS clears .bss and builds its stack there, so it
+        # only asserts when real firmware is executing).
+        port_marker = "\n);"
+        if "module litedram_core" not in text.split(port_marker, 1)[0] or text.count("endmodule") != 1:
+            raise RuntimeError("Unexpected LiteDRAM module layout; cannot inject CPU diagnostics")
+        text = text.replace(
+            port_marker,
+            ",\n"
+            "    output reg           debug_cpu_active = 1'b0,\n"
+            "    output wire [3:0]    debug_cpu_bus,\n"
+            "    output reg [3:0]     debug_cpu_boot = 4'b0,\n"
+            "    output reg [3:0]     debug_cpu_data = 4'b0,\n"
+            "    output reg [3:0]     debug_cpu_copy = 4'b0,\n"
+            "    output reg [31:0]    debug_first_data_addr = 32'b0\n);", 1)
+        text = text.replace(
+            "endmodule",
+            "reg [2:0] debug_bus_seen = 3'b0;\n"
+            "reg debug_first_data_seen = 1'b0;\n"
+            "assign debug_cpu_bus = {debug_bus_seen, sys_rst | litedramcore_reset};\n"
+            "always @(posedge sys_clk) begin\n"
+            "    if (sys_rst) debug_bus_seen <= 3'b0;\n"
+            "    else begin\n"
+            "        if (litedramcore_ibus_cyc & litedramcore_ibus_stb) begin\n"
+            "            debug_bus_seen[0] <= 1'b1;\n"
+            "            if (litedramcore_ibus_ack) debug_bus_seen[1] <= 1'b1;\n"
+            "            if (litedramcore_ibus_err) debug_bus_seen[2] <= 1'b1;\n"
+            "        end\n"
+            "    end\n"
+            "end\n"
+            "always @(posedge sys_clk) begin\n"
+            "    if (sys_rst) begin\n"
+            "        debug_cpu_boot <= 4'b0;\n"
+            "        debug_cpu_data <= 4'b0;\n"
+            "        debug_cpu_copy <= 4'b0;\n"
+            "        debug_first_data_seen <= 1'b0;\n"
+            "        debug_first_data_addr <= 32'b0;\n"
+            "    end else begin\n"
+            "        if (litedramcore_ibus_cyc & litedramcore_ibus_stb & litedramcore_ibus_ack) begin\n"
+            "            if (litedramcore_ibus_adr == 0) begin\n"
+            "                debug_cpu_boot[0] <= 1'b1;\n"
+            "                if (litedramcore_ibus_dat_r == 32'h0b00006f) debug_cpu_boot[1] <= 1'b1;\n"
+            "            end\n"
+            "            if (litedramcore_ibus_adr == 30'h2c) begin\n"
+            "                debug_cpu_boot[2] <= 1'b1;\n"
+            "            end\n"
+            "            case (litedramcore_ibus_adr)\n"
+            + boot_checks + "\n"
+            "            endcase\n"
+            "            if (litedramcore_ibus_adr == 30'h8) debug_cpu_data[2] <= 1'b1;\n"
+            "        end\n"
+            "        if (litedramcore_dbus_cyc & litedramcore_dbus_stb) begin\n"
+            "            if (!debug_first_data_seen) begin\n"
+            "                debug_first_data_addr <= {litedramcore_dbus_adr, 2'b0};\n"
+            "                debug_first_data_seen <= 1'b1;\n"
+            "            end\n"
+            "            debug_cpu_boot[3] <= 1'b1;\n"
+            "            if (litedramcore_dbus_ack) debug_cpu_data[0] <= 1'b1;\n"
+            "            if (litedramcore_dbus_err) debug_cpu_data[1] <= 1'b1;\n"
+            "            if (!litedramcore_dbus_we & (litedramcore_dbus_adr == 30'h1ca8)) begin\n"
+            "                debug_cpu_copy[0] <= 1'b1;\n"
+            "                if (litedramcore_dbus_ack) debug_cpu_copy[1] <= 1'b1;\n"
+            "            end\n"
+            "            if (litedramcore_dbus_we & (litedramcore_dbus_adr == 30'h4000000)) begin\n"
+            "                debug_cpu_copy[2] <= 1'b1;\n"
+            "                if (litedramcore_dbus_ack) debug_cpu_copy[3] <= 1'b1;\n"
+            "            end\n"
+            "        end\n"
+            "    end\n"
+            "end\n"
+            "always @(posedge sys_clk)\n"
+            "    if (sys_rst) debug_cpu_active <= 1'b0;\n"
+            "    else if (|litedramcore_ram_we) debug_cpu_active <= 1'b1;\n\n"
+            "endmodule")
     (output / "litedram_core.v").write_text(text)
     dw = args.user_data_width
     if args.user_clk_freq:
         wally_clock = ".user_clk(sys_clk), .user_rst(sys_rst), .wally_clk(wally_clk), .wally_rst(wally_rst),"
-        wrapper_comment = "// Generated wrapper: Wally runs on wally_clk; DDR and the service CPU on sys_clk."
+        wrapper_comment = "// Generated wrapper: Wally runs on wally_clk; DDR and the control bus on sys_clk."
         wally_clock_assigns = ""
     else:
         wally_clock = ".user_clk(sys_clk), .user_rst(sys_rst),"
-        wrapper_comment = "// Generated wrapper: one sys clock for DDR, service CPU, and Wally."
+        wrapper_comment = "// Generated wrapper: one sys clock for DDR, the control bus, and Wally."
         wally_clock_assigns = "  assign wally_clk = sys_clk;\n  assign wally_rst = sys_rst;\n"
+    # Both modes give the wrapper the same ports, so the SoC top instantiates it
+    # once and chooses behavior from the constant init_by_wally: the unused
+    # service-CPU outputs are tied off without a CPU, and the control bus
+    # (ctrl_*, 32-bit data, 30-bit word address) is answered with zeros and an
+    # immediate ack when a service CPU owns the CSRs.
+    if service_cpu:
+        wrapper_comment = wrapper_comment.replace("the control bus", "the service CPU")
+        init_conns = """    .init_done(init_done), .init_error(init_error),
+    .uart_rx(uart_rx), .uart_tx(uart_tx),"""
+        init_tail = """.user_port_wally_err(wb_err), .debug_cpu_active(debug_cpu_active),
+    .debug_cpu_bus(debug_cpu_bus), .debug_cpu_boot(debug_cpu_boot),
+    .debug_cpu_data(debug_cpu_data), .debug_cpu_copy(debug_cpu_copy),
+    .debug_first_data_addr(debug_first_data_addr)"""
+        init_assigns = """  assign init_by_wally = 1'b0;
+  assign ctrl_dat_r = 32'b0;
+  assign ctrl_ack = ctrl_cyc & ctrl_stb;
+  assign ctrl_err = 1'b0;
+"""
+    else:
+        # Wally drives the CSR bus and writes ddrctrl.init_done/init_error
+        # itself; init_done and init_error are outputs for the top to observe.
+        ctrl_adr_width = int(re.search(r"\[(\d+):0\] wb_ctrl_adr", text).group(1)) + 1
+        if ctrl_adr_width != 30:
+            raise RuntimeError(f"Unexpected wb_ctrl address width {ctrl_adr_width}")
+        init_conns = """    .init_done(init_done), .init_error(init_error),"""
+        init_tail = """.user_port_wally_err(wb_err),
+    .wb_ctrl_adr(ctrl_adr), .wb_ctrl_dat_w(ctrl_dat_w), .wb_ctrl_dat_r(ctrl_dat_r),
+    .wb_ctrl_sel(ctrl_sel), .wb_ctrl_cyc(ctrl_cyc), .wb_ctrl_stb(ctrl_stb),
+    .wb_ctrl_ack(ctrl_ack), .wb_ctrl_we(ctrl_we), .wb_ctrl_cti(3'b000),
+    .wb_ctrl_bte(2'b00), .wb_ctrl_err(ctrl_err)"""
+        init_assigns = """  assign init_by_wally = 1'b1;
+  assign uart_tx = 1'b1;
+  assign debug_cpu_active = 1'b0;
+  assign debug_cpu_bus = 4'b0;
+  assign debug_cpu_boot = 4'b0;
+  assign debug_cpu_data = 4'b0;
+  assign debug_cpu_copy = 4'b0;
+  assign debug_first_data_addr = 32'b0;
+"""
     (output / "litedram_ddr.v").write_text(f"""
 {wrapper_comment}
 module litedram_ddr (
   input wire clk100, cpu_reset_n, uart_rx,
   output wire sys_clk, sys_rst, wally_clk, wally_rst, init_done, init_error, uart_tx,
+  output wire init_by_wally,
   output wire debug_cpu_active,
   output wire [3:0] debug_cpu_bus,
   output wire [3:0] debug_cpu_boot, debug_cpu_data,
@@ -295,6 +344,12 @@ module litedram_ddr (
   inout wire [15:0] ddram_dq,
   inout wire [1:0] ddram_dqs_n, ddram_dqs_p,
   output wire ddram_odt, ddram_ras_n, ddram_reset_n, ddram_we_n,
+  input wire [29:0] ctrl_adr,
+  input wire [31:0] ctrl_dat_w,
+  output wire [31:0] ctrl_dat_r,
+  input wire [3:0] ctrl_sel,
+  input wire ctrl_we, ctrl_cyc, ctrl_stb,
+  output wire ctrl_ack, ctrl_err,
   input wire [{wb_adr_width-1}:0] wb_adr,
   input wire [{dw-1}:0] wb_dat_w,
   output wire [{dw-1}:0] wb_dat_r,
@@ -302,7 +357,7 @@ module litedram_ddr (
   input wire wb_we, wb_cyc, wb_stb,
   output wire wb_ack, wb_err
 );
-{wally_clock_assigns}  // The board has no power-on-reset circuit, but the LiteX core expects an
+{wally_clock_assigns}{init_assigns}  // The board has no power-on-reset circuit, but the LiteX core expects an
   // active-high reset pulse at startup. Hold reset for ~10 ms after
   // configuration (or while the CPU reset button is pressed).
   reg [19:0] por_cnt = 20'd0;
@@ -312,8 +367,7 @@ module litedram_ddr (
   litedram_core core (
     .clk(clk100), .rst(por_rst | ~cpu_reset_n),
     {wally_clock} .pll_locked(),
-    .init_done(init_done), .init_error(init_error),
-    .uart_rx(uart_rx), .uart_tx(uart_tx),
+{init_conns}
     .ddram_a(ddram_a), .ddram_ba(ddram_ba), .ddram_cs_n(),
     .ddram_cas_n(ddram_cas_n), .ddram_cke(ddram_cke),
     .ddram_clk_n(ddram_clk_n), .ddram_clk_p(ddram_clk_p),
@@ -325,10 +379,7 @@ module litedram_ddr (
     .user_port_wally_dat_r(wb_dat_r), .user_port_wally_sel(wb_sel),
     .user_port_wally_we(wb_we), .user_port_wally_cyc(wb_cyc),
     .user_port_wally_stb(wb_stb), .user_port_wally_ack(wb_ack),
-    .user_port_wally_err(wb_err), .debug_cpu_active(debug_cpu_active),
-    .debug_cpu_bus(debug_cpu_bus), .debug_cpu_boot(debug_cpu_boot),
-    .debug_cpu_data(debug_cpu_data), .debug_cpu_copy(debug_cpu_copy),
-    .debug_first_data_addr(debug_first_data_addr)
+    {init_tail}
   );
 endmodule
 """)
