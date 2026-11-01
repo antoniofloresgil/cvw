@@ -67,6 +67,23 @@ EXT_MEM_RANGE       64'h07FFFFFF
 deriv fpganexysvideo fpga
 EXT_MEM_RANGE       64'h1FFFFFFF
 
+# Open-source flow, RV64 Linux, Wally initializes the DDR3: the LiteDRAM control
+# registers sit in an uncached I/O window right above the 512 MiB of DDR3.
+deriv fpganexysvideoopen fpganexysvideo
+EXT_MEM_RANGE       64'h3FFFFFFF
+EXT_IO_SUPPORTED    1
+EXT_IO_BASE         64'hA0000000
+EXT_IO_RANGE        64'h0000FFFF
+# Stage 0 (fpga/ddrinit) initializes the DDR3 from a 16 KiB IROM and DTIM at
+# 0x4000, then jumps to the ZSBL in the boot ROM at 0x1000.
+IROM_SUPPORTED      1
+IROM_BASE           64'h00004000
+IROM_RANGE          64'h00003FFF
+DTIM_SUPPORTED      1
+DTIM_BASE           64'h00004000
+DTIM_RANGE          64'h00003FFF
+RESET_VECTOR        64'h00004000
+
 # Open-source FPGA builds use internal memory and exclude Vivado-generated IP.
 deriv fpgaopensource rv32imc
 DTIM_RANGE             64'h0000FFFF
@@ -74,6 +91,9 @@ IROM_RANGE             64'h0000FFFF
 EXT_MEM_SUPPORTED      1
 EXT_MEM_BASE           64'h40000000
 EXT_MEM_RANGE          64'h0FFFFFFF
+EXT_IO_SUPPORTED       1
+EXT_IO_BASE            64'h48000000
+EXT_IO_RANGE           64'h0000FFFF
 PLIC_SUPPORTED         0
 SPI_SUPPORTED          0
 PWM_SUPPORTED          0

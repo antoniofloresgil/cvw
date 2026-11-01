@@ -1,11 +1,12 @@
 ///////////////////////////////////////////
 // main.c
 //
-// Purpose: DDR3 bring-up run by Wally itself (open-source FPGA flow, RV32
-//          fpgaopensource).  Runs LiteX's own sdram_init() (JEDEC sequence and
+// Purpose: DDR3 bring-up run by Wally itself (open-source FPGA flow: RV32
+//          fpgaopensource, and stage 0 of RV64 fpganexysvideoopen).  Runs LiteX's own sdram_init() (JEDEC sequence and
 //          read leveling, compiled from the installed LiteX sources) through
 //          the LiteDRAM CSR window, then repeats a 64 KiB write/verify test of
-//          the DDR3 forever, printing one line per pass.
+//          the DDR3 forever, printing one line per pass.  Built as stage 0 of
+//          the RV64 boot (DDRINIT_NEXT), it runs one pass and jumps to the ZSBL.
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
@@ -61,6 +62,20 @@ int main(void) {
   printf("ddrinit: SDRAM ready, testing 64 KiB at 0x%08lx\n", (unsigned long)MAIN_RAM_BASE);
   volatile uint32_t *ram = (volatile uint32_t *)MAIN_RAM_BASE;
   uint32_t total = 0;
+#ifdef DDRINIT_NEXT
+  // Stage 0 of a boot chain: one test pass, then hand over to the next stage
+  // (the ZSBL), or stop if the DDR3 is not usable.
+  for (uint32_t i = 0; i < TEST_WORDS; i++) ram[i] = pattern(1, i);
+  for (uint32_t i = 0; i < TEST_WORDS; i++) if (ram[i] != pattern(1, i)) total++;
+  if (total) {
+    printf("ddrinit: %lu errors, not booting\n", (unsigned long)total);
+    return 1;
+  }
+  printf("ddrinit: no errors, jumping to 0x%08lx\n", (unsigned long)DDRINIT_NEXT);
+  // The next stage resets the UART and its FIFOs: let the transmitter drain.
+  while (!(((volatile uint8_t *)UART_BASE)[5] & 0x40)) ;   // LSR: TEMT
+  ((void (*)(void))DDRINIT_NEXT)();
+#endif
   for (uint32_t pass = 1; ; pass++) {
     uint32_t errors = 0;
     for (uint32_t i = 0; i < TEST_WORDS; i++) ram[i] = pattern(pass, i);

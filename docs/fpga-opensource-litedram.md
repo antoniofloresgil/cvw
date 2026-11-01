@@ -222,11 +222,13 @@ the UART sticky bit requires the BIOS to reach `uart_init()`/`printf()`.
 
 ## Future design: run DDR3 bring-up without a service CPU (TODO)
 
-> **Done for RV32 (2026-11-01):** with `fpgaopensource` the open build now
-> generates LiteDRAM without the service CPU and Wally runs the initialization
-> (`fpga/ddrinit`), verified on the board; `INIT_CPU=vexriscv` brings the
-> service CPU back. The RV64 Linux build still uses the service CPU. Design,
-> measurements and the open RV64 problem are in
+> **Done (2026-11-01):** the open build generates LiteDRAM without the service
+> CPU and Wally runs the initialization (`fpga/ddrinit`), verified on the board:
+> from the IROM on RV32 (`fpgaopensource`), and as a stage 0 before the ZSBL on
+> RV64 (`OPENCONFIG=fpganexysvideoopen`), which reaches the CSRs through an
+> uncached `EXT_IO` window in Wally's PMA and boots Linux. `INIT_CPU=vexriscv`
+> brings the service CPU back; `fpganexysvideo` (shared with Vivado) keeps it.
+> Design, measurements and how it was built are in
 > [experiments/2026-11-01-wally-runs-ddr3-init.md](engineering/experiments/2026-11-01-wally-runs-ddr3-init.md).
 > The text below is the original design note.
 

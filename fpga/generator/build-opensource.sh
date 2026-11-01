@@ -36,11 +36,18 @@ yosys_xilinx="$(yosys-config --datdir)/xilinx"
 # the DDR controller's 40 MHz clock; WALLY_CLK_FREQ (Hz) gives Wally its own
 # clock instead.
 if [ "$board" = "nexysvideo" ]; then
-    # Who runs the DDR3 initialization: Wally itself on RV32 (fpga/ddrinit in
-    # its IROM); the RV64 Linux build keeps LiteDRAM's VexRiscv service CPU,
-    # because there the CSR window would be cacheable. INIT_CPU overrides it.
-    init_cpu="${INIT_CPU:-$([ "$xlen" = 32 ] && echo none || echo vexriscv)}"
+    # Who runs the DDR3 initialization: Wally itself when the configuration has
+    # an EXT_IO window for the LiteDRAM control registers (fpga/ddrinit),
+    # otherwise LiteDRAM's VexRiscv service CPU. INIT_CPU overrides it.
+    ext_io="$(sed -n 's/.*EXT_IO_SUPPORTED *= *\([01]\);.*/\1/p' "$config_dir/config.vh")"
+    init_cpu="${INIT_CPU:-$([ "$ext_io" = 1 ] && echo none || echo vexriscv)}"
     ./gen-litedram.sh --init-cpu "$init_cpu" --user-data-width "$xlen" ${WALLY_CLK_FREQ:+--user-clk-freq "$WALLY_CLK_FREQ"}
+    # RV64 (Linux) with Wally-run initialization: build stage 0, which the IROM
+    # and DTIM preload from fpga/src/ddrinit.mem (RV32 programs are installed in
+    # boot.mem/data.mem by hand, see fpga/ddrinit).
+    if [ "$init_cpu" = none ] && [ "$xlen" = 64 ]; then
+        make -C ../ddrinit stage0
+    fi
     ddr_dir="opensource-litedram"
     # Merge the DDR3 pin constraints into the board constraints, dropping the
     # clk100/cpu_reset_n entries (the board XDC already constrains those under

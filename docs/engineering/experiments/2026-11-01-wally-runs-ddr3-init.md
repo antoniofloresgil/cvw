@@ -2,11 +2,12 @@
 
 Date: 2026-11-01. Branch `wally-ddr3-init`, from `main` at `c2fa6bd94`.
 
-Status: **steps 1 to 4 done: on RV32 (`fpgaopensource`) Wally initializes the
-DDR3 itself on the Nexys Video**, and that is now the default for RV32 builds.
-Step 5 (RV64, Linux) is open: the RV64 build keeps the VexRiscv service CPU. The
-RV64 build with the new top boots Linux after a fix to the window select (see
-"RV64 check of the new top").
+Status: **steps 1 to 5 done, verified on the Nexys Video.** On RV32
+(`fpgaopensource`) Wally initializes the DDR3 from its IROM, the default for RV32
+builds. On RV64 (`fpganexysvideoopen`, a new open-flow configuration) a stage 0
+in Wally initializes the DDR3 through an uncached `EXT_IO` window added to
+Wally's PMA, then the ZSBL boots Linux. The service CPU stays available with
+`INIT_CPU=vexriscv`, and `fpganexysvideo` (the Vivado configuration) keeps it.
 
 ## Goal
 
@@ -398,29 +399,89 @@ only if it edits those same lines. The change is generic (any SoC with a
 peripheral behind the external port needs it), so it is also a candidate to
 propose upstream.
 
-### The rest of step 5
+### Step 5 as built
 
-- **Top decode from the parameters.** `fpgaOpenSource.sv` selects the CSR side
-  with `EXT_IO_BASE`/`EXT_IO_RANGE` instead of "top bit of `EXT_MEM_RANGE`", so
-  RV32 and RV64 use the same rule. RV32 sets `EXT_IO_*` too (it has no PMA, so
-  only the top uses them).
-- **RV64 memory map.** `fpganexysvideo`: `EXT_MEM_RANGE` grows from 512 MiB to
-  1 GiB so the window at `0xA0000000` is inside it. The ZSBL keeps its own
-  `EXT_MEM_RANGE` (passed by `fpga/generator/Makefile`, 512 MiB), so the device
-  tree and the Linux memory size do not change.
-- **Bus width.** Wally's bus is 64-bit and the CSR bus 32-bit: a small adapter
-  in the top picks the 32-bit half by `HADDR[2]` (uncached accesses are single
-  words).
-- **Clock crossing.** Wally runs at 12.5 MHz and the CSR bus at the 40 MHz DDR
-  system clock. LiteX already has `wishbone.ClockDomainCrossing`; the generator
-  puts it on `wb_ctrl` when it builds the separate Wally clock, so no new RTL is
-  needed.
-- **Firmware in the boot ROM.** The RV64 boot ROM is 4 KiB (`BOOTROM_RANGE =
-  0xFFF`) and the ZSBL already fills it; `fpga/zsbl` is upstream code and its
-  `splitfile.sh` hard-codes the 4 KiB split. The plan is to keep `fpga/zsbl`
-  untouched: enlarge `BOOTROM_RANGE` for `fpganexysvideo` only and build one ROM
-  image in which an RV64 build of `fpga/ddrinit` runs first and then jumps to
-  the ZSBL. How the ZSBL is relinked or placed for that is the open design point
-  of this step.
-- **Verification.** Regression (`regression-wally`) for the PMA change, lint,
-  the split testbench, then the RV64 build and a Linux boot on the board.
+The plan above held for the PMA. Three points changed while building it; the
+text below is what the branch does.
+
+- **A separate configuration, `fpganexysvideoopen`.** `fpganexysvideo` is also
+  the Vivado configuration, and the ZSBL takes `EXT_MEM_RANGE` from it to place
+  the device tree at the end of memory (the plan wrongly said the ZSBL kept its
+  own value). So the new derivative, only for the open flow, inherits
+  `fpganexysvideo` and adds: `EXT_MEM_RANGE` 1 GiB, `EXT_IO` at `0xA0000000`
+  (64 KiB), and the stage-0 memories below. `fpga/generator/Makefile` passes the
+  ZSBL the real DDR3 size (512 MiB) for this configuration. Vivado and
+  `fpganexysvideo` are unchanged, and `OPENCONFIG=fpganexysvideo` still builds
+  the RV64 design with the service CPU.
+- **Clock crossing in RTL, not in LiteX.** Putting LiteX's
+  `wishbone.ClockDomainCrossing` on `wb_ctrl` would have meant restructuring the
+  generated core. `fpga/src/wbcdc.sv` is a small toggle-handshake crossing (one
+  transfer at a time; control accesses are rare). It is always in the path, also
+  on RV32 where both clocks are the same. `tests/fpga/tb_wbcdc.sv` checks it with
+  two clocks (12.5/40 MHz) and with one, and fails on two injected bugs (after
+  its master was rewritten to behave like `ahbwishbonebridge`, which keeps `cyc`
+  and the old fields during the ack cycle; the first version missed one bug).
+- **Stage 0 in its own IROM and DTIM, not in the boot ROM.** The ZSBL fills the
+  4 KiB boot ROM and most of the 8 KiB uncore RAM, which cannot grow in place
+  (a decoder needs the base aligned to the size). `fpganexysvideoopen` adds a
+  16 KiB IROM and a 16 KiB DTIM at `0x4000` with `RESET_VECTOR = 0x4000`: an
+  RV64 build of `fpga/ddrinit` (`make stage0`, 4.1 KiB) initializes the DDR3,
+  tests 64 KiB once, waits for the UART to drain and jumps to the ZSBL at
+  `0x1000`. `fpga/zsbl` is not touched. Because the IROM and the boot ROM both
+  preload `boot.mem` (and the DTIM and uncore RAM `data.mem`),
+  `PreProcessOpenSource` gives the stage-0 IROM and DTIM their own image,
+  `fpga/src/ddrinit.mem`, in the staged copy for this configuration only.
+  `build-opensource.sh` builds stage 0 right after generating LiteDRAM (it needs
+  the generated headers). No earlier Wally configuration combined TIMs with
+  caches; the RTL supports it (the LSU has the three-way DTIM/cache/bus read
+  mux) and it works on the board.
+- **Top decode.** The CSR side is selected with `EXT_IO_BASE`/`EXT_IO_RANGE`
+  on both RV32 and RV64 (RV32 sets `EXT_IO` too; it has no PMA, so only the top
+  uses it). A 64-bit bus picks one 32-bit register per access by its byte
+  strobes.
+- **Init default.** `build-opensource.sh` picks `INIT_CPU=none` when the
+  configuration has `EXT_IO`, else `vexriscv`.
+
+### Step 5 results (2026-11-01)
+
+- `regression-wally` with the PMA change (`EXT_IO` off everywhere): passes, 285
+  logs. `lint-wally`: all configurations pass. `actconfig-sync --check`: the ACT
+  configurations agree with `config.vh`.
+- `fpganexysvideoopen` on the Nexys Video: stage 0 printed its banner, ran
+  `sdram_init()` through `0xA0000000` (uncached, 64-to-32-bit adapter, clock
+  crossing), found the same read leveling as the service CPU (bit-slip 1, delay
+  20+-10, both modules), passed its 64 KiB test, and jumped to the ZSBL; OpenSBI
+  v1.7 and Linux 6.19.14 booted to the BusyBox login. In that run the jump
+  message was garbled because the ZSBL reset the UART FIFO; stage 0 now waits for
+  the transmitter to drain.
+- nextpnr after place and route, RV64, one seed each:
+
+  | Build | SLICE_LUTX | SLICE_FFX | RAMB36 | RAMB18 | HCLK |
+  |---|---|---|---|---|---|
+  | `fpganexysvideo`, service CPU | 86015 | 30781 | 9 | 16 | 14.89 MHz |
+  | `fpganexysvideoopen`, Wally | 83681 | 29630 | 13 | 1 | 14.10 MHz |
+
+  2334 LUT (2.7 %) and 1151 FF saved, and about 3.5 RAMB36 equivalents even
+  after the 32 KiB of stage-0 memory. The frequency difference is within
+  seed-to-seed variation.
+
+- Final check on the committed state, both on the board: RV32
+  (`fpgaopensource`, now also through `EXT_IO` decode and `wbcdc`) leveled the
+  same way and passed 1167 passes of 64 KiB with 0 errors (43.20 MHz); RV64
+  (`fpganexysvideoopen`, 14.10 MHz) printed a clean jump message and booted
+  Linux to the login again.
+
+### What step 5 changes outside `fpga/`
+
+| File | Lines |
+|---|---|
+| `src/cvw.sv` | +3 (fields next to `EXT_MEM_*`) |
+| `config/shared/parameter-defs.vh` | +3 |
+| `config/<base>/config.vh` x 6 | +3 each, `EXT_IO_SUPPORTED = 0` |
+| `src/mmu/pmachecker.sv` | +7, 3 changed (`SelExtMem` in the cacheable, idempotent and atomic terms) |
+| `config/derivlist.txt` | the FPGA derivatives |
+
+`adrdecs.sv`, the uncore, the SoC ports and the testbenches are unchanged. The
+PMA change is generic and a candidate to propose upstream. The unmerged PMU
+branch (`adding-mpu-support`) adds lines to the same files, but next to the
+counter parameters, not next to `EXT_MEM_*`.

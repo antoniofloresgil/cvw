@@ -52,12 +52,12 @@ LiteDRAM generator's shared-clock mode, which the Linux work had broken.
 Branch `wally-ddr3-init`. The VexRiscv service CPU inside the LiteDRAM core
 becomes optional (`gen_litedram.py --init-cpu {vexriscv,none}`) and Wally runs
 the initialization and leveling code itself; the VexRiscv stays as a debugging
-alternative. Done for RV32 (`fpgaopensource`): on the Nexys Video Wally runs
-LiteX's `sdram_init()` from its IROM (`fpga/ddrinit`), levels the DDR3 like the
-service CPU did and passes the write/verify test; the build saves 2763 LUT and
-1407 FF after place and route, and is the RV32 default. Open: RV64 (the CSR
-window would be cacheable there), and rebuilding and booting the RV64 build with
-the new top. Plan, measurements and open points are in
+alternative. Done on the Nexys Video for RV32 (`fpgaopensource`: Wally runs
+LiteX's `sdram_init()` from its IROM, saves 2763 LUT and 1407 FF) and RV64
+(`fpganexysvideoopen`: a stage 0 initializes the DDR3 through a new uncached
+`EXT_IO` PMA window, then the ZSBL boots Linux; saves 2334 LUT and 1151 FF).
+Both level the DDR3 exactly as the service CPU did. Plan, design, measurements
+and the verification are in
 [experiments/2026-11-01-wally-runs-ddr3-init.md](experiments/2026-11-01-wally-runs-ddr3-init.md).
 
 ## Future work

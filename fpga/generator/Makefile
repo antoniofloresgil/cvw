@@ -3,8 +3,9 @@ SHELL := /bin/bash
 
 FLOW ?= vivado
 # Configuration for the open-source flow: fpgaopensource (RV32, programs in the
-# IROM) or fpganexysvideo (RV64GC that boots Linux from the SD card; Nexys
-# Video only).  The latter runs Wally at SYSTEMCLOCK in its own clock domain,
+# IROM), fpganexysvideoopen (RV64GC that boots Linux from the SD card, Wally
+# initializes the DDR3) or fpganexysvideo (the same with LiteDRAM's service
+# CPU, as in the Vivado configuration); the last two are Nexys Video only.  The latter runs Wally at SYSTEMCLOCK in its own clock domain,
 # boots the ZSBL from the boot ROM, and maps DDR3 at 0x80000000.
 OPENCONFIG ?= fpgaopensource
 
@@ -103,6 +104,11 @@ endif
 EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/$(config)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')
 
 EXT_MEM_RANGE = $(shell grep 'EXT_MEM_RANGE' ../../config/deriv/$(config)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/\1/g' | sed 's/\(.*\)/base=16;\1+1/g' | bc | sed 's/\(.*\)/0x\1/g')
+# In fpganexysvideoopen EXT_MEM also covers the LiteDRAM I/O window above the
+# DDR3; the ZSBL places the device tree at the end of the 512 MiB of DDR3.
+ifeq ($(config),fpganexysvideoopen)
+EXT_MEM_RANGE = 0x20000000
+endif
 
 
 .PHONY: FPGA_Arty FPGA_VCU
@@ -205,7 +211,7 @@ PreProcessOpenSource:
 	mkdir -p ../src/CopiedFiles_do_not_add_to_repo/config
 	cp ../../config/deriv/$(OPENCONFIG)/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
 	cp ../../config/shared/*.vh ../src/CopiedFiles_do_not_add_to_repo/config/
-	cp ../../fpga/src/fpgaOpenSource.sv ../../fpga/src/extbussplit.sv ../src/CopiedFiles_do_not_add_to_repo/
+	cp ../../fpga/src/fpgaOpenSource.sv ../../fpga/src/extbussplit.sv ../../fpga/src/wbcdc.sv ../src/CopiedFiles_do_not_add_to_repo/
 	sed -i "s/bit \[DATA_WIDTH-1:0\].*ROM.*/(\* rom_style=\"block\" \*) &/g" ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
 	sed -i 's|\$$WALLY|$(WALLY)|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
 	sed -i 's|\$$WALLY|$(WALLY)|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv
@@ -214,6 +220,15 @@ PreProcessOpenSource:
 	# IROM keep their constant data there; see fpga/ddrinit).
 	sed -i 's/\(ram1p1rwbe #(.USE_SRAM(P.USE_SRAM), .DEPTH(DEPTH), .WIDTH(P.LLEN)\))/\1, .PRELOAD_ENABLED(1))/' ../src/CopiedFiles_do_not_add_to_repo/lsu/dtim.sv
 	sed -i 's/if (WIDTH == 64) begin/if (WIDTH == 64 || WIDTH == 32) begin/' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv
+ifeq ($(OPENCONFIG),fpganexysvideoopen)
+	# Stage 0 (fpga/ddrinit) runs from the IROM and the DTIM, which load their own
+	# image, fpga/src/ddrinit.mem: the boot ROM and the uncore RAM keep the ZSBL's
+	# boot.mem and data.mem.
+	sed 's/^module rom1p1r #/module rom1p1r_tim #/; s|/fpga/src/boot.mem|/fpga/src/ddrinit.mem|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv > ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r_tim.sv
+	sed 's/^module ram1p1rwbe import/module ram1p1rwbe_tim import/; s|/fpga/src/data.mem|/fpga/src/ddrinit.mem|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv > ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe_tim.sv
+	sed -i 's/  rom1p1r #(/  rom1p1r_tim #(/' ../src/CopiedFiles_do_not_add_to_repo/ifu/irom.sv
+	sed -i 's/  ram1p1rwbe #(/  ram1p1rwbe_tim #(/' ../src/CopiedFiles_do_not_add_to_repo/lsu/dtim.sv
+endif
 
 # Generate the LiteDRAM DDR3 controller/PHY Verilog for the open-source flow
 .PHONY: litedram
