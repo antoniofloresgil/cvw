@@ -4,8 +4,9 @@ Date: 2026-11-01. Branch `wally-ddr3-init`, from `main` at `c2fa6bd94`.
 
 Status: **steps 1 to 4 done: on RV32 (`fpgaopensource`) Wally initializes the
 DDR3 itself on the Nexys Video**, and that is now the default for RV32 builds.
-Step 5 (RV64, Linux) is open: the RV64 build keeps the VexRiscv service CPU, and
-the RV64 build with the new top has not been rebuilt or booted yet.
+Step 5 (RV64, Linux) is open: the RV64 build keeps the VexRiscv service CPU. The
+RV64 build with the new top boots Linux after a fix to the window select (see
+"RV64 check of the new top").
 
 ## Goal
 
@@ -335,6 +336,26 @@ make nexysvideo FLOW=opensource                        # RV32, INIT_CPU=none by 
 openFPGALoader -b nexysVideo opensource-nexysvideo/nexysvideo.bit
 # UART at 115200: banner, read leveling, then "pass N errors 0 total 0"
 ```
+
+## RV64 check of the new top (2026-11-01)
+
+The first RV64 (`fpganexysvideo`) build with the new top routed (14.51 MHz)
+but **did not boot**: the ZSBL loaded the device tree at `0x9F000000` and
+OpenSBI at `0x80000000`, and then nothing more appeared on the UART. Cause, a
+bug from step 2: the top picked the CSR window with the top bit of
+`EXT_MEM_RANGE`. On RV32 that range is twice the visible DDR3, but on RV64 it
+is exactly the 512 MiB of DDR3, so bit 28 is a DDR3 address bit. Every access
+from `0x90000000` up went to the control side, which is tied off on a 64-bit
+bus (writes dropped, reads zero), and the device tree was lost. Step 2 tied off
+the control bus for 64 bits but not the select.
+
+Fix: `HAS_CTRL` (32-bit bus) gates the select, so without the control path the
+whole region goes to DDR3 as before step 2. The rebuilt bitstream (14.89 MHz,
+seed 2, 20 min) booted OpenSBI v1.7 and Linux 6.19.14 to the BusyBox login in
+316 s; `uname`, `/proc/cpuinfo` (rv64imafdc, sv48) and `free` (about 512 MiB)
+look right. Option 2 below replaces the bit with an explicit `EXT_IO` window,
+which removes this class of mistake. The split testbench only covers the
+32-bit case; this is what the board check was for.
 
 ## Step 5 decision: option 2, a non-cacheable I/O window in Wally's PMA
 

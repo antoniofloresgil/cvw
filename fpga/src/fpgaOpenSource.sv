@@ -90,6 +90,9 @@ module fpgaOpenSource import cvw::*; (
   // only wired for a 32-bit bus.
   localparam CTRL_WIN_BITS = 16;                       // 64 KiB window
   localparam CTRL_SEL_BIT  = $clog2(P.EXT_MEM_RANGE + 1) - 1;
+  // Without the control path (64-bit bus) the select bit is a DDR3 address bit
+  // (EXT_MEM_RANGE is exactly the DDR3), so the whole region goes to DDR3.
+  localparam bit HAS_CTRL  = (P.AHBW == 32);
   logic init_by_wally;
   logic [29:0] ctrl_adr;
   logic [31:0] ctrl_dat_w, ctrl_dat_r;
@@ -182,7 +185,7 @@ module fpgaOpenSource import cvw::*; (
   // 32-bit bus, the LiteDRAM CSRs in its upper half; each has an AHB -> Wishbone
   // bridge.
   extbussplit #(.DATA_WIDTH(P.AHBW)) extsplit (
-    .HCLK(wally_clk), .HRESETn(~reset), .HSELEXT, .SelCtrl(HADDR[CTRL_SEL_BIT]),
+    .HCLK(wally_clk), .HRESETn(~reset), .HSELEXT, .SelCtrl(HAS_CTRL & HADDR[CTRL_SEL_BIT]),
     .HREADY, .HTRANS, .HSELDDR, .HSELCtrl,
     .HRDATADDR, .HRDATACtrl, .HREADYDDR, .HREADYCtrl, .HRESPDDR, .HRESPCtrl,
     .HRDATAEXT, .HREADYEXT, .HRESPEXT
@@ -195,7 +198,7 @@ module fpgaOpenSource import cvw::*; (
     .wb_adr, .wb_dat_w, .wb_sel, .wb_we, .wb_cyc, .wb_stb, .wb_dat_r, .wb_ack
   );
 
-  if (P.AHBW == 32) begin : ctrlbus
+  if (HAS_CTRL) begin : ctrlbus
     logic [CTRL_WIN_BITS-3:0] ctrl_word;
     ahbwishbonebridge #(.ADDR_WIDTH(CTRL_WIN_BITS), .DATA_WIDTH(32)) ctrlbridge (
       .HCLK(wally_clk), .HRESETn(~reset), .HSEL(HSELCtrl),
