@@ -125,12 +125,31 @@ Five stages: Fetch (F), Decode (D), Execute (E), Memory (M), Writeback (W). Stal
 
 Lockstep mode runs Wally in lock-step against ImperasDV (commercial) or the RISC-V Sail model for instruction-by-instruction comparison.
 
+### FPGA flows
+
+Build from `fpga/generator` (needs `source setup.sh`). Boards: ArtyA7, nexysa7, nexysvideo, vcu108, vcu118, genesys2, qmtechk7.
+```bash
+make nexysvideo FLOW=vivado                                       # Vivado, DDR3 from Xilinx MIG, 20 MHz
+make nexysvideo FLOW=opensource                                   # Yosys + nextpnr-xilinx + LiteDRAM, RV32IMC `fpgaopensource`, 40 MHz
+make nexysvideo FLOW=opensource OPENCONFIG=fpganexysvideo         # same flow, RV64GC Linux, Wally at 12.5 MHz (about 20 min)
+openFPGALoader -b nexysVideo opensource-nexysvideo/nexysvideo.bit # program the board (volatile)
+```
+The open flow writes `opensource-<board>/` (`synthesis.log`, `<board>.json`, `<board>.bit`); read timing and fit from nextpnr's last `Max frequency for clock 'HCLK'` and `Device utilisation` lines. `docs/fpga-opensource-litedram.md` documents the design; `docs/engineering/experiments/open-ddr3-bringup.md` the DDR3 bring-up.
+
+Things that are not obvious from the scripts:
+- The open flow needs openXC7 nextpnr-xilinx 0.9.8 plus `bin/installation/nextpnr-xilinx-lutram-clkinv.patch` (installed by `fpga-toolchain-install.sh`); do not upgrade it casually.
+- `build-opensource.sh` disables ABC9's `&verify` (hangs on RV64GC) and runs `fpga/generator/fix-carry4-outputs.py` on the Yosys netlist: a CARRY4 whose sum `O[i]` and carry `CO[i]` are both used outside the chain has no legal placement for nextpnr's atomic carry packer.
+- `fpga/src/boot.mem` and `data.mem` are git-ignored build products of `make zsbl` (the `fpganexysvideo` ZSBL, built for `SYSTEMCLOCK`). `fpgaopensource` instead runs a program from its IROM through the same files, so back them up before building the other configuration.
+- Every clock-derived constant must match the clock the build achieves (`SYSTEMCLOCK` in `fpga/generator/Makefile`, the LiteDRAM PLL, UART divisor, timebase). The Linux ZSBL rewrites the device-tree clock properties to `SYSTEMCLOCK`, so one SD card image serves both the Vivado (20 MHz) and open (12.5 MHz) builds.
+- DDR3 initialization: on RV32 (`fpgaopensource`) Wally runs it from its IROM (`fpga/ddrinit`, LiteX's `sdram_init()` through the LiteDRAM CSRs at `0x48000000`), so any RV32 IROM program must do the initialization before touching DDR3. On RV64 use `OPENCONFIG=fpganexysvideoopen`: a stage 0 (`fpga/ddrinit`, built by `build-opensource.sh` into `fpga/src/ddrinit.mem` for a 16 KiB IROM/DTIM at `0x4000`) initializes the DDR3 through the uncached `EXT_IO` window at `0xA0000000` and jumps to the ZSBL. With `fpganexysvideo` (also the Vivado configuration) a VexRiscv service CPU inside the LiteDRAM core does it and Wally is held in reset until `init_done`; its BIOS output is on the same UART until Wally takes over. The default follows `EXT_IO_SUPPORTED`; `INIT_CPU=vexriscv|none` overrides it.
+- `EXT_IO_SUPPORTED/BASE/RANGE` (all configurations, default off) mark an uncached, non-idempotent I/O window inside `EXT_MEM` in the PMA (`src/mmu/pmachecker.sv`); bus decoding is unchanged, the FPGA top splits it off.
+
 ### Test Infrastructure
 
 There is no central test list; tests are ELF files passed to `wsim` by path or directory:
 - `addins/riscv-arch-test/work/cvw-<config>/elfs/` — RISC-V Arch Tests (ACT4), built per cvw configuration by `make act` (or by `regression-wally`); one leaf directory per extension/feature
 - `tests/periph/rv32/`, `tests/periph/rv64/` — Self-checking peripheral tests: one source per test in `tests/periph/src/`, built for both widths by `make periph`; each embeds its expected signature and compares every entry as it is written
-- `tests/coverage/` — Coverage-targeted tests for each unit; they pass if they run to completion
+- `tests/coverage64gc/`, `tests/coverage32gc/`, `tests/coverage32imc/` — Coverage-targeted tests for each unit of the rv64gc, rv32gc and rv32imc configurations; they pass if they run to completion
 
 Every test reports its result by storing to `tohost`: 1 = pass, `(exit code << 1) | 1` = fail. A test that halts without storing to `tohost` is reported as a failure.
 - `buildroot` — Linux boot from prebuilt memory images (`wsim buildroot buildroot`)

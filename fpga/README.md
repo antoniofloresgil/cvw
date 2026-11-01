@@ -3,7 +3,9 @@ Wally supports the following boards
 1. ArtyA7
 2. vcu108
 3. vcu118 (Do not recommend.)
-4. nexysvideo
+4. genesys2
+5. nexysa7
+6. nexysvideo
 
 # Quick Start
 
@@ -11,14 +13,24 @@ Wally supports the following boards
 
 ```bash
 cd generator
-make <board name>
+make <board name> FLOW=vivado
+# or, for the reduced open-source Artix-7 flow:
+make <board name> FLOW=opensource
 ```
 
 Example:
 ```bash
 make vcu108
-make nexysvideo
+make nexysvideo FLOW=vivado
+make nexysvideo FLOW=opensource
 ```
+
+For the Nexys Video, the `FLOW=opensource` build uses LiteX/LiteDRAM for the
+DDR3 controller and PHY (no Vivado IP). See
+[docs/fpga-opensource-litedram.md](../docs/fpga-opensource-litedram.md) for the
+design and the tool requirements. LiteX is installed by
+`bin/installation/litex-install.sh` (run as part of
+`bin/wally-tool-chain-install.sh`).
 
 ## Make flash card image
 `ls /dev/sd*` or `ls /dev/mmc*` to see which flash card devices you have.

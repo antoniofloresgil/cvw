@@ -1,35 +1,22 @@
 ///////////////////////////////////////////
 // csr.sv
 //
-// Written: David_Harris@hmc.edu 9 January 2021
-// Modified:
-//          dottolia@hmc.edu 7 April 2021
+// Written:  David Harris David_Harris@hmc.edu 9 January 2021
+// Modified: Rose Thompson, Ben Bracker, Domenico Ottolia dottolia@hmc.edu, Udeema Shakya, Katherine Parry, Jordan Carlin
 //
-// Purpose: Counter Control and Status Registers
-//          See RISC-V Privileged Mode Specification 20190608
+// Purpose: Control and status registers.
 //
 // Documentation: RISC-V System on Chip Design
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021-23 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2021-26 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module csr import cvw::*; #(parameter cvw_t P) (
+module csr import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID = 0) (
   input  logic                     clk, reset,
   input  logic                     FlushM, FlushW,
   input  logic                     StallE, StallM, StallW,
@@ -233,7 +220,7 @@ module csr import cvw::*; #(parameter cvw_t P) (
     .STATUS_MIE, .STATUS_SIE, .STATUS_MXR, .STATUS_SUM, .STATUS_MPRV, .STATUS_TVM,
     .STATUS_FS, .BigEndianM);
 
-  csrm #(P) csrm(.clk, .reset,
+  csrm #(.P(P), .HART_ID(HART_ID)) csrm(.clk, .reset,
     .UngatedCSRMWriteM, .CSRMWriteM, .CSRSWriteM, .MTrapM, .CSRAdrM,
     .NextEPCM, .NextCauseM, .NextXtvalM, .MSTATUS_REGW, .MSTATUSH_REGW,
     .CSRWriteValM, .CSRMReadValM, .MTVEC_REGW,

@@ -1,51 +1,44 @@
 ///////////////////////////////////////////
 // wallypipelinedcore.sv
 //
-// Written: David_Harris@hmc.edu 9 January 2021
-// Modified:
+// Written:  David Harris David_Harris@hmc.edu 9 January 2021
+// Modified: Rose Thompson, Katherine Parry, Ben Bracker, Thomas Fleming, Kip Macsai-Goren, Lucio
 //
-// Purpose: Pipelined RISC-V Processor
+// Purpose: Five-stage pipelined RISC-V core.
 //
 // Documentation: RISC-V System on Chip Design
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021-23 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2021-26 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
-  input  logic                  clk, reset,
-  // Privileged
-  input  logic                  MTimerInt, MExtInt, SExtInt, MSwInt,
-  input  logic [63:0]           MTIME_CLINT,
-  // Bus Interface
-  input  logic [P.AHBW-1:0]     HRDATA,
-  input  logic                  HREADY, HRESP,
-  output logic                  HCLK, HRESETn,
-  output logic [P.PA_BITS-1:0]  HADDR,
-  output logic [P.AHBW-1:0]     HWDATA,
-  output logic [P.XLEN/8-1:0]   HWSTRB,
-  output logic                  HWRITE,
-  output logic [2:0]            HSIZE,
-  output logic [2:0]            HBURST,
-  output logic [3:0]            HPROT,
-  output logic [1:0]            HTRANS,
-  output logic                  HMASTLOCK,
-  input  logic                  ExternalStall
+module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsigned HART_ID = 0,
+                                        parameter bit SHARED_ATOMICS = 0) (
+   input  logic                  clk, reset,
+   // Internal shared-memory atomic sideband (unused by legacy single-core SoCs).
+   input  logic                  SCFail,
+   output logic [1:0]            HATOMIC, // 00 normal, 01 LR, 10 SC, 11 AMO
+   // Privileged
+   input  logic                  MTimerInt, MExtInt, SExtInt, MSwInt,
+   input  logic [63:0]           MTIME_CLINT,
+   // Bus Interface
+   input  logic [P.AHBW-1:0]     HRDATA,
+   input  logic                  HREADY, HRESP,
+   output logic                  HCLK, HRESETn,
+   output logic [P.PA_BITS-1:0]  HADDR,
+   output logic [P.AHBW-1:0]     HWDATA,
+   output logic [P.XLEN/8-1:0]   HWSTRB,
+   output logic                  HWRITE,
+   output logic [2:0]            HSIZE,
+   output logic [2:0]            HBURST,
+   output logic [3:0]            HPROT,
+   output logic [1:0]            HTRANS,
+   output logic                  HMASTLOCK,
+   input  logic                  ExternalStall
 );
 
   logic                          StallF, StallD, StallE, StallM, StallW;
@@ -81,6 +74,7 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
   logic                          LoadStallD;
   logic                          StoreStallD;
   logic                          SquashSCW;
+  logic [1:0]                    LSUAtomicOp;
   logic                          MDUActiveE;                      // Mul/Div instruction being executed
   logic                          ENVCFG_ADUE;                     // HPTW A/D Update enable
   logic                          ENVCFG_PBMTE;                    // Page-based memory type enable
@@ -221,9 +215,10 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
     .StructuralStallD, .LoadStallD, .StoreStallD, .PCSrcE,
     .CSRReadM, .CSRWriteM, .PrivilegedM, .CSRWriteFenceM, .InvalidateICacheM);
 
-  lsu #(P) lsu(
+  lsu #(.P(P), .SHARED_ATOMICS(SHARED_ATOMICS)) lsu(
     .clk, .reset, .StallM, .FlushM, .StallW, .FlushW,
     // CPU interface
+    .SCFail, .LSUAtomicOp,
     .MemRWE, .MemRWM, .Funct3M, .Funct7M(InstrM[31:25]), .AtomicM,
     .CommittedM, .DCacheMiss, .DCacheAccess, .SquashSCW,
     .FpLoadStoreM, .FWriteDataM, .IEUAdrE, .IEUAdrM, .WriteDataM,
@@ -264,14 +259,14 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
       .IFUHADDR, .IFUHBURST, .IFUHTRANS, .IFUHREADY, .IFUHSIZE,
       // LSU interface
       .LSUHADDR, .LSUHWDATA, .LSUHWSTRB, .LSUHSIZE, .LSUHBURST,
-      .LSUHTRANS, .LSUHWRITE, .LSUHREADY,
+      .LSUHTRANS, .LSUHWRITE, .LSUHREADY, .LSUAtomicOp, .HATOMIC,
       // BUS interface
       .HREADY, .HRESP, .HCLK, .HRESETn,
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST,
       .HPROT, .HTRANS, .HMASTLOCK);
   end else begin
     assign {IFUHREADY, LSUHREADY, HCLK, HRESETn, HADDR, HWDATA,
-            HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK} = '0;
+            HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK, HATOMIC} = '0;
   end
 
   // global stall and flush control
@@ -288,7 +283,7 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P) (
 
   // privileged unit
   if (P.ZICSR_SUPPORTED) begin : priv
-    privileged #(P) priv(
+    privileged #(.P(P), .HART_ID(HART_ID)) priv(
       .clk, .reset,
       .FlushD, .FlushE, .FlushM, .FlushW, .StallD, .StallE, .StallM, .StallW,
       .CSRReadM, .CSRWriteM, .SrcAM, .PCM, .PCSpillM,

@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
+name: Multicore
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'config/**'
+      - 'testbench/**'
+      - 'tests/multicore/**'
+      - 'linux/smp/**'
+      - 'tests/coverage64gc/**'
+      - 'bin/regression-wally'
+      - 'bin/lint-wally'
+      - 'bin/derivgen.pl'
+      - 'setup.sh'
+      - 'sim/verilator/wrapper.c'
+      - 'examples/link/link.ld'
+      - '.github/workflows/multicore.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'config/**'
+      - 'testbench/**'
+      - 'tests/multicore/**'
+      - 'linux/smp/**'
+      - 'tests/coverage64gc/**'
+      - 'bin/regression-wally'
+      - 'bin/lint-wally'
+      - 'bin/derivgen.pl'
+      - 'setup.sh'
+      - 'sim/verilator/wrapper.c'
+      - 'examples/link/link.ld'
+      - '.github/workflows/multicore.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  multicore:
+    name: Multicore (${{ matrix.case }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [single-default, bus, msi, mesi-banked]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # Single-hart comparison uses an immutable upstream ancestor.
+      # These self-contained tests do not need ACT, Linux images or licensed tools.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf bison flex g++ make help2man libfl-dev \
+            gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf python3-venv device-tree-compiler
+          python3 -m venv "$RUNNER_TEMP/hooks"
+          # The ordinary testbench invokes elf2hex through its uv shebang.
+          "$RUNNER_TEMP/hooks/bin/pip" install pre-commit uv
+          echo "$RUNNER_TEMP/hooks/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/hooks/bin/pre-commit" install
+      - name: Restore Verilator
+        id: verilator
+        uses: actions/cache@v4
+        with:
+          path: ~/riscv
+          key: multicore-${{ runner.os }}-${{ runner.arch }}-ubuntu24-verilator-v5.036
+      - name: Build repository-pinned Verilator
+        if: steps.verilator.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch v5.036 https://github.com/verilator/verilator.git "$RUNNER_TEMP/verilator"
+          cd "$RUNNER_TEMP/verilator"
+          autoconf
+          ./configure --prefix="$HOME/riscv"
+          make -j2
+          make install
+      - name: Run compatibility and coherence checks
+        run: |
+          printf '%s\n' 'export PATH="$RISCV/bin:$PATH"' > "$HOME/riscv/site-setup.sh"
+          source ./setup.sh
+          python3 tests/multicore/ci.py --case '${{ matrix.case }}' \
+            --work-dir "$WALLY/sim/verilator/wkdir/multicore-ci"
+      - name: Upload diagnostics and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: multicore-${{ matrix.case }}
+          if-no-files-found: warn
+          path: |
+            sim/verilator/wkdir/multicore-ci/**/*.log
+            sim/verilator/wkdir/multicore-ci/**/*.json

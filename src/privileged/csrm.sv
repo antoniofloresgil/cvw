@@ -1,38 +1,23 @@
 ///////////////////////////////////////////
 // csrm.sv
 //
-// Written: David_Harris@hmc.edu 9 January 2021
-// Modified:
-//          dottolia@hmc.edu 7 April 2021
+// Written:  David Harris David_Harris@hmc.edu 9 January 2021
+// Modified: Ben Bracker, Thomas Fleming, Domenico Ottolia dottolia@hmc.edu, Rose Thompson, Noah Boorstin, Kip Macsai-Goren, James Stine, Syed Moeed Ali, Abe
 //
-// Purpose: Machine-Mode Control and Status Registers
-//          See RISC-V Privileged Mode Specification 20190608
-// Note: the CSRs do not support the following optional features
-//   - Disabling portions of the instruction set with bits of the MISA register
-//   - Changing from RV64 to RV32 by writing the SXL/UXL bits of the STATUS register
+// Purpose: Machine-mode CSRs.
+//          Unsupported: disabling extensions with MISA bits, and changing XLEN with SXL/UXL.
 //
 // Documentation: RISC-V System on Chip Design
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021-23 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2021-26 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module csrm import cvw::*; #(parameter cvw_t P) (
+module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID = 0) (
   input  logic                     clk, reset,
   input  logic                     UngatedCSRMWriteM, CSRMWriteM, MTrapM,
   input  logic [11:0]              CSRAdrM,
@@ -108,10 +93,10 @@ module csrm import cvw::*; #(parameter cvw_t P) (
   localparam MEDELEG_MASK  = P.ZCA_SUPPORTED ? 16'hB3FE : 16'hB3FF;
   localparam MIDELEG_MASK  = 14'h0222 | (P.SSCOFPMF_SUPPORTED ? 14'h2000 : 14'h0);
   // only nonzero counters can be inhibited; TM (bit 1) is read-only 0 because the time counter lives in the CLINT
-  localparam COUNTERINHIBIT_MASK = ((1 << P.COUNTERS) - 1) & 32'hFFFFFFFD;
+  localparam COUNTERINHIBIT_MASK = (32'hFFFFFFFF >> (32 - P.COUNTERS)) & 32'hFFFFFFFD;
   // mcounteren can only be written for counters that are supported by Zicntr or Zihpm and are nonzero
   localparam COUNTEREN_MASK = (P.ZICNTR_SUPPORTED ? 32'h00000007 : 32'h0) |
-                              (P.ZIHPM_SUPPORTED  ? (((1 << P.COUNTERS) - 1)) : 32'h0);
+                              (P.ZIHPM_SUPPORTED  ? (32'hFFFFFFFF >> (32 - P.COUNTERS)) : 32'h0);
   localparam Gm1 = P.PMP_G > 0 ? P.PMP_G - 1 : 0; // max(G-1, 0)
 
   // There are PMP_ENTRIES = 0, 16, or 64 PMPADDR registers, each of which has its own flop
@@ -159,7 +144,7 @@ module csrm import cvw::*; #(parameter cvw_t P) (
   assign MISA_REGW = {(P.XLEN == 32 ? 2'b01 : 2'b10), {(P.XLEN-28){1'b0}}, MISA_26[25:0]};
 
   // MHARTID is hardwired. It only exists as a signal so that the testbench can easily see it.
-  assign MHARTID_REGW = '0;
+  assign MHARTID_REGW = P.XLEN'(HART_ID);
 
   // Write machine Mode CSRs
   assign WriteMSTATUSM       = CSRMWriteM & (CSRAdrM == MSTATUS);
@@ -271,7 +256,7 @@ module csrm import cvw::*; #(parameter cvw_t P) (
       MVENDORID:     CSRMReadValM = {{(P.XLEN-32){1'b0}}, 32'h0000_0602}; // OpenHW JEDEC
       MARCHID:       CSRMReadValM = {{(P.XLEN-32){1'b0}}, 32'h24}; // 36 for CV-Wally
       MIMPID:        CSRMReadValM = {{P.XLEN-12{1'b0}}, 12'h100}; // pipelined implementation
-      MHARTID:       CSRMReadValM = MHARTID_REGW; // hardwired to 0
+      MHARTID:       CSRMReadValM = MHARTID_REGW; // elaboration-time hart ID
       MCONFIGPTR:    CSRMReadValM = '0; // hardwired to 0
       MSTATUS:       CSRMReadValM = MSTATUS_REGW;
       MSTATUSH:      if (P.XLEN == 32) CSRMReadValM = MSTATUSH_REGW;

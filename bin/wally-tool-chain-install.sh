@@ -15,16 +15,6 @@
 ##
 ## SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ##
-## Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-## except in compliance with the License, or, at your option, the Apache License version 2.0. You
-## may obtain a copy of the License at
-##
-## https://solderpad.org/licenses/SHL-2.1/
-##
-## Unless required by applicable law or agreed to in writing, any work distributed under the
-## License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-## either express or implied. See the License for the specific language governing permissions
-## and limitations under the License.
 ################################################################################################
 
 # NOTE: All scripts are sourced instead of executed so that environment variables and functions are shared properly.
@@ -109,6 +99,19 @@ source "$WALLY"/bin/installation/sail-install.sh
 # Verilator is a fast open-source Verilog simulator that compiles synthesizable Verilog code into C++ code.
 # It is used for linting and simulation of Wally.
 source "$WALLY"/bin/installation/verilator-install.sh
+
+
+# Open-source FPGA toolchain for Xilinx 7-series devices.
+# Installs Yosys with its Slang SystemVerilog frontend, nextpnr-xilinx,
+# Project X-Ray, an Artix-7 xc7a100t chip database, and openFPGALoader.
+source "$WALLY"/bin/installation/fpga-toolchain-install.sh
+
+
+# LiteX (https://github.com/enjoy-digital/litex)
+# LiteX is a Python-based SoC/controller generator. The open-source FPGA flow
+# uses it to generate the LiteDRAM DDR3 controller and PHY, replacing Vivado's
+# MIG for boards with external DRAM.
+source "$WALLY"/bin/installation/litex-install.sh
 
 
 # OSU Skywater 130 cell library (https://foss-eda-tools.googlesource.com/skywater-pdk/libs/sky130_osu_sc_t12)

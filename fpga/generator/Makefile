@@ -1,6 +1,21 @@
 dst := IP
+SHELL := /bin/bash
 
+FLOW ?= vivado
+# Configuration for the open-source flow: fpgaopensource (RV32, programs in the
+# IROM), fpganexysvideoopen (RV64GC that boots Linux from the SD card, Wally
+# initializes the DDR3) or fpganexysvideo (the same with LiteDRAM's service
+# CPU, as in the Vivado configuration); the last two are Nexys Video only.  The latter runs Wally at SYSTEMCLOCK in its own clock domain,
+# boots the ZSBL from the boot ROM, and maps DDR3 at 0x80000000.
+OPENCONFIG ?= fpgaopensource
+
+ifeq ($(FLOW),vivado)
 all: ArtyA7
+else ifeq ($(FLOW),opensource)
+all: ArtyA7
+else
+$(error FLOW must be vivado or opensource)
+endif
 
 .PHONY: ArtyA7 vcu118 vcu108 genesys2 nexysa7 nexysvideo qmtechk7
 
@@ -9,7 +24,12 @@ ArtyA7: export XILINX_BOARD := digilentinc.com:arty-a7-100:part0:1.1
 ArtyA7: export board := ArtyA7
 ArtyA7: export SYSTEMCLOCK := 20000000
 ArtyA7: export MAXSDCCLOCK  :=  5000000
+ifeq ($(FLOW),opensource)
+ArtyA7: PreProcessOpenSource
+	./build-opensource.sh "ArtyA7"
+else
 ArtyA7: FPGA_Arty
+endif
 
 vcu118: export XILINX_PART := xcvu9p-flga2104-2L-e
 vcu118: export XILINX_BOARD := xilinx.com:vcu118:part0:2.4
@@ -37,15 +57,36 @@ nexysa7: export XILINX_BOARD := digilentinc.com:nexys-a7-100t:part0:1.0
 nexysa7: export board := nexysa7
 nexysa7: export SYSTEMCLOCK := 20000000
 nexysa7: export MAXSDCCLOCK  :=  10000000
+ifeq ($(FLOW),opensource)
+nexysa7: PreProcessOpenSource
+	./build-opensource.sh "nexysa7"
+else
 nexysa7: FPGA_NEXYSA7
+endif
 
 nexysvideo: export XILINX_PART := xc7a200tsbg484-1
 nexysvideo: export XILINX_BOARD := digilentinc.com:nexys_video:part0:1.2
 nexysvideo: export XILINX_BOARD_REPO := $(WALLY)/addins/vivado-boards/new/board_files
 nexysvideo: export board := nexysvideo
+# The open-source flow does not close timing at 20 MHz for the RV64GC Linux
+# configuration yet; 12.5 MHz is 1600 MHz / 128 on the LiteDRAM PLL.
+ifeq ($(FLOW),opensource)
+nexysvideo: export SYSTEMCLOCK := 12500000
+else
 nexysvideo: export SYSTEMCLOCK := 20000000
+endif
 nexysvideo: export MAXSDCCLOCK := 10000000
+ifeq ($(FLOW),opensource)
+ifeq ($(OPENCONFIG),fpgaopensource)
+nexysvideo: PreProcessOpenSource
+	./build-opensource.sh "nexysvideo"
+else
+nexysvideo: PreProcessOpenSource zsbl
+	WALLY_CLK_FREQ=$(SYSTEMCLOCK) ./build-opensource.sh "nexysvideo"
+endif
+else
 nexysvideo: FPGA_NEXYSVIDEO
+endif
 
 qmtechk7: export XILINX_PART := xc7k325tffg676-1
 qmtechk7: export XILINX_BOARD := qmtechk7
@@ -55,25 +96,38 @@ qmtechk7: export MAXSDCCLOCK  := 10000000
 qmtechk7: FPGA_QMTECHK7
 
 # variables computed from config
-EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/fpga$(board)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')
+ifeq ($(FLOW),opensource)
+config := $(OPENCONFIG)
+else
+config := fpga$(board)
+endif
+EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/$(config)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')
 
-EXT_MEM_RANGE = $(shell grep 'EXT_MEM_RANGE' ../../config/deriv/fpga$(board)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/\1/g' | sed 's/\(.*\)/base=16;\1+1/g' | bc | sed 's/\(.*\)/0x\1/g')
+EXT_MEM_RANGE = $(shell grep 'EXT_MEM_RANGE' ../../config/deriv/$(config)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/\1/g' | sed 's/\(.*\)/base=16;\1+1/g' | bc | sed 's/\(.*\)/0x\1/g')
+# In fpganexysvideoopen EXT_MEM also covers the LiteDRAM I/O window above the
+# DDR3; the ZSBL places the device tree at the end of the 512 MiB of DDR3.
+ifeq ($(config),fpganexysvideoopen)
+EXT_MEM_RANGE = 0x20000000
+endif
 
 
 .PHONY: FPGA_Arty FPGA_VCU
 FPGA_Arty: PreProcessFiles IP_Arty zsbl
-	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
+	set -o pipefail; vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
 FPGA_VCU: PreProcessFiles IP_VCU zsbl
-	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
+	set -o pipefail; vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
 
 FPGA_GENESYS2: PreProcessFiles IP_GENESYS2 zsbl
-	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
+	set -o pipefail; vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
 
 FPGA_NEXYSA7: PreProcessFiles IP_NEXYSA7 zsbl
-	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
+	set -o pipefail; vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
 
 FPGA_NEXYSVIDEO: PreProcessFiles IP_NEXYSVIDEO zsbl
-	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
+	set -o pipefail; vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
+
+FPGA_OPEN: PreProcessOpenSource
+	./build-opensource.sh "$(board)"
 
 FPGA_QMTECHK7: PreProcessFiles IP_QMTECHK7 zsbl
 	vivado -mode tcl -source wally.tcl 2>&1 | tee wally.log
@@ -149,6 +203,38 @@ PreProcessFiles:
 	sed -i 's/$$WALLY/\.\.\/\.\.\//g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
 	sed -i 's/$$WALLY/\.\.\/\.\.\//g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv
 
+.PHONY: PreProcessOpenSource
+PreProcessOpenSource:
+	$(MAKE) -C ../../sim deriv
+	rm -rf ../src/CopiedFiles_do_not_add_to_repo
+	cp -r ../../src/ ../src/CopiedFiles_do_not_add_to_repo/
+	mkdir -p ../src/CopiedFiles_do_not_add_to_repo/config
+	cp ../../config/deriv/$(OPENCONFIG)/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
+	cp ../../config/shared/*.vh ../src/CopiedFiles_do_not_add_to_repo/config/
+	cp ../../fpga/src/fpgaOpenSource.sv ../../fpga/src/extbussplit.sv ../../fpga/src/wbcdc.sv ../src/CopiedFiles_do_not_add_to_repo/
+	sed -i "s/bit \[DATA_WIDTH-1:0\].*ROM.*/(\* rom_style=\"block\" \*) &/g" ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
+	sed -i 's|\$$WALLY|$(WALLY)|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
+	sed -i 's|\$$WALLY|$(WALLY)|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv
+	sed -i '/write("%c", *Din);/d' ../src/CopiedFiles_do_not_add_to_repo/uncore/uartPC16550D.sv
+	# Preload the DTIM from data.mem, also with 32-bit words (RV32 programs in the
+	# IROM keep their constant data there; see fpga/ddrinit).
+	sed -i 's/\(ram1p1rwbe #(.USE_SRAM(P.USE_SRAM), .DEPTH(DEPTH), .WIDTH(P.LLEN)\))/\1, .PRELOAD_ENABLED(1))/' ../src/CopiedFiles_do_not_add_to_repo/lsu/dtim.sv
+	sed -i 's/if (WIDTH == 64) begin/if (WIDTH == 64 || WIDTH == 32) begin/' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv
+ifeq ($(OPENCONFIG),fpganexysvideoopen)
+	# Stage 0 (fpga/ddrinit) runs from the IROM and the DTIM, which load their own
+	# image, fpga/src/ddrinit.mem: the boot ROM and the uncore RAM keep the ZSBL's
+	# boot.mem and data.mem.
+	sed 's/^module rom1p1r #/module rom1p1r_tim #/; s|/fpga/src/boot.mem|/fpga/src/ddrinit.mem|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv > ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r_tim.sv
+	sed 's/^module ram1p1rwbe import/module ram1p1rwbe_tim import/; s|/fpga/src/data.mem|/fpga/src/ddrinit.mem|g' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe.sv > ../src/CopiedFiles_do_not_add_to_repo/generic/mem/ram1p1rwbe_tim.sv
+	sed -i 's/  rom1p1r #(/  rom1p1r_tim #(/' ../src/CopiedFiles_do_not_add_to_repo/ifu/irom.sv
+	sed -i 's/  ram1p1rwbe #(/  ram1p1rwbe_tim #(/' ../src/CopiedFiles_do_not_add_to_repo/lsu/dtim.sv
+endif
+
+# Generate the LiteDRAM DDR3 controller/PHY Verilog for the open-source flow
+.PHONY: litedram
+litedram:
+	./gen-litedram.sh
+
 # build the Zero stage boot loader (ZSBL)
 .PHONY: zsbl
 zsbl:
@@ -159,7 +245,7 @@ zsbl:
 $(dst)/%.log: %.tcl
 	mkdir -p IP
 	cd IP;\
-	vivado -mode batch -source ../$*.tcl | tee $*.log
+	set -o pipefail; vivado -mode batch -source ../$*.tcl | tee $*.log
 
 # Clean
 .PHONY: cleanIP cleanLogs cleanFPGA cleanAll

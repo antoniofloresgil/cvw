@@ -1,34 +1,22 @@
 ///////////////////////////////////////////
 // uncore.sv
 //
-// Written: David_Harris@hmc.edu 9 January 2021
-// Modified: Ben Bracker 6 Mar 2021 to better fit AMBA 3 AHB-Lite spec
+// Written:  David Harris David_Harris@hmc.edu 9 January 2021
+// Modified: Rose Thompson, Jacob Pease, Ben Bracker, Noah Boorstin, Naiche Whyte-Aguayo, Thomas Fleming
 //
-// Purpose: System-on-Chip components outside the core
-//          Memories, peripherals, external bus control
+// Purpose: Memories and peripherals outside the core.
 //
 // Documentation: RISC-V System on Chip Design
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021-23 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2021-26 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module uncore import cvw::*; #(parameter cvw_t P) (
+module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES = 1)(
   // AHB Bus Interface
   input  logic                 HCLK, HRESETn,
   input  logic                 TIMECLK,
@@ -47,8 +35,8 @@ module uncore import cvw::*; #(parameter cvw_t P) (
   output logic                 HREADY, HRESP,
   output logic                 HSELEXT,
   // peripheral pins
-  output logic                 MTimerInt, MSwInt,         // Timer and software interrupts from CLINT
-  output logic                 MExtInt, SExtInt,          // External interrupts from PLIC
+  output logic [NCORES-1:0]    MTimerInt, MSwInt,         // Timer and software interrupts from CLINT
+  output logic [NCORES-1:0]    MExtInt, SExtInt,          // External interrupts from PLIC
   output logic [63:0]          MTIME_CLINT,               // MTIME, from CLINT
   input  logic [31:0]          GPIOIN,                    // GPIO pin input value
   output logic [31:0]          GPIOOUT, GPIOEN,           // GPIO pin output value and enable
@@ -122,27 +110,33 @@ module uncore import cvw::*; #(parameter cvw_t P) (
   end else assign {HREADBootRom, HRESPBootRom, HREADYBootRom} = '0;
 
   // memory-mapped I/O peripherals
-  if (P.CLINT_SUPPORTED == 1) begin : clint
+  if (P.CLINT_SUPPORTED == 1 && NCORES == 1) begin : clint
     clint_apb #(P) clint(.PCLK, .PRESETn, .PSEL(PSEL[1]), .PADDR(PADDR[15:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+      .PRDATA(PRDATA[1]), .PREADY(PREADY[1]), .MTIME(MTIME_CLINT), .MTimerInt, .MSwInt);
+  end else if (P.CLINT_SUPPORTED == 1) begin : clint
+    clint_multicore_apb #(.P(P), .NCORES(NCORES)) clint(.PCLK, .PRESETn, .PSEL(PSEL[1]), .PADDR(PADDR[15:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[1]), .PREADY(PREADY[1]), .MTIME(MTIME_CLINT), .MTimerInt, .MSwInt);
   end else begin : clint
     assign MTIME_CLINT = '0;
-    assign MTimerInt = 1'b0; assign MSwInt = 1'b0;
+    assign MTimerInt = '0; assign MSwInt = '0;
   end
 
-  if (P.PLIC_SUPPORTED == 1) begin : plic
-    plic_apb #(P) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+  if (P.PLIC_SUPPORTED == 1 && NCORES == 1) begin : plic
+    plic_apb #(P) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
+      .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MExtInt, .SExtInt);
+  end else if (P.PLIC_SUPPORTED == 1) begin : plic
+    plic_multicore_apb #(.P(P), .NCORES(NCORES)) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MExtInt, .SExtInt);
   end else begin : plic
-    assign MExtInt = 1'b0;
-    assign SExtInt = 1'b0;
+    assign MExtInt = '0;
+    assign SExtInt = '0;
   end
 
   if (P.GPIO_SUPPORTED == 1) begin : gpio
     gpio_apb #(P) gpio(
       .PCLK, .PRESETn, .PSEL(PSEL[0]), .PADDR(PADDR[7:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[0]), .PREADY(PREADY[0]),
-      .iof0({28'b0, PWMGPIO[3:0]}), .iof1(), .GPIOIN, .GPIOOUT, .GPIOEN, .GPIOIntr);
+      .iof0({28'b0, PWMGPIO[3:0]}), .iof1('0), .GPIOIN, .GPIOOUT, .GPIOEN, .GPIOIntr);
   end else begin : gpio
     assign GPIOOUT = '0; assign GPIOEN = '0; assign GPIOIntr = 1'b0;
   end

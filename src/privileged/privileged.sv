@@ -1,18 +1,17 @@
 ///////////////////////////////////////////
 // privileged.sv
 //
-// Written: David_Harris@hmc.edu 5 January 2021
-// Modified:
+// Written:  David Harris David_Harris@hmc.edu 5 January 2021
+// Modified: Rose Thompson, Thomas Fleming, Ben Bracker, Kip Macsai-Goren
 //
-// Purpose: Implements the CSRs, Exceptions, and Privileged operations
-//          See RISC-V Privileged Mode Specification 20190608
+// Purpose: Privileged unit.
 //
 // Documentation: RISC-V System on Chip Design
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2021-26 Harvey Mudd College & Oklahoma State University
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
 // files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,
@@ -28,7 +27,7 @@
 // SOFTWARE.
 ///////////////////////////////////////////
 
-module privileged import cvw::*; #(parameter cvw_t P) (
+module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID = 0) (
   input  logic              clk, reset,
   input  logic              StallD, StallE, StallM, StallW,
   input  logic              FlushD, FlushE, FlushM, FlushW,
@@ -135,7 +134,7 @@ module privileged import cvw::*; #(parameter cvw_t P) (
     .EcallFaultM, .BreakpointFaultM, .sretM, .mretM, .RetM, .WaitM, .WaitedM, .sfencevmaM, .sfencevmaAllM);
 
   // Control and Status Registers
-  csr #(P) csr(.clk, .reset, .FlushM, .FlushW, .StallE, .StallM, .StallW,
+  csr #(.P(P), .HART_ID(HART_ID)) csr(.clk, .reset, .FlushM, .FlushW, .StallE, .StallM, .StallW,
     .InstrM, .InstrOrigM, .PCM, .PCSpillM, .SrcAM, .IEUAdrxTvalM,
     .CSRReadM, .CSRWriteM, .TrapM, .mretM, .sretM, .InterruptM,
     .MTimerInt, .MExtInt, .SExtInt, .MSwInt,

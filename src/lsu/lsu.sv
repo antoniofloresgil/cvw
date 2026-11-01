@@ -1,36 +1,22 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // lsu.sv
 //
-// Written: David_Harris@hmc.edu, rose@rosethompson.net
-// Created: 9 January 2021
-// Modified: 11 January 2023
+// Written:  David Harris David_Harris@hmc.edu, Rose Thompson rose@rosethompson.net 9 January 2021
+// Modified: Katherine Parry, Kip Macsai-Goren, Muhammad Zain
 //
-// Purpose: Load/Store Unit
-//          HPTW, DMMU, data cache, interface to external bus
-//          Atomic, Endian swap, and subword read/write logic
+// Purpose: Load/store unit.
 //
 // Documentation: RISC-V System on Chip Design
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021-23 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2021-26 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-module lsu import cvw::*;  #(parameter cvw_t P) (
+module lsu import cvw::*;  #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0) (
   input  logic                    clk, reset,
   input  logic                    StallM, FlushM, StallW, FlushW,
   output logic                    LSUStallM,                            // LSU stalls pipeline during a multicycle operation
@@ -71,6 +57,9 @@ module lsu import cvw::*;  #(parameter cvw_t P) (
   // cpu hazard unit (trap)
   output logic                    StoreAmoMisalignedFaultM,             // Store or AMO address misaligned fault
   output logic                    StoreAmoAccessFaultM,                 // Store or AMO access fault
+  // Internal atomic metadata follows the LSU request through IFU/LSU arbitration.
+  input  logic                    SCFail,
+  output logic [1:0]              LSUAtomicOp,
   // connect to ahb
   output logic [P.PA_BITS-1:0]    LSUHADDR,                             // Bus address from LSU to EBU
   input  logic [P.XLEN-1:0]       HRDATA,                               // Bus read data from EBU to LSU
@@ -352,17 +341,20 @@ module lsu import cvw::*;  #(parameter cvw_t P) (
       logic                    BusAtomic;
 
       // Each datapath is gated on the extension that needs it: cbo.zero to uncached memory on Zicboz,
-      // the cache CMO port on either CBO extension, and uncached AMOs on Zaamo
+      // the cache CMO port on either CBO extension, and uncached AMOs on Zaamo.
+      // cbo.clean/flush/inval ignore cacheability, so they reach the D$ even through a PBMT=NC/IO alias
+      // of a cacheable page; only cbo.zero to an uncacheable address goes to the bus instead.
       if (P.ZICBOZ_SUPPORTED) assign BusCMOZero = LSUCMOpM[3] & ~CacheableM & ~HoldAccessM;
       else                    assign BusCMOZero = 1'b0;
-      if (P.ZICBOM_SUPPORTED | P.ZICBOZ_SUPPORTED) assign CacheCMOpM = (CacheableM & ~SelHPTW & ~HoldAccessM) ? CMOpM : '0;
+      if (P.ZICBOM_SUPPORTED | P.ZICBOZ_SUPPORTED) assign CacheCMOpM = (~SelHPTW & ~HoldAccessM) ? {CMOpM[3] & CacheableM, CMOpM[2:0]} : '0;
       else                                         assign CacheCMOpM = '0;
-      if (P.ZAAMO_SUPPORTED) assign BusAtomic = AtomicM[1] & ~CacheableM;
+      // Atomic metadata follows the selected LSU request, including page-table walks.
+      if (P.ZAAMO_SUPPORTED) assign BusAtomic = LSUAtomicM[1] & ~CacheableM;
       else                   assign BusAtomic = 1'b0;
       assign BusRW = (~CacheableM & ~SelDTIM & ~HoldAccessM) ? LSURWM : '0;
-      assign CacheableOrFlushCacheM = CacheableM | FlushDCacheM;
+      assign CacheableOrFlushCacheM = CacheableM | FlushDCacheM | (|CacheCMOpM[2:0]); // the D$ writes back on the bus for a CMO
       assign CacheRWM = (CacheableM & ~SelDTIM & ~HoldAccessM) ? LSURWM : '0;
-      assign FlushDCache = FlushDCacheM & ~SelHPTW;                          // exclusion-tag: lsu FlushDCacheSelHPTW
+      assign FlushDCache = FlushDCacheM & ~SelHPTW;
 
       localparam                     LINEBYTELEN = P.DCACHE_LINELENINBITS/8;              // Line length in bytes
       localparam                     OFFSETLEN = $clog2(LINEBYTELEN);                     // Number of bits in offset field
@@ -405,7 +397,7 @@ module lsu import cvw::*;  #(parameter cvw_t P) (
 
       ahbinterface #(P.XLEN, 1'b1) ahbinterface(.HCLK(clk), .HRESETn(~reset), .Flush(LSUFlushW), .HREADY(LSUHREADY),
         .HRDATA(HRDATA), .HTRANS(LSUHTRANS), .HWRITE(LSUHWRITE), .HWDATA(LSUHWDATA),
-        .HWSTRB(LSUHWSTRB), .BusRW, .BusAtomic(AtomicM[1]), .ByteMask(ByteMaskM[P.XLEN/8-1:0]), .WriteData(LSUWriteDataM[P.XLEN-1:0]),
+        .HWSTRB(LSUHWSTRB), .BusRW, .BusAtomic(LSUAtomicM[1]), .ByteMask(ByteMaskM[P.XLEN/8-1:0]), .WriteData(LSUWriteDataM[P.XLEN-1:0]),
         .Stall(GatedStallW), .BusStall(LSUBusStallM), .BusCommitted(BusCommittedM), .FetchBuffer(FetchBuffer));
 
       // Mux between the 2 sources of read data, 0: Bus, 1: DTIM
@@ -427,8 +419,12 @@ module lsu import cvw::*;  #(parameter cvw_t P) (
   // Atomic operations
   /////////////////////////////////////////////////////////////////////////////////////////////
 
+  assign LSUAtomicOp = !SHARED_ATOMICS ? COREBUS_NORMAL :
+                       LSUAtomicM[1] ? COREBUS_AMO :
+                       LSUAtomicM[0] ? (PreLSURWM[0] ? COREBUS_SC : COREBUS_LR) : COREBUS_NORMAL;
+
   if (P.ZAAMO_SUPPORTED | P.ZALRSC_SUPPORTED) begin : atomic
-    atomic #(P) atomic(.clk, .reset, .StallW, .ReadDataM(ReadDataM[P.XLEN-1:0]), .IHWriteDataM, .PAdrM,
+    atomic #(.P(P), .SHARED_ATOMICS(SHARED_ATOMICS)) atomic(.clk, .reset, .StallW, .SCFail, .ReadDataM(ReadDataM[P.XLEN-1:0]), .IHWriteDataM, .PAdrM,
       .LSUFunct7M, .LSUFunct3M, .LSUAtomicM, .PreLSURWM, .LSUFlushW,
       .IMAWriteDataM, .SquashSCW, .LSURWM);
   end else begin : lrsc

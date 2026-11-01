@@ -1,35 +1,21 @@
 ///////////////////////////////////////////
 // plic_apb.sv
 //
-// Written: bbracker@hmc.edu 18 January 2021
-// Modified:
+// Written:  Ben Bracker bbracker@hmc.edu 18 January 2021
+// Modified: David Harris, Rose Thompson, Jacob Pease, Juan Schroeder
 //
-// Purpose: Platform-Level Interrupt Controller
-//   Based on RISC-V spec (https://github.com/riscv/riscv-plic-spec/blob/master/riscv-plic.adoc)
-//   With clarifications from ROA's existing implementation (https://roalogic.github.io/plic/docs/AHB-Lite_PLIC_Datasheet.pdf)
-//   Supports only 1 target core and only a global threshold.
-//   This PLIC implementation serves as both the PLIC Gateways and PLIC Core.
-//   It assumes interrupt sources are level-triggered wires.
+// Purpose: Platform-level interrupt controller (PLIC) on APB.
+//          Based on https://github.com/riscv/riscv-plic-spec/blob/master/riscv-plic.adoc.
+//          Supports 1 target and a global threshold only; sources are level-triggered.
 //
 // Documentation: RISC-V System on Chip Design
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021-23 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2021-26 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 // number of interrupt sources
@@ -56,20 +42,20 @@ module plic_apb import cvw::*; #(parameter cvw_t P) (
 );
 
   // register map
-  localparam PLIC_INTPRIORITY0   = 24'h000000;
-  localparam PLIC_INTPENDING0    = 24'h001000;
-  localparam PLIC_INTPENDING1    = 24'h001004;
-  localparam PLIC_INTEN00        = 24'h002000;
-  localparam PLIC_INTEN01        = 24'h002004;
-  localparam PLIC_INTEN10        = 24'h002080;
-  localparam PLIC_INTEN11        = 24'h002084;
-  localparam PLIC_THRESHOLD0     = 24'h200000;
-  localparam PLIC_CLAIMCOMPLETE0 = 24'h200004;
-  localparam PLIC_THRESHOLD1     = 24'h201000;
-  localparam PLIC_CLAIMCOMPLETE1 = 24'h201004;
+  localparam PLIC_INTPRIORITY0   = 28'h000000;
+  localparam PLIC_INTPENDING0    = 28'h001000;
+  localparam PLIC_INTPENDING1    = 28'h001004;
+  localparam PLIC_INTEN00        = 28'h002000;
+  localparam PLIC_INTEN01        = 28'h002004;
+  localparam PLIC_INTEN10        = 28'h002080;
+  localparam PLIC_INTEN11        = 28'h002084;
+  localparam PLIC_THRESHOLD0     = 28'h200000;
+  localparam PLIC_CLAIMCOMPLETE0 = 28'h200004;
+  localparam PLIC_THRESHOLD1     = 28'h201000;
+  localparam PLIC_CLAIMCOMPLETE1 = 28'h201004;
 
   logic                       memwrite, memread;
-  logic [23:0]                entry;
+  logic [27:0]                entry;
   logic [31:0]                Din, Dout;
 
   // context-independent signals
@@ -104,7 +90,7 @@ module plic_apb import cvw::*; #(parameter cvw_t P) (
   assign memwrite = PWRITE & PENABLE & PSEL;  // only write in access phase
   assign memread  = ~PWRITE & PSEL & ~PENABLE; // read once, in APB setup phase
   assign PREADY   = 1'b1;                     // PLIC never takes >1 cycle to respond
-  assign entry    = {PADDR[23:2], 2'b0};
+  assign entry    = {PADDR[27:2], 2'b0};
   assign One[P.PLIC_NUM_SRC-1:1] = '0; assign One[0] = 1'b1; // Vivado does not like this as a single assignment.
 
   // account for subword read/write circuitry
@@ -125,22 +111,25 @@ module plic_apb import cvw::*; #(parameter cvw_t P) (
       intEn         <= '0;
       intThreshold  <= '0;
       intInProgress <= '0;
+      Dout          <= '0;
     // writing
     end else begin
+      Dout <= '0; // Unimplemented registers read as zero, including source banks above PLIC_NUM_SRC.
       if (memwrite)
         casez (entry)
-          24'h0000??:          intPriority[entry[7:2]] <= Din[2:0];
+          28'h0000??:          if (entry != 0 && int'(entry) <= 4*P.PLIC_NUM_SRC)
+                                intPriority[entry[7:2]] <= Din[2:0];
           PLIC_INTEN00:        intEn[0][PLIC_NUM_SRC_MIN_32:1] <= Din[PLIC_NUM_SRC_MIN_32:1];
           PLIC_INTEN10:        intEn[1][PLIC_NUM_SRC_MIN_32:1] <= Din[PLIC_NUM_SRC_MIN_32:1];
           PLIC_INTEN01:        if (P.PLIC_NUM_SRC >= 32) intEn[0][PLIC_SRC_TOP:PLIC_SRC_BOT]         <= Din[PLIC_SRC_DINTOP:0];
           PLIC_INTEN11:        if (P.PLIC_NUM_SRC >= 32) intEn[1][PLIC_SRC_TOP:PLIC_SRC_BOT]         <= Din[PLIC_SRC_DINTOP:0];
           PLIC_THRESHOLD0:     intThreshold[0]         <= Din[2:0];
           PLIC_CLAIMCOMPLETE0:
-            if (Din[5:0] != 6'd0)
+            if (Din[5:0] != 6'd0 && int'(Din[5:0]) <= P.PLIC_NUM_SRC)
               intInProgress <= intInProgress & ~(One << (Din[5:0]-1)); // lower "InProgress" to signify completion
           PLIC_THRESHOLD1:     intThreshold[1]         <= Din[2:0];
           PLIC_CLAIMCOMPLETE1:
-            if (Din[5:0] != 6'd0)
+            if (Din[5:0] != 6'd0 && int'(Din[5:0]) <= P.PLIC_NUM_SRC)
               intInProgress <= intInProgress & ~(One << (Din[5:0]-1)); // lower "InProgress" to signify completion
         endcase
 
@@ -148,7 +137,7 @@ module plic_apb import cvw::*; #(parameter cvw_t P) (
       if (memread) begin
         casez (entry)
           PLIC_INTPRIORITY0: Dout <= 32'b0;  // there is no intPriority[0]
-          24'h0000??:        Dout <= {29'b0, intPriority[entry[7:2]]};
+          28'h0000??:        if (int'(entry) <= 4*P.PLIC_NUM_SRC) Dout <= {29'b0, intPriority[entry[7:2]]};
           PLIC_INTPENDING0:  Dout <= {{(31-PLIC_NUM_SRC_MIN_32){1'b0}}, intPending[PLIC_NUM_SRC_MIN_32:1], 1'b0};
           PLIC_INTEN00:      Dout <= {{(31-PLIC_NUM_SRC_MIN_32){1'b0}}, intEn[0][PLIC_NUM_SRC_MIN_32:1], 1'b0};
           PLIC_INTPENDING1:  if (P.PLIC_NUM_SRC >= 32) Dout <= {{(PLIC_SRC_EXT){1'b0}}, intPending[PLIC_SRC_TOP:PLIC_SRC_BOT]};

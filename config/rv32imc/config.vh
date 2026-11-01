@@ -12,17 +12,6 @@
 // Copyright (C) 2021 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 `include "BranchPredictorType.vh"
@@ -171,6 +160,9 @@ localparam logic UNCORE_RAM_PRELOAD = 1'b0;
 localparam logic EXT_MEM_SUPPORTED = 0;
 localparam logic [63:0] EXT_MEM_BASE     = 64'h80000000;
 localparam logic [63:0] EXT_MEM_RANGE    = 64'h07FFFFFF;
+localparam logic EXT_IO_SUPPORTED = 0;
+localparam logic [63:0] EXT_IO_BASE      = 64'h00000000;
+localparam logic [63:0] EXT_IO_RANGE     = 64'h00000000;
 localparam logic CLINT_SUPPORTED = 1;
 localparam logic [63:0] CLINT_BASE       = 64'h02000000;
 localparam logic [63:0] CLINT_RANGE      = 64'h0000FFFF;

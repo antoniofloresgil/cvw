@@ -1,28 +1,17 @@
 ///////////////////////////////////////////
+// lzc.sv
 //
-// Written: me@KatherineParry.com
-// Modified: 7/5/2022
-// Modified: 2/11/2026 james.stine@okstate.edu/marcus@infinitymdm.dev
+// Written:  Katherine Parry me@KatherineParry.com 27 May 2022
+// Modified: James Stine james.stine@okstate.edu, Marcus Mellor marcus@infinitymdm.dev, Kevin Kim
 //
-// Purpose: Leading Zero Counter
+// Purpose: Leading zero counter.
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021-23 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2022-26 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 module lzc #(parameter WIDTH = 1) (
@@ -30,14 +19,13 @@ module lzc #(parameter WIDTH = 1) (
   output logic [$clog2(WIDTH+1)-1:0]  ZeroCnt // the number of leading zeroes
 );
 
-  integer i;
+  // Pad num with ones on the right to a power of two N > WIDTH, so the padded
+  // value is never zero and its leading-zero count (WIDTH when num is zero)
+  // fits in $clog2(N) = $clog2(WIDTH+1) bits.  A balanced tree keeps the depth
+  // logarithmic; a priority loop counting up one bit at a time is WIDTH
+  // incrementers deep in tools that do not restructure it (e.g. Yosys).
+  localparam N = 2**$clog2(WIDTH+1);
+  logic Valid;
 
-  always_comb begin
-    i = 0;
-    // search for leading one
-    while ((i < WIDTH) && (!num[WIDTH-1-i])) begin
-      i = i + 1;
-    end
-    ZeroCnt = i[$clog2(WIDTH+1)-1:0];
-  end
+  lzctree #(N) tree(.num({num, {(N-WIDTH){1'b1}}}), .Valid, .ZeroCnt);
 endmodule

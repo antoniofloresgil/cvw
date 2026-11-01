@@ -1,26 +1,17 @@
 //////////////////////////////////////////
 // cvw.sv
 //
-// Written: David_Harris@hmc.edu 27 January 2022
+// Written:  David Harris David_Harris@hmc.edu 27 January 2023
+// Modified: Rose Thompson, James Stine, Naiche Whyte-Aguayo, Kevin Kim, Jordan Carlin
 //
-// Purpose: package with shared CORE-V-Wally global parameters
+// Purpose: Package defining the cvw_t configuration structure.
 //
-// A component of the Wally configurable RISC-V project.
+// A component of the CORE-V-WALLY configurable RISC-V project.
+// https://github.com/openhwfoundation/cvw
 //
-// Copyright (C) 2021 Harvey Mudd College & Oklahoma State University
+// Copyright (C) 2023-26 Harvey Mudd College & Oklahoma State University
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//
-// Licensed under the Solderpad Hardware License v 2.1 (the “License”); you may not use this file
-// except in compliance with the License, or, at your option, the Apache License version 2.0. You
-// may obtain a copy of the License at
-//
-// https://solderpad.org/licenses/SHL-2.1/
-//
-// Unless required by applicable law or agreed to in writing, any work distributed under the
-// License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-// either express or implied. See the License for the specific language governing permissions
-// and limitations under the License.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Using global `define statements isn't ideal in a large SystemVerilog system because
@@ -33,6 +24,13 @@
 `define CVW_T 1
 
 package cvw;
+
+  // Translated buffered core/bus atomic sideband, distinct from LSUAtomicM.
+  // Keep two-bit logic ports and the existing wire encoding at all boundaries.
+  localparam logic [1:0] COREBUS_NORMAL = 2'b00,
+                         COREBUS_LR     = 2'b01,
+                         COREBUS_SC     = 2'b10,
+                         COREBUS_AMO    = 2'b11;
 
   `include "BranchPredictorType.vh"
 
@@ -130,6 +128,9 @@ typedef struct packed {
   logic         EXT_MEM_SUPPORTED;
   logic [63:0]  EXT_MEM_BASE;
   logic [63:0]  EXT_MEM_RANGE;
+  logic         EXT_IO_SUPPORTED;   // I/O window inside EXT_MEM: not cacheable, not idempotent
+  logic [63:0]  EXT_IO_BASE;
+  logic [63:0]  EXT_IO_RANGE;
   logic         CLINT_SUPPORTED;
   logic [63:0]  CLINT_BASE;
   logic [63:0]  CLINT_RANGE;
@@ -311,6 +312,9 @@ typedef struct packed {
   // integer division/remainder constants
   int INTDIVb    ;
 } cvw_t;
+
+  `include "multicore-config.vh"
+  `include "multicore-memory.vh"
 
 endpackage
 
