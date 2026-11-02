@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+# check-extio
+# SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
+#
+# Check the EXT_IO window of cvw configurations without simulating them.
+#
+# The same rules are asserted in testbench/common/riscvassertions_wally.sv, but those run only when a
+# configuration is simulated, and a configuration that fails an earlier assertion (or is never simulated,
+# like the FPGA ones) never reaches them.  This script evaluates them on config.vh alone, so it also
+# covers configurations that synthesis or FPGA flows use and the testbench does not.
+#
+# usage: check-extio [config ...]      (default: every configuration in config/ and config/deriv/)
+
+import os
+import re
+import sys
+from pathlib import Path
+
+WALLY = Path(os.environ.get("WALLY", Path(__file__).resolve().parent.parent))
+MASK = (1 << 64) - 1
+
+NEEDED = ("ZICSR_SUPPORTED", "DCACHE_SUPPORTED", "ICACHE_SUPPORTED", "DCACHE_LINELENINBITS", "ICACHE_LINELENINBITS",
+          "EXT_MEM_SUPPORTED", "EXT_MEM_BASE", "EXT_MEM_RANGE", "EXT_IO_SUPPORTED", "EXT_IO_BASE", "EXT_IO_RANGE")
+
+
+def parse_value(text):
+    """Evaluate a SystemVerilog integer literal such as 1, 64'h90008000 or 32'd512."""
+    m = re.fullmatch(r"(?:\d+)?'([hdbo])([0-9a-fA-F_]+)", text.strip())
+    if m:
+        return int(m.group(2).replace("_", ""), {"h": 16, "d": 10, "b": 2, "o": 8}[m.group(1)])
+    return int(text.replace("_", ""))
+
+
+def read_params(config_vh):
+    """Return {name: value} for the parameters in NEEDED that config.vh sets; absent ones count as 0."""
+    params = dict.fromkeys(NEEDED, 0)
+    for line in config_vh.read_text().splitlines():
+        m = re.match(r"\s*localparam\s+(?:logic\s*(?:\[[^\]]*\]\s*)?|int\s+|integer\s+)?(\w+)\s*=\s*([^;]+);", line)
+        if m and m.group(1) in params:
+            params[m.group(1)] = parse_value(m.group(2))
+    return params
+
+
+def check(p):
+    """Return the list of rules an EXT_IO window violates, mirroring riscvassertions_wally.sv."""
+    if not p["EXT_IO_SUPPORTED"]:
+        return []
+    base, rng = p["EXT_IO_BASE"], p["EXT_IO_RANGE"]
+    problems = []
+    if not p["ZICSR_SUPPORTED"]:
+        problems.append("EXT_IO_SUPPORTED requires ZICSR_SUPPORTED: the EXT_IO window is implemented by the PMA checker")
+    if not p["EXT_MEM_SUPPORTED"]:
+        problems.append("EXT_IO_SUPPORTED requires EXT_MEM_SUPPORTED")
+    if (rng & ((rng + 1) & MASK)) != 0 or (base & rng) != 0:
+        problems.append("EXT_IO window must be a power-of-two size aligned to its size "
+                        "(EXT_IO_RANGE all ones in its low bits, EXT_IO_BASE a multiple of EXT_IO_RANGE+1)")
+    if base < p["EXT_MEM_BASE"] or ((base + rng) & MASK) > ((p["EXT_MEM_BASE"] + p["EXT_MEM_RANGE"]) & MASK):
+        problems.append("EXT_IO window must lie inside EXT_MEM")
+    size = (rng + 1) & MASK
+    if (p["DCACHE_SUPPORTED"] and size < p["DCACHE_LINELENINBITS"] // 8) or (p["ICACHE_SUPPORTED"] and size < p["ICACHE_LINELENINBITS"] // 8):
+        problems.append("EXT_IO window must be at least one cache line long")
+    return problems
+
+
+def config_dir(name):
+    return next((d for d in (WALLY / "config" / name, WALLY / "config" / "deriv" / name) if (d / "config.vh").is_file()), None)
+
+
+def main():
+    names = sys.argv[1:]
+    if not names:
+        names = sorted(d.name for parent in (WALLY / "config", WALLY / "config" / "deriv") if parent.is_dir()
+                       for d in parent.iterdir() if (d / "config.vh").is_file())
+    fails = checked = 0
+    for name in names:
+        d = config_dir(name)
+        if d is None:
+            print(f"{name}: no config.vh in config/ or config/deriv/ (run derivgen.pl?)")
+            fails += 1
+            continue
+        p = read_params(d / "config.vh")
+        problems = check(p)
+        if p["EXT_IO_SUPPORTED"]:
+            checked += 1
+            print(f"{name}: " + ("EXT_IO window OK" if not problems else "EXT_IO window INVALID"))
+        for problem in problems:
+            print(f"  {problem}")
+        fails += bool(problems)
+    print(f"{checked} configuration(s) with an EXT_IO window checked, {fails} failure(s)")
+    sys.exit(1 if fails else 0)
+
+
+if __name__ == "__main__":
+    main()

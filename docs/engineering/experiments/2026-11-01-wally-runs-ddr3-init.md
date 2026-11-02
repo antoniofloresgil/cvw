@@ -392,9 +392,11 @@ the FPGA top keeps splitting them as it does for RV32. So:
 
 Later (upstream review of PR #2038, 2026-11-01): the window is also
 non-executable, so a mispredicted fetch cannot read an I/O register, and
-elaboration rejects a window that is not a naturally aligned power-of-two block
-inside `EXT_MEM` at least one cache line long. The FPGA windows (64 KiB) meet
-these rules and no boot code executes from them.
+`riscvassertions_wally.sv` stops a simulation at time 0 for a window that is not
+a naturally aligned power-of-two block inside `EXT_MEM` at least one cache line
+long (the maintainer asked for the checks there, so lint and synthesis no longer
+reject it). The FPGA windows (64 KiB) meet these rules and no boot code executes
+from them.
 
 Not touched: `adrdecs.sv` and its `SelRegions` width, the uncore, the SoC ports,
 the testbenches. With `EXT_IO_SUPPORTED = 0` the decoder is constant 0 and
