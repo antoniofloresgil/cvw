@@ -31,10 +31,8 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
   output logic [31:0]              MCOUNTEREN_REGW, MCOUNTINHIBIT_REGW,
   output logic [15:0]              MEDELEG_REGW,
   output logic [13:0]              MIDELEG_REGW,
-  /* verilator lint_off UNDRIVEN */ // PMP registers are only used when PMP_ENTRIES > 0
   output var logic [P.PA_BITS-3:0] PMPADDR_ARRAY_REGW[P.PMP_ENTRIES-1:0],
   output var logic [7:0]           PMPCFG_ARRAY_REGW[P.PMP_ENTRIES-1:0],
-  /* verilator lint_on UNDRIVEN */
   output logic                     WriteMSTATUSM, WriteMSTATUSHM,
   output logic                     IllegalCSRMAccessM, IllegalCSRMWriteReadonlyM,
   output logic [63:0]              MENVCFG_REGW
@@ -230,6 +228,12 @@ module csrm  import cvw::*;  #(parameter cvw_t P, parameter int unsigned HART_ID
       if (PMPCFG_ARRAY_REGW[i][4]) PMPADDR_ARRAY_REGW[i] = {pmpaddr[P.PA_BITS-3:Gm1],     {Gm1    {1'b1}}}; // in NAPOT/NA4, bottom G-1 bits read as all 1s (but no bits affected for NA4)
       else                         PMPADDR_ARRAY_REGW[i] = {pmpaddr[P.PA_BITS-3:P.PMP_G], {P.PMP_G{1'b0}}}; // in TOR/OFF, bottom G bits read as 0s
     end
+
+  // With no PMP the array ranges are [-1:0]; nothing uses them, but drive them so they are not undriven
+  if (P.PMP_ENTRIES == 0) begin : nopmp
+    assign PMPADDR_ARRAY_REGW = '{default: '0};
+    assign PMPCFG_ARRAY_REGW  = '{default: '0};
+  end
 
   // Read machine mode CSRs
   // verilator lint_off WIDTH
