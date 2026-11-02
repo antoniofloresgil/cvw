@@ -134,6 +134,11 @@ deriv syn_rv32gc rv32gc syn_rv32e
 deriv syn_rv64i rv64i syn_rv32e
 deriv syn_rv64gc rv64gc syn_rv32e
 
+# The asic configurations are for the open ASIC flow (asic/librelane), which puts a 4 KiB DTIM
+# (1024 x 32) in an IHP SG13G2 SRAM macro.
+deriv asic_rv32imc rv32imc syn_rv32e
+DTIM_RANGE              64'hFFF
+
 # The syn_sram configurations use SRAM macros
 deriv   syn_sram_rv32e   rv32e
 DTIM_RANGE          64'h1FF

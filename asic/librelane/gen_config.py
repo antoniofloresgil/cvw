@@ -33,6 +33,16 @@ wrapper.write_text('import cvw::*;\n`include "config.vh"\n`include "parameter-de
                    "  wallypipelinedcore #(.P(P)) core(.*);\nendmodule\n")
 
 sources = [wally / "src/cvw.sv"] + sorted(p for p in (wally / "src").rglob("*.sv") if p.name != "cvw.sv")
+
+# asic_ configurations put the RAMs that an IHP SRAM macro implements in the macro: sram/ram1p1rwbe.sv
+# replaces Wally's ram1p1rwbe, which it uses for every other shape under the name ram1p1rwbe_generic.
+sram = args.config.startswith("asic_")
+if sram:
+    here = Path(__file__).resolve().parent
+    generic = wally / "src/generic/mem/ram1p1rwbe.sv"
+    renamed = work / "ram1p1rwbe_generic.sv"
+    renamed.write_text(re.sub(r"^module ram1p1rwbe\b", "module ram1p1rwbe_generic", generic.read_text(), count=1, flags=re.M))
+    sources = [p for p in sources if p != generic] + [renamed, here / "sram/ram1p1rwbe.sv"]
 config = {
     "DESIGN_NAME": "wallypipelinedcorewrapper",
     "VERILOG_FILES": [str(p) for p in sources + [wrapper]],
@@ -48,4 +58,25 @@ config = {
     # By default only the typical corner makes the setup checker fatal; fail on a setup violation in any corner.
     "TIMING_VIOLATION_CORNERS": ["*"],
 }
+if sram:
+    macro = "RM_IHPSG13_1P_1024x32_c2_bm_bist"
+    DTIM_INSTANCE = "core.lsu.dtim.dtim.ram.ihp.sram"
+    lib = "pdk_dir::libs.ref/sg13g2_sram/lib/" + macro
+    config |= {
+        "MACROS": {macro: {
+            "gds": [f"pdk_dir::libs.ref/sg13g2_sram/gds/{macro}.gds"],
+            "lef": [f"pdk_dir::libs.ref/sg13g2_sram/lef/{macro}.lef"],
+            "vh": [str(here / f"sram/{macro}_bb.v")],
+            "lib": {"*typ*": [f"{lib}_typ_1p20V_25C.lib"], "*fast*": [f"{lib}_fast_1p32V_m55C.lib"],
+                    "*slow*": [f"{lib}_slow_1p08V_125C.lib"]},
+            "instances": {DTIM_INSTANCE: {"location": [100, 100], "orientation": "N"}},
+        }},
+        "PDN_MACRO_CONNECTIONS": [f"{DTIM_INSTANCE} VPWR VGND VDD! VSS!", f"{DTIM_INSTANCE} VPWR VGND VDDARRAY! VSS!"],
+        "PDN_CFG": str(here / "sram/pdn_cfg.tcl"),
+        # The full KLayout deck reports violations inside the IHP SRAM macros; check_drc.py checks the rest
+        "ERROR_ON_KLAYOUT_DRC": False,
+        # So does Magic (millions): the SRAM rule exceptions came with IHP-Open-PDK PR #863, after the
+        # PDK version that LibreLane 3.0.17 pins
+        "RUN_MAGIC_DRC": False,
+    }
 (work / "config.json").write_text(json.dumps(config, indent=2) + "\n")

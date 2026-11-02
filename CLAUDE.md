@@ -131,7 +131,7 @@ Open-tool RTL-to-GDS for a Wally configuration (IHP SG13G2, LibreLane 3.0.17 thr
 ```bash
 cd asic/librelane && make CONFIG=syn_rv32imc   # synthesis to GDS, DRC, LVS at 30 ns (several hours)
 ```
-Results are in `work/<CONFIG>/runs/RUN_*/final/`. The timing checkers fail the flow only for the corners their wildcards match (setup: `*typ*`; max slew and cap: none), so read `timing__setup__ws` per corner in `final/metrics.json`. No Wally RTL is modified; `syn_rv32imc` currently has no SRAM macros or pad ring, and closes timing in the slow corner only at 30 ns or slower.
+Results are in `work/<CONFIG>/runs/RUN_*/final/`. The timing checkers fail the flow only for the corners their wildcards match (setup: `*typ*`; max slew and cap: none), so read `timing__setup__ws` per corner in `final/metrics.json`. No Wally RTL is modified; `syn_rv32imc` closes timing in the slow corner only at 30 ns or slower. `asic_*` configurations (`config/derivlist.txt`) put RAMs of a shape an IHP SRAM macro implements in the macro (`sram/ram1p1rwbe.sv`, checked by `make sramsim`); designs with macros run without Magic DRC and with KLayout DRC non-fatal, and `make` then runs `check_drc.py`, which waives only the known violations inside the macros (IHP-Open-PDK #793). No pad ring yet.
 
 ### FPGA flows
 

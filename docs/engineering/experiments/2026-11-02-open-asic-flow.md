@@ -78,10 +78,50 @@ differences. It took 2 h 25 min: Magic DRC 1 h 27 min, KLayout DRC 12 min.
 - One run was killed by the kernel OOM killer while another large process was using 29 GB;
   `--run-tag <RUN> --from <Step>` resumes from the last completed step.
 
+## SRAM macro
+
+`asic_rv32imc` is `syn_rv32imc` with a 4 KiB DTIM, which `asic/librelane/sram/ram1p1rwbe.sv` puts
+in an IHP `RM_IHPSG13_1P_1024x32_c2_bm_bist` macro (placed at 100, 100 um). `make sramsim` matches
+the adapter, with the PDK's behavioral model of the macro, against Wally's RAM for 200,000 random
+cycles (and fails at once with `A_REN = ~we`). Full flow at 30 ns, 40 min without Magic DRC:
+
+| | `syn_rv32imc` (512 B DTIM in flops) | `asic_rv32imc` (4 KiB DTIM in a macro) |
+|---|---|---|
+| Die | 2.03 mm^2 | 1.57 mm^2 (macro 0.14 mm^2) |
+| Standard cells | 82.9k | 56.7k |
+| Setup slack, slow / typical / fast | +0.42 / +4.97 / +6.39 ns | +0.75 / +3.95 / +5.75 ns |
+| Hold slack, worst corner | +0.12 ns | +0.10 ns |
+| LVS, DRT, antenna, XOR | 0 | 0 |
+| KLayout DRC, full deck | 0 | 2672, all inside the macro |
+| IHP precheck rule set | | 0 |
+| Max slew / max cap violations, slow corner | 2 / 1 | 13 / 2 |
+| Power (no activity data) | 33 mW | 17 mW |
+
+The critical path does not go through the macro; the slew violations are in the core logic (worst
+3.03 ns against 2.51 ns).
+
+- The PDK's Verilog wrapper of the macro instantiates `SRAM_1P_behavioral_bm_bist`, which is in
+  `RM_IHPSG13_1P_core_behavioral_bm_bist.v`; synthesis reads a black box of the macro instead.
+- The macro's power pins are on Metal4, and LibreLane's default macro grid connects only the two
+  top metals: without one more `add_pdn_connect` (Metal4 to the horizontal straps) the power grid
+  check fails (PSM-0069).
+- The full KLayout deck reports `Cnt.c.digibnd`, `Sdiod.d` and `Sdiod.e` inside the macro, the same
+  counts with or without our logic around it (IHP-Open-PDK issue #793, open). None of the three is
+  in IHP's precheck rule set. `check_drc.py` fails on any other violation, on any of them outside
+  the macro's cells, and on any precheck violation; an injected violation in our logic fails it.
+- Magic DRC reports 2.2 million violations inside the macro: the SRAM rule exceptions are in
+  IHP-Open-PDK PR #863 (March 2026), after the PDK that LibreLane 3.0.17 pins (January 2026).
+  Magic 8.3.623 is new enough. Magic DRC is off for designs with macros until the PDK is updated.
+- Magic's streamout prefixes the macro's cell names with two letters that change from run to run.
+- IHP's LibreLane template (`ihp-sg13g2-librelane-template`) has a chip top with a pad ring, SRAM
+  macros with their PDN and a cocotb testbench; it adds cocotb to LibreLane's Nix shell.
+
 ## Next
 
-1. `asic_*` configurations that use IHP SRAM macros, then a chip-level top with pads and a
-   way to load programs (UART or SPI).
-2. Area of `syn_rv64gc` (try without Magic DRC and with a hierarchical flow), to size a
+1. A newer PDK with PR #863, to run Magic DRC on designs with macros.
+2. A chip-level top with pads and a way to load programs (UART or SPI), from IHP's template, and
+   a cocotb (gate-level) simulation of the whole `asic_*` core, whose memories the ACT tests do
+   not fit.
+3. Area of `syn_rv64gc` (try without Magic DRC and with a hierarchical flow), to size a
    64-bit multicore against the shuttle area.
-3. Check the current IHP open shuttle rules and deadlines before sizing a design.
+4. Check the current IHP open shuttle rules and deadlines before sizing a design.

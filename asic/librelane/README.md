@@ -10,6 +10,8 @@ nix develop github:librelane/librelane/3.0.17 --accept-flake-config   # once, to
 make CONFIG=syn_rv32imc                  # synthesis to GDS, DRC, LVS (30 ns clock)
 make CONFIG=syn_rv32imc CLOCK_PERIOD=20  # 20 ns clock: fails setup in the slow corner
 make synth CONFIG=syn_rv64gc             # synthesis only
+make CONFIG=sramtest                     # one IHP SRAM macro (sramtest/), then check_drc.py
+make CONFIG=asic_rv32imc                 # syn_rv32imc with a 4 KiB DTIM in an IHP SRAM macro
 ```
 
 Requirements: [Nix](https://nixos.org/download) (tested with Determinate Nix 3.24.1, which is Nix 2.35.3) with flakes and the FOSSi cache
@@ -34,5 +36,20 @@ Notes:
 - Magic DRC takes about 1.5 h on `syn_rv32imc`, with no output until it ends; the
   KLayout DRC is the reference for IHP.
 - Flat ABC on `syn_rv64gc` takes over 2 h and several GB.
-- Not yet done: SRAM macros (memories are flops), a chip-level top with a pad ring,
-  and timing closure in the slow corner.
+- `sramtest/` is a test design around one `RM_IHPSG13_1P_1024x32_c2_bm_bist` macro, with its
+  own `config.json`. The PDK's Verilog model of the macro needs a module the PDK does not ship,
+  so synthesis reads a black box (`*_bb.v`); `pdn_cfg.tcl` is LibreLane's with one more
+  connection, Metal4 (the macro's power pins) to the horizontal straps.
+- The full KLayout deck reports `Cnt.c.digibnd`, `Sdiod.d` and `Sdiod.e` violations inside the
+  IHP SRAM macros themselves ([IHP-Open-PDK #793](https://github.com/IHP-GmbH/IHP-Open-PDK/issues/793)).
+  A design with macros sets `ERROR_ON_KLAYOUT_DRC` to false and `make` then runs
+  `check_drc.py`, which fails on any other violation of the full deck and on any violation of
+  IHP's foundry precheck rule set. Drop the exception when IHP fixes the deck or the macros.
+  Magic DRC is off for these designs: it reports millions of violations inside the macros, because
+  the SRAM rule exceptions (IHP-Open-PDK PR #863, with `read_sram_gds.tcl`) came after the PDK
+  version that LibreLane 3.0.17 pins.
+- `make sramsim` checks `sram/ram1p1rwbe.sv`, simulated with the macro's behavioral model from the
+  PDK, against Wally's RAM under random stimulus. `asic_*` configurations (`config/derivlist.txt`)
+  use it: `gen_config.py` copies Wally's `ram1p1rwbe` as `ram1p1rwbe_generic` and adds the macro.
+- Not yet done: a chip-level top with a pad ring, and simulation of a whole `asic_*` core with
+  the macro (the ACT tests do not fit its 512 B IROM and 4 KiB DTIM).
