@@ -125,6 +125,14 @@ Five stages: Fetch (F), Decode (D), Execute (E), Memory (M), Writeback (W). Stal
 
 Lockstep mode runs Wally in lock-step against ImperasDV (commercial) or the RISC-V Sail model for instruction-by-instruction comparison.
 
+### ASIC flow
+
+Open-tool RTL-to-GDS for a Wally configuration (IHP SG13G2, LibreLane 3.0.17 through Nix), in `asic/librelane/`; see its `README.md`.
+```bash
+cd asic/librelane && make CONFIG=syn_rv32imc CLOCK_PERIOD=30   # synthesis to GDS, DRC, LVS (several hours)
+```
+Results are in `work/<CONFIG>/runs/RUN_*/final/`. The Setup and Max Slew checkers print the failing corners and then still say "No ... violations found", so read `timing__setup__ws` per corner in `final/metrics.json`. No Wally RTL is modified; `syn_rv32imc` currently has no SRAM macros, pad ring or slow-corner timing closure.
+
 ### FPGA flows
 
 Build from `fpga/generator` (needs `source setup.sh`). Boards: ArtyA7, nexysa7, nexysvideo, vcu108, vcu118, genesys2, qmtechk7.
