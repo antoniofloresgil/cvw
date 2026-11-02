@@ -41,5 +41,9 @@ config = {
     "SLANG_ARGUMENTS": ["--std", "1800-2017", "--single-unit", "--ignore-timing", "--ignore-assertions"],
     "CLOCK_PORT": "clk",
     "CLOCK_PERIOD": args.clock_period,
+    # The resizer repairs with estimated parasitics, and slews grow after detailed routing: with the
+    # defaults (20 % and 10 %) syn_rv32imc had 111 slew violations in the slow corner, with these 2.
+    "DESIGN_REPAIR_MAX_SLEW_PCT": 40,
+    "GRT_DESIGN_REPAIR_MAX_SLEW_PCT": 30,
 }
 (work / "config.json").write_text(json.dumps(config, indent=2) + "\n")

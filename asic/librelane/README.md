@@ -7,8 +7,8 @@ No Wally RTL is modified.
 
 ```bash
 nix develop github:librelane/librelane/3.0.17 --accept-flake-config   # once, to check Nix works
-make CONFIG=syn_rv32imc                  # synthesis to GDS, DRC, LVS
-make CONFIG=syn_rv32imc CLOCK_PERIOD=30  # same, 30 ns clock
+make CONFIG=syn_rv32imc                  # synthesis to GDS, DRC, LVS (30 ns clock)
+make CONFIG=syn_rv32imc CLOCK_PERIOD=20  # 20 ns clock: fails setup in the slow corner
 make synth CONFIG=syn_rv64gc             # synthesis only
 ```
 
@@ -25,9 +25,12 @@ in `work/<CONFIG>/runs/RUN_*/`: `final/` holds the GDS, netlists, SPEF and
 
 Notes:
 
-- The Setup and Max Slew checkers print the corners that fail and then still report
-  "No ... violations found", and the flow continues. Read `timing__setup__ws` and
-  `design__max_slew_violation__count` in `final/metrics.json` per corner.
+- The timing checkers fail the flow only for the corners their wildcards match: by default
+  `TIMING_VIOLATION_CORNERS` is `*typ*` (setup) and the max slew and max cap checkers match
+  none, so a violation in another corner is only a warning ("... violations found in the
+  following corners") followed by "No ... violations found". Read `timing__setup__ws` and
+  `design__max_slew_violation__count` per corner in `final/metrics.json`, or set
+  `"TIMING_VIOLATION_CORNERS": ["*"]` and `"MAX_SLEW_VIOLATION_CORNERS": ["*"]` to make them fatal.
 - Magic DRC takes about 1.5 h on `syn_rv32imc`, with no output until it ends; the
   KLayout DRC is the reference for IHP.
 - Flat ABC on `syn_rv64gc` takes over 2 h and several GB.

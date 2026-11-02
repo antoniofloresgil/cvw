@@ -129,9 +129,9 @@ Lockstep mode runs Wally in lock-step against ImperasDV (commercial) or the RISC
 
 Open-tool RTL-to-GDS for a Wally configuration (IHP SG13G2, LibreLane 3.0.17 through Nix), in `asic/librelane/`; see its `README.md`.
 ```bash
-cd asic/librelane && make CONFIG=syn_rv32imc CLOCK_PERIOD=30   # synthesis to GDS, DRC, LVS (several hours)
+cd asic/librelane && make CONFIG=syn_rv32imc   # synthesis to GDS, DRC, LVS at 30 ns (several hours)
 ```
-Results are in `work/<CONFIG>/runs/RUN_*/final/`. The Setup and Max Slew checkers print the failing corners and then still say "No ... violations found", so read `timing__setup__ws` per corner in `final/metrics.json`. No Wally RTL is modified; `syn_rv32imc` currently has no SRAM macros, pad ring or slow-corner timing closure.
+Results are in `work/<CONFIG>/runs/RUN_*/final/`. The timing checkers fail the flow only for the corners their wildcards match (setup: `*typ*`; max slew and cap: none), so read `timing__setup__ws` per corner in `final/metrics.json`. No Wally RTL is modified; `syn_rv32imc` currently has no SRAM macros or pad ring, and closes timing in the slow corner only at 30 ns or slower.
 
 ### FPGA flows
 

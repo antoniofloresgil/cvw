@@ -11,7 +11,7 @@
 WALLY        ?= $(abspath ../..)
 CONFIG       ?= syn_rv32imc
 PDK          ?= ihp-sg13g2
-CLOCK_PERIOD ?= 20
+CLOCK_PERIOD ?= 30
 LIBRELANE    ?= github:librelane/librelane/3.0.17
 WORK         := work/$(CONFIG)
 
