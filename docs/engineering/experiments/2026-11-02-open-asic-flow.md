@@ -19,28 +19,34 @@ fanout violations below.
 
 ## Results
 
-| | 20 ns clock | 30 ns clock |
-|---|---|---|
-| Magic DRC | 0 errors | 0 errors |
-| KLayout DRC | 0 errors | 0 errors |
-| LVS (Netgen) | 0 differences | 0 differences |
-| Antenna violations | 0 | 0 |
-| Global route / DRT errors | 0 | 0 |
-| Setup slack, slow (1.08 V, 125 C) | **-6.66 ns** | +1.34 ns |
-| Setup slack, typical (1.20 V, 25 C) | +1.99 ns | +5.09 ns |
-| Setup slack, fast (1.32 V, -40 C) | +3.41 ns | +6.49 ns |
-| Hold slack, worst corner | +0.12 ns | +0.10 ns |
-| Max slew violations, slow corner | 99 | 111 |
-| Max fanout violations (each corner) | 776 | 775 |
-| Power (no activity data) | 44 mW | 29 mW |
+| | 20 ns clock | 30 ns clock | 30 ns, final |
+|---|---|---|---|
+| Magic DRC | 0 errors | 0 errors | 0 errors |
+| KLayout DRC | 0 errors | 0 errors | 0 errors |
+| LVS (Netgen) | 0 differences | 0 differences | 0 differences |
+| Antenna violations | 0 | 0 | 0 |
+| Global route / DRT errors | 0 | 0 | 0 |
+| Setup slack, slow (1.08 V, 125 C) | **-6.66 ns** | +1.34 ns | +0.42 ns |
+| Setup slack, typical (1.20 V, 25 C) | +1.99 ns | +5.09 ns | +4.97 ns |
+| Setup slack, fast (1.32 V, -40 C) | +3.41 ns | +6.49 ns | +6.39 ns |
+| Hold slack, worst corner | +0.12 ns | +0.10 ns | +0.12 ns |
+| Max slew violations, slow corner | 99 | 111 | 2 |
+| Max cap violations (each corner) | | | 1 |
+| Max fanout violations (each corner) | 776 | 775 | 763 |
+| Power (no activity data) | 44 mW | 29 mW | 33 mW |
 
-Common to both: die 2.04 mm^2 (1418.8 x 1437.5 um), 82.9k standard cells occupying
+Common to the first two: die 2.04 mm^2 (1418.8 x 1437.5 um), 82.9k standard cells occupying
 1.25 mm^2, utilization 63 %, 9390 flip-flops, 0 power-grid violations. The GDS is 107 MB.
 Wall time on a 30 GB workstation: about 4 h with Magic DRC (1 h 37 min of it) and KLayout
 DRC (13 min).
 
 With 20 ns the design meets timing in the typical and fast corners only; the slow corner
 supports roughly a 27 ns period, so 30 ns is the first round value that closes it.
+
+The final column is the committed configuration (`make CONFIG=syn_rv32imc`): 30 ns, the larger
+slew repair margins below and `TIMING_VIOLATION_CORNERS = ["*"]`, so a setup violation in any
+corner would have stopped the flow. Die 2.03 mm^2, utilization 63 %, Magic/KLayout XOR 0
+differences. It took 2 h 25 min: Magic DRC 1 h 27 min, KLayout DRC 12 min.
 
 ## Findings
 
@@ -56,7 +62,7 @@ supports roughly a 27 ns period, so 30 ns is the first round value that closes i
   `GRT_DESIGN_REPAIR_MAX_SLEW_PCT` from 10 to 30 leaves 2 slew violations (worst 2.551 ns) and 1
   max cap violation (0.328 against 0.300 pF) in the slow corner, with the same area (die 2.03
   mm^2) and 0.42 ns of setup slack there (1.34 ns before). KLayout DRC, LVS and antenna checks
-  stay at 0; Magic DRC was not run in that experiment. The 775 fanout violations are 98 %
+  stay at 0, and so does Magic DRC in the final run. The 775 fanout violations are 98 %
   CTS leaf clock buffers with 15 sinks against a limit of 8, not a design rule.
 - `csrm.sv` with `PMP_ENTRIES = 0` declared `PMPCFG/PMPADDR_ARRAY_REGW[-1:0]`, read them and
   never drove them, so Yosys reported 80 check errors and the two runs above had
@@ -74,9 +80,8 @@ supports roughly a 27 ns period, so 30 ns is the first round value that closes i
 
 ## Next
 
-1. Re-run the full flow (with Magic DRC) with the larger slew margins and make the checkers fatal in every corner.
-2. `asic_*` configurations that use IHP SRAM macros, then a chip-level top with pads and a
+1. `asic_*` configurations that use IHP SRAM macros, then a chip-level top with pads and a
    way to load programs (UART or SPI).
-3. Area of `syn_rv64gc` (try without Magic DRC and with a hierarchical flow), to size a
+2. Area of `syn_rv64gc` (try without Magic DRC and with a hierarchical flow), to size a
    64-bit multicore against the shuttle area.
-4. Check the current IHP open shuttle rules and deadlines before sizing a design.
+3. Check the current IHP open shuttle rules and deadlines before sizing a design.
