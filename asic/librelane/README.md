@@ -25,8 +25,6 @@ in `work/<CONFIG>/runs/RUN_*/`: `final/` holds the GDS, netlists, SPEF and
 
 Notes:
 
-- `ERROR_ON_SYNTH_CHECKS` is off because `csrm.sv` leaves two PMP array entries
-  undriven when `PMP_ENTRIES = 0`. They are unused; the post-synthesis check is clean.
 - The Setup and Max Slew checkers print the corners that fail and then still report
   "No ... violations found", and the flow continues. Read `timing__setup__ws` and
   `design__max_slew_violation__count` in `final/metrics.json` per corner.

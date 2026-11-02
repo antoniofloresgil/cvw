@@ -41,9 +41,5 @@ config = {
     "SLANG_ARGUMENTS": ["--std", "1800-2017", "--single-unit", "--ignore-timing", "--ignore-assertions"],
     "CLOCK_PORT": "clk",
     "CLOCK_PERIOD": args.clock_period,
-    # With PMP_ENTRIES = 0, csrm.sv declares PMPCFG/PMPADDR_ARRAY_REGW[-1:0] (two entries),
-    # reads them and never drives them, which the pre-synthesis check reports as undriven
-    # wires.  They are unused without PMP; the post-synthesis check is clean.
-    "ERROR_ON_SYNTH_CHECKS": False,
 }
 (work / "config.json").write_text(json.dumps(config, indent=2) + "\n")

@@ -48,9 +48,11 @@ supports roughly a 27 ns period, so 30 ns is the first round value that closes i
   violations found", and the flow carries on; the 20 ns run completed with -6.66 ns. Read
   `timing__setup__ws` per corner in `final/metrics.json` instead of trusting the flow's
   exit status.
-- `csrm.sv` with `PMP_ENTRIES = 0` declares `PMPCFG/PMPADDR_ARRAY_REGW[-1:0]`, reads them
-  and never drives them, so Yosys reports 80 check errors. `ERROR_ON_SYNTH_CHECKS` is off
-  as a workaround; the real fix is a separate change to `csrm.sv`.
+- `csrm.sv` with `PMP_ENTRIES = 0` declared `PMPCFG/PMPADDR_ARRAY_REGW[-1:0]`, read them and
+  never drove them, so Yosys reported 80 check errors and the two runs above had
+  `ERROR_ON_SYNTH_CHECKS` off. Fixed in PR #28 (the arrays are driven to zero without PMP); with
+  it, the synthesis check of `syn_rv32imc` is clean (`Check for Yosys check errors clear`) and the
+  workaround is gone.
 - `synthDC/scripts/wrapperGen.py` fails on the multi-line `wallypipelinedcore` header, so
   the open flow generates its own wrapper.
 - Magic DRC prints nothing until it ends (1 h 37 min here); the KLayout DRC is the
@@ -62,10 +64,9 @@ supports roughly a 27 ns period, so 30 ns is the first round value that closes i
 
 ## Next
 
-1. Fix the undriven PMP arrays and drop `ERROR_ON_SYNTH_CHECKS: False`.
-2. Look at the slew and fanout violations and decide whether they matter for the shuttle.
-3. `asic_*` configurations that use IHP SRAM macros, then a chip-level top with pads and a
+1. Look at the slew and fanout violations and decide whether they matter for the shuttle.
+2. `asic_*` configurations that use IHP SRAM macros, then a chip-level top with pads and a
    way to load programs (UART or SPI).
-4. Area of `syn_rv64gc` (try without Magic DRC and with a hierarchical flow), to size a
+3. Area of `syn_rv64gc` (try without Magic DRC and with a hierarchical flow), to size a
    64-bit multicore against the shuttle area.
-5. Check the current IHP open shuttle rules and deadlines before sizing a design.
+4. Check the current IHP open shuttle rules and deadlines before sizing a design.
