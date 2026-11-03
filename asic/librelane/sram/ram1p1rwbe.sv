@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-// ram1p1rwbe for the open ASIC flow: shapes that an IHP SG13G2 SRAM macro implements use the
+// ram1p1rwbe for the open ASIC flow: shapes that an IHP SRAM macro (SG13G2 or SG13CMOS5L) implements use the
 // macro, and every other shape uses Wally's ram1p1rwbe, which gen_config.py copies under the
 // name ram1p1rwbe_generic.  The choice depends on the shape only, not on USE_SRAM, which also
 // selects other macros in the caches and branch predictor.

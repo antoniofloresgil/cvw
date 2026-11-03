@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
+// Chip top of asic_soc_rv32imc: Wally's SoC inside an IHP pad ring, after the layout of IHP's
+// LibreLane template (github.com/IHP-GmbH/ihp-sg13-librelane-template, src/chip_top.sv).  The pads
+// are those of SG13G2, or of SG13CMOS5L with SG13CMOS5L defined.
+// 16 signal pads (clock, reset, UART, SPI, 8 GPIOs) and 4 power pads.  The bootloader in the
+// BOOTROM (chip/boot.S) loads programs over the UART; GPIO[7:0] at reset set its baud divisor.
+
+import cvw::*;
+`include "config.vh"
+`include "parameter-defs.vh"
+
+module chip_top (
+`ifdef USE_POWER_PINS
+  inout wire IOVDD, IOVSS, VDD, VSS,
+`endif
+  inout wire       clk_PAD,
+  inout wire       rst_n_PAD,      // active low
+  inout wire       uart_rx_PAD, uart_tx_PAD,
+  inout wire       spi_sck_PAD, spi_mosi_PAD, spi_miso_PAD, spi_cs_PAD,
+  inout wire [7:0] gpio_PAD
+);
+
+  logic        clk, rst_n, UARTSin, UARTSout, SPIIn, SPIOut, SPICLK;
+  logic [3:0]  SPICS;
+  logic [31:0] GPIOIN, GPIOOUT, GPIOEN;
+
+`ifdef SG13CMOS5L
+  `define PAD(cell) sg13cmos5l_``cell
+`else
+  `define PAD(cell) sg13g2_``cell
+`endif
+`ifdef USE_POWER_PINS
+  `define PAD_POWER .iovdd(IOVDD), .iovss(IOVSS), .vdd(VDD), .vss(VSS),
+  `define PAD_POWER_ONLY .iovdd(IOVDD), .iovss(IOVSS), .vdd(VDD), .vss(VSS)
+`else
+  `define PAD_POWER
+  `define PAD_POWER_ONLY
+`endif
+
+  (* keep *) `PAD(IOPadIOVdd) iovdd_pad(`PAD_POWER_ONLY);
+  (* keep *) `PAD(IOPadIOVss) iovss_pad(`PAD_POWER_ONLY);
+  (* keep *) `PAD(IOPadVdd)   vdd_pad(`PAD_POWER_ONLY);
+  (* keep *) `PAD(IOPadVss)   vss_pad(`PAD_POWER_ONLY);
+
+  `PAD(IOPadIn)      clk_pad(`PAD_POWER .p2c(clk), .pad(clk_PAD));
+  `PAD(IOPadIn)      rst_n_pad(`PAD_POWER .p2c(rst_n), .pad(rst_n_PAD));
+  `PAD(IOPadIn)      uart_rx_pad(`PAD_POWER .p2c(UARTSin), .pad(uart_rx_PAD));
+  `PAD(IOPadOut30mA) uart_tx_pad(`PAD_POWER .c2p(UARTSout), .pad(uart_tx_PAD));
+  `PAD(IOPadOut30mA) spi_sck_pad(`PAD_POWER .c2p(SPICLK), .pad(spi_sck_PAD));
+  `PAD(IOPadOut30mA) spi_mosi_pad(`PAD_POWER .c2p(SPIOut), .pad(spi_mosi_PAD));
+  `PAD(IOPadIn)      spi_miso_pad(`PAD_POWER .p2c(SPIIn), .pad(spi_miso_PAD));
+  `PAD(IOPadOut30mA) spi_cs_pad(`PAD_POWER .c2p(SPICS[0]), .pad(spi_cs_PAD));
+
+  for (genvar i = 0; i < 8; i++) begin : gpio
+    `PAD(IOPadInOut30mA) gpio_pad(`PAD_POWER .c2p(GPIOOUT[i]), .c2p_en(GPIOEN[i]), .p2c(GPIOIN[i]), .pad(gpio_PAD[i]));
+  end
+  assign GPIOIN[31:8] = '0;
+
+  // No external memory, debug stall, separate timer clock or SD card
+  wallypipelinedsoc #(.P(P)) soc(.clk, .reset_ext(~rst_n), .reset(),
+    .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(), .ExternalStall(1'b0),
+    .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(), .HBURST(), .HPROT(),
+    .HTRANS(), .HMASTLOCK(), .HREADY(), .TIMECLK(1'b0),
+    .GPIOIN, .GPIOOUT, .GPIOEN, .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK,
+    .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
+endmodule

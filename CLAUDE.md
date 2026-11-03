@@ -127,11 +127,14 @@ Lockstep mode runs Wally in lock-step against ImperasDV (commercial) or the RISC
 
 ### ASIC flow
 
-Open-tool RTL-to-GDS for a Wally configuration (IHP SG13G2, LibreLane 3.0.17 through Nix), in `asic/librelane/`; see its `README.md`.
+Open-tool RTL-to-GDS for a Wally configuration (IHP SG13G2 or SG13CMOS5L, LibreLane 3.1.0.dev4 through Nix, the IHP PDK it pins fetched by ciel), in `asic/librelane/`; see its `README.md`.
 ```bash
-cd asic/librelane && make CONFIG=syn_rv32imc   # synthesis to GDS, DRC, LVS at 30 ns (several hours)
+cd asic/librelane && make CONFIG=syn_rv32imc        # synthesis to GDS, DRC, LVS at 40 ns (a few hours)
+make CONFIG=asic_soc_rv32imc                        # the chip: SoC in a pad ring, UART bootloader
+make chipsim                                        # cocotb RTL test of the chip (oss-cad-suite)
+make PDK=ihp-sg13cmos5l CONFIG=asic_rv32imc         # SG13CMOS5L, in work/<CONFIG>-sg13cmos5l
 ```
-Results are in `work/<CONFIG>/runs/RUN_*/final/`. The timing checkers fail the flow only for the corners their wildcards match (setup: `*typ*`; max slew and cap: none), so read `timing__setup__ws` per corner in `final/metrics.json`. No Wally RTL is modified; `syn_rv32imc` closes timing in the slow corner only at 30 ns or slower. `asic_*` configurations (`config/derivlist.txt`) put RAMs of a shape an IHP SRAM macro implements in the macro (`sram/ram1p1rwbe.sv`, checked by `make sramsim`); designs with macros run without Magic DRC and with KLayout DRC non-fatal, and `make` then runs `check_drc.py`, which waives only the known violations inside the macros (IHP-Open-PDK #793). No pad ring yet.
+Results are in `work/<CONFIG>/runs/RUN_*/final/`; `gen_config.py` makes the setup checker fatal in every corner. No Wally RTL is modified. Synthesis is pinned to `AREA 0` without `SYNTH_ARITH_TREE`/`SYNTH_MUL_BOOTH` (3.1's defaults cost 50 % area), which closes 40 ns, not 30. `asic_*` configurations (`config/derivlist.txt`) put RAMs of a shape an IHP SRAM macro implements in the macro (`sram/ram1p1rwbe.sv`, checked by `make sramsim`); `asic_soc_*` are chips (`chip/`: `chip_top.sv` after IHP's LibreLane template, `boot.S` in the BOOTROM, `test/`). Designs with macros keep KLayout DRC fatal but set `ERROR_ON_MAGIC_DRC` false, and `make` then runs `check_drc.py`, which waives only Magic's `Cnt.c` rules inside the macros (IHP-Open-PDK #794) and turns Magic's pad-ring subcell overlaps into warnings when KLayout DRC is clean. The chip still fails the minimum metal density checker (5 windows of Metal2/Metal3 short).
 
 ### FPGA flows
 

@@ -49,7 +49,15 @@
     "sram VPWR VGND VDD! VSS!",
     "sram VPWR VGND VDDARRAY! VSS!"
   ],
-  "RUN_MAGIC_DRC": false,
+  "RUN_MAGIC_DRC": true,
   "PDN_CFG": "dir::../../sram/pdn_cfg.tcl",
-  "ERROR_ON_KLAYOUT_DRC": false
+  "MAGIC_GDS_FLATGLOB": [
+    "lvsres_*",
+    "*_CELL_SUB",
+    "VIA_M1_*",
+    "VIA_M2_*",
+    "RSC_*",
+    "*_CELL_CORNER"
+  ],
+  "ERROR_ON_MAGIC_DRC": false
 }

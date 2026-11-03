@@ -5,39 +5,61 @@
 #   make synth CONFIG=syn_rv32imc        synthesis only
 #   make check CONFIG=sramtest           DRC check of the newest run of a design with SRAM macros
 #   make sramsim                         sram/ram1p1rwbe.sv with the macro's model against Wally's RAM
+#   make CONFIG=asic_soc_rv32imc         a chip: Wally's SoC in a pad ring (chip/), Chip flow
+#   make chipsim                         cocotb test of that chip: boots a program over the UART
+#   make PDK=ihp-sg13cmos5l CONFIG=...   the same in SG13CMOS5L (CMOS, 5 metals), in work/<CONFIG>-sg13cmos5l
 #
 # CONFIG is a Wally configuration, whose inputs gen_config.py writes, or a directory here with
-# its own config.json (sramtest).  Designs with IHP SRAM macros turn off ERROR_ON_KLAYOUT_DRC,
+# its own config.json (sramtest).  Designs with IHP SRAM macros turn off ERROR_ON_MAGIC_DRC,
 # and `make` runs check_drc.py after the flow instead (see that script).
 #
-# The tools come from LibreLane's Nix environment, pinned by LIBRELANE; the PDK version is
-# pinned by that LibreLane release and downloaded by ciel into ~/.ciel.  Results go to
-# work/<CONFIG>/runs/.
+# The tools come from LibreLane's Nix environment, pinned by LIBRELANE.  PDK_VERSION is the IHP
+# PDK that this LibreLane release pins (librelane/pdk_hashes.yaml), the first one with the SRAM
+# rule exceptions for Magic (IHP-Open-PDK PR #863); `make pdk` downloads it with ciel into
+# ~/.ciel without enabling it, and the flow reads it from there.  Results go to work/<CONFIG>/runs/.
 
 WALLY        ?= $(abspath ../..)
 CONFIG       ?= syn_rv32imc
 PDK          ?= ihp-sg13g2
-CLOCK_PERIOD ?= 30
-LIBRELANE    ?= github:librelane/librelane/3.0.17
-WORK         := work/$(CONFIG)
-# The PDK version that LIBRELANE pins, as ciel installs it
-IHP_PDK      ?= $(HOME)/.ciel/ciel/ihp-sg13g2/versions/c4b8b4e5e7a05f375cca3815d51b3a37721fbf5c/ihp-sg13g2
-SRAM_MODELS  := $(IHP_PDK)/libs.ref/sg13g2_sram/verilog
+# With LibreLane 3.1 (Yosys 0.69, SYNTH_STRATEGY AREA 0) asic_rv32imc misses 30 ns by 6.8 ns in the
+# slow corner, and the chips have a path from the PLIC through the trap logic to the 64-bit
+# counters as long; 40 ns for every design until those paths are optimized
+CLOCK_PERIOD ?= 40
+LIBRELANE    ?= github:librelane/librelane/3.1.0.dev4
+# Runs in SG13CMOS5L go to their own work directories
+SUFFIX       := $(if $(filter ihp-sg13g2,$(PDK)),,-$(PDK:ihp-%=%))
+WORK         := work/$(CONFIG)$(SUFFIX)
+PDK_VERSION  ?= 89d42ee6d2fd9b50b86a1aada6fee6673c3e6008
+PDK_ROOT     ?= $(HOME)/.ciel/ciel/ihp-sg13/versions/$(PDK_VERSION)
+IHP_PDK      := $(PDK_ROOT)/$(PDK)
+SRAM_MODELS  := $(IHP_PDK)/libs.ref/$(PDK:ihp-%=%)_sram/verilog
+# cocotb and the Verilator it runs with
+OSS_CAD      ?= $(HOME)/riscv/oss-cad-suite
 
 NIX := nix develop $(LIBRELANE) --accept-flake-config --command
+LL  := $(NIX) librelane --pdk $(PDK) --pdk-root $(PDK_ROOT) --manual-pdk
 
-.PHONY: all synth check sramsim inputs clean
-all: inputs
-	cd $(WORK) && $(NIX) librelane --pdk $(PDK) config.json
+.PHONY: all synth check sramsim chipsim pdk inputs clean
+all: inputs $(IHP_PDK)
+	cd $(WORK) && $(LL) config.json
 	if grep -q '"MACROS"' $(WORK)/config.json; then $(MAKE) check; fi
 
-synth: inputs
-	cd $(WORK) && $(NIX) librelane --pdk $(PDK) --to Yosys.Synthesis config.json
+synth: inputs $(IHP_PDK)
+	cd $(WORK) && $(LL) --to Yosys.Synthesis config.json
 
 check:
 	cd $(WORK) && $(NIX) python3 $(CURDIR)/check_drc.py
 
-sramsim:
+chipsim: $(IHP_PDK)
+	$(MAKE) inputs CONFIG=asic_soc_rv32imc
+	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imc$(SUFFIX) \
+	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_chip.py
+
+pdk: $(IHP_PDK)
+$(IHP_PDK):
+	$(NIX) ciel fetch --pdk-family ihp-sg13 $(PDK_VERSION)
+
+sramsim: $(IHP_PDK)
 	mkdir -p work/sramsim
 	sed 's/^module ram1p1rwbe /module ram1p1rwbe_generic /' $(WALLY)/src/generic/mem/ram1p1rwbe.sv > work/sramsim/ram1p1rwbe_generic.sv
 	cd work/sramsim && $(NIX) verilator --binary -j 8 --top-module ram1p1rwbe_tb -Wno-fatal -Wno-lint -Wno-style \
@@ -48,10 +70,13 @@ sramsim:
 	grep -q PASS work/sramsim/sim.log
 
 inputs:
+ifneq ($(filter asic_soc_%,$(CONFIG)),)
+	$(MAKE) -C chip boot.mem
+endif
 ifneq ($(wildcard $(CONFIG)/config.json),)
 	mkdir -p $(WORK) && cp $(CONFIG)/config.json $(WORK)/
 else
-	python3 gen_config.py --wally $(WALLY) --config $(CONFIG) --work $(WORK) --clock-period $(CLOCK_PERIOD)
+	python3 gen_config.py --wally $(WALLY) --config $(CONFIG) --work $(WORK) --clock-period $(CLOCK_PERIOD) --pdk $(PDK)
 endif
 
 clean:
