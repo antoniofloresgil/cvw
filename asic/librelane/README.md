@@ -66,9 +66,13 @@ Notes:
 - `sram/pdn_cfg.tcl` is LibreLane's with one more connection, Metal4 (the macro's power pins) to
   the horizontal straps, in SG13G2 only (in SG13CMOS5L the vertical straps are on Metal4).
 - The chip does not yet meet IHP's minimum metal density (`M2Fil.h`, `M3Fil.h`: 25 % of Metal2
-  and Metal3 in every 800 x 800 um window): routed Metal2 leaves gaps too narrow for fill in the
-  core. The KLayout filler leaves 15 windows short, IHP's Magic filler (`KLayout.Filler:
-  Magic.Filler`) 5, the worst at 20 %. Planned: Metal2/Metal3 straps in the core power grid.
+  and Metal3 in every 800 x 800 um window, a precheck rule): routed Metal2 leaves gaps too narrow for
+  fill in the core. The chips use IHP's Magic filler (`KLayout.Filler: Magic.Filler`), which leaves 5
+  windows short (the KLayout filler 15), the worst at 20 %, and adds no DRC error. Planned:
+  Metal2/Metal3 straps in the core power grid.
+- `chip/chip_top.sdc` defines the clock on the clock pad's output, as IHP's template does, and sets
+  the clock activity of that pin for power: OpenSTA gives a clock on an internal pin none, and the
+  chip's power read 1.2 mW instead of 21 mW.
 - `PDK=ihp-sg13cmos5l` uses the CMOS-only process with 5 metals (Metal1-4, TopMetal1): the same
   SRAM macros and pads under `sg13cmos5l_` names; `chip_top.sv` picks the pads with `SG13CMOS5L`.
 - Flat ABC on `syn_rv64gc` did not finish in over 6 h; the 64-bit core needs a hierarchical flow.

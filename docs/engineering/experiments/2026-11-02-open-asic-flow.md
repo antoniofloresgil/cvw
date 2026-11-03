@@ -166,11 +166,11 @@ At 40 ns (`AREA 0`, the committed configuration):
 | Routing DRC, antenna, LVS, KLayout DRC | 0 | 0 | 0 (routing, antenna) | 0 |
 | Magic DRC | 0 | 109, inside the macro: DRC OK | 106, inside the macro (`Cnt.c`) | 103 inside the macro, 1400 pad-ring warnings: DRC OK |
 | Max slew violations, slow corner | 13 | 8 | 15 | 27 |
-| Power (no activity data) | 21 mW | 13 mW | 13 mW | 1.2 mW (to check) |
+| Power (no activity data) | 21 mW | 13 mW | 13 mW | 21 mW (1.2 mW before the SDC fix below) |
 
-The SG13CMOS5L run was in KLayout DRC and LVS when this was written. Its routing with two metals
-fewer takes 2 % more wire and 0.4 ns of slack; the PDN needed one change (`sram/pdn_cfg.tcl`: the
-Metal4 connection exists already when the vertical straps are on Metal4).
+`asic_rv32imc` in SG13CMOS5L ended clean (KLayout DRC, LVS and XOR 0; `check_drc.py`: DRC OK). Its
+routing with two metals fewer takes 2 % more wire and 0.4 ns of slack; the PDN needed one change
+(`sram/pdn_cfg.tcl`: the Metal4 connection exists already when the vertical straps are on Metal4).
 
 ### The chip
 
@@ -184,6 +184,11 @@ bootloader at a baud divisor of 1 and checks that it prints `OK` and drives 42 o
 - At 30 ns it failed by 6.8 ns: `MExtInt` is combinational from the PLIC's priority registers
   through the trap logic to the 64-bit counters (229 paths, all from `intPriority`).
 - The template's 2.2 mm die left the core half empty (49 % utilization); 2.0 mm gives 68 %.
+- Power read 1.2 mW: the template's SDC defines the clock on the clock pad's output pin
+  (`clk_pad/p2c`), and OpenSTA gives such a pin no clock activity for power; it propagates the
+  default input activity of `clk_PAD` through the pad, so the flops looked 15 times quieter.
+  `chip/chip_top.sdc` sets two transitions per period on that pin (`set_power_activity`), which
+  gives 21.1 mW, the same as a clock on the port; timing does not change.
 - Magic reports about 1400 overlaps between the subcells of the pad ring, where KLayout DRC finds
   none; the template removes `Checker.IllegalOverlap` for the same reason. `check_drc.py` turns them
   into warnings outside the core area when KLayout DRC is clean.
@@ -199,8 +204,16 @@ bootloader at a baud divisor of 1 and checks that it prints `OK` and drives 42 o
   | Magic, then KLayout | 5 | 20.4 % |
 
   The 1 um fill squares need about 1.8 um between routed wires, which Metal2 rarely leaves in the
-  standard cell area; filling or shrinking the die more does not fix it. Planned: Metal2/Metal3
-  straps in the core power grid, and asking IHP whether its precheck requires these rules.
+  standard cell area; filling or shrinking the die more does not fix it. These rules are in IHP's
+  precheck rule set (`libs.tech/klayout/tech/drc/docs/precheck_rules.md`), so they must pass.
+  The chips now use the Magic filler: with it the chip has KLayout DRC 0, LVS 0 and only the known
+  Magic violations, so the filler adds no error. Metal2/Metal3 straps in the core power grid are
+  being tried: the PDN connects, and the first routing pass ends clean, but the antenna repair pass
+  stops at 32 violations.
+- The chip in SG13CMOS5L (`make PDK=ihp-sg13cmos5l CONFIG=asic_soc_rv32imc`, macro at 400, 400, the
+  KLayout filler): setup +4.90 / +14.46 / +16.32 ns, hold +0.01 ns, 21.1 mW, routing DRC 0, one
+  antenna violation, and 12 density violations (Metal2 18-22 %, Metal3 23-24.5 %, Metal4 17-24 %,
+  where the vertical power straps are, and global Metal2 34.2 %).
 
 ## IHP open-source shuttles and packaging
 
@@ -251,9 +264,9 @@ For `asic_soc_rv32imc` (2.0 × 2.0 mm, 20 pads):
 ## Next
 
 1. The chip `asic_soc_rv32imc`:
-   - minimum metal density: Metal2/Metal3 straps in the core PDN, then the Magic filler; the full
-     Chip flow ending clean (now it stops at the density checker);
-   - check the power figure (1.2 mW, likely no clock activity through the pad);
+   - minimum metal density: Metal2/Metal3 straps in the core PDN (routing with them stops at 32
+     violations in the antenna repair pass); the full Chip flow ending clean (now it stops at the
+     density checker), then the same in SG13CMOS5L, where the straps must avoid the Metal4 ones;
    - the chip in SG13CMOS5L (`make PDK=ihp-sg13cmos5l CONFIG=asic_soc_rv32imc`);
    - gate-level simulation of the final netlist with the cocotb test (`make chipsim` runs the RTL);
    - 40 ns for now: at 30 ns a path from the PLIC (`MExtInt` is combinational from the priority

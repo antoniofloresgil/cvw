@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # From IHP's LibreLane template (ihp-sg13-librelane-template, librelane/chip_top.sdc, Apache-2.0),
-# with the ports of chip/chip_top.sv.
+# with the ports of chip/chip_top.sv and the clock activity below.
 current_design $::env(DESIGN_NAME)
 set_units -time ns
 
@@ -28,6 +28,12 @@ if { $::env(CLOCK_PORT) == $::env(CLOCK_NET) } {
 
 puts "\[INFO] Using clock $clock_port…"
 create_clock {*}$port_args -name $clock_port -period $::env(CLOCK_PERIOD)
+# A clock defined on a pin inside the design (the clock pad's output) gets no clock activity
+# for power: OpenSTA propagates the default input activity of the port through the pad, and the
+# chip read 1.2 mW instead of 21 mW.  Two transitions per period, as for a clock on a port.
+if { $::env(CLOCK_PORT) != $::env(CLOCK_NET) } {
+    set_power_activity -pins $port_args -activity 2 -duty 0.5
+}
 
 set input_delay_value [expr $::env(CLOCK_PERIOD) * $::env(IO_DELAY_CONSTRAINT) / 100]
 set output_delay_value [expr $::env(CLOCK_PERIOD) * $::env(IO_DELAY_CONSTRAINT) / 100]

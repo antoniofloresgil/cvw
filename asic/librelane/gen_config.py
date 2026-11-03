@@ -119,7 +119,10 @@ if chip:
     # After IHP's LibreLane template (ihp-sg13-librelane-template, librelane/config.yaml); the pads are the instances of chip_top.sv
     gpio = [f"gpio\\[{i}\\].gpio_pad" for i in range(8)]
     config |= {
-        "meta": {"version": 3, "flow": "Chip", "substituting_steps": {"Checker.IllegalOverlap": None}},
+        # IHP's Magic filler instead of the KLayout one, which the template suggests when the density
+        # rules fail: it leaves 5 windows short where the KLayout filler leaves 15
+        "meta": {"version": 3, "flow": "Chip", "substituting_steps": {"Checker.IllegalOverlap": None,
+                                                                      "KLayout.Filler": "Magic.Filler"}},
         "DESIGN_NAME": "chip_top",
         "CLOCK_PORT": "clk_PAD",
         "CLOCK_NET": "clk_pad/p2c",
