@@ -1,10 +1,11 @@
 # Open ASIC flow: LibreLane on IHP SG13G2
 
-Status (2026-11-03): **a first chip.** With LibreLane 3.1.0.dev4 and a 40 ns clock, `syn_rv32imc`,
+Status (2026-11-04): **a first chip.** With LibreLane 3.1.0.dev4 and a 40 ns clock, `syn_rv32imc`,
 `asic_rv32imc` (4 KiB DTIM in an IHP SRAM macro) and the chip `asic_soc_rv32imc` (Wally's SoC in a
 pad ring, booting over the UART) run from RTL to a GDS with LVS, KLayout DRC and antenna clean and
-positive slack in all corners; `asic_rv32imc` also closes in SG13CMOS5L. Open: the chip's minimum
-metal density (5 windows short), debug access, and the 64-bit core.  The sections up to "SRAM
+positive slack in all corners; the chip in SG13G2 also meets IHP's minimum metal density.
+`asic_rv32imc` also closes in SG13CMOS5L. Open: the chip's density in SG13CMOS5L, debug access,
+and the 64-bit core.  The sections up to "SRAM
 macro" are the first runs, with LibreLane 3.0.17 at 30 ns; "LibreLane 3.1, the chip and
 SG13CMOS5L" has the current ones.
 
@@ -176,8 +177,11 @@ routing with two metals fewer takes 2 % more wire and 0.4 ns of slack; the PDN n
 
 `asic_soc_rv32imc` (`config/derivlist.txt`, from `rv32imc`): no IROM or DTIM; a 512 B BOOTROM at
 0x1000 with the bootloader `chip/boot.S`; 4 KiB of RAM at 0x80000000 on the bus, in an SRAM macro;
-UART, SPI, GPIO, PLIC and CLINT. `chip/chip_top.sv` follows IHP's template: 20 pads (clock, reset,
-UART, SPI, 8 GPIOs, I/O and core supplies), the Chip flow with a core power ring. `make chipsim`
+UART, SPI, GPIO, PLIC and CLINT. `chip/chip_top.sv` follows IHP's template: 24 pads (clock, reset,
+UART, SPI, 8 GPIOs, and two pads of each supply, I/O and core, on opposite sides, so that no single
+bond wire powers the chip; 8 of the 32 pins of a QFN 32 stay free, for JTAG), the Chip flow with a
+core power ring. `OpenROAD.PadRing` needs whole microns between pads: 5 or 7 pads on a side of
+the 2.0 mm die, not 6. `make chipsim`
 (cocotb, Verilator, with the PDK's pad and SRAM models) loads `chip/test/hello.S` through the
 bootloader at a baud divisor of 1 and checks that it prints `OK` and drives 42 on the GPIOs.
 
@@ -206,14 +210,38 @@ bootloader at a baud divisor of 1 and checks that it prints `OK` and drives 42 o
   The 1 um fill squares need about 1.8 um between routed wires, which Metal2 rarely leaves in the
   standard cell area; filling or shrinking the die more does not fix it. These rules are in IHP's
   precheck rule set (`libs.tech/klayout/tech/drc/docs/precheck_rules.md`), so they must pass.
-  The chips now use the Magic filler: with it the chip has KLayout DRC 0, LVS 0 and only the known
-  Magic violations, so the filler adds no error. Metal2/Metal3 straps in the core power grid are
-  being tried: the PDN connects, and the first routing pass ends clean, but the antenna repair pass
-  stops at 32 violations.
+  The chips use the Magic filler, which adds no error but leaves 5 windows short. Straps in the
+  core power grid (`chip/pdn_cfg.tcl`) add the rest:
+
+  | Straps (Magic filler) | Routing | Density violations |
+  |---|---|---|
+  | Metal2 1.6 um every 37.8 um over the cells, Metal3 | antenna repair stops at 32 | - |
+  | Metal2 1.0 um pairs every 75.6 um over the cells, Metal3 | antenna repair stops at 14-30, shorts to the straps | - |
+  | Metal2 2.0 um pairs in channels without cells, Metal3 | 0 | 3 (Metal2 23.6-23.9 %) |
+  | Metal2 2.8 um pairs in channels without cells, Metal3 | 0 | **0** |
+
+  Metal2 routes vertically, as the straps run: over cells they cover pins, and the diodes that the
+  antenna repair inserts after detailed routing short to them. The channels (`FP_OBSTRUCTIONS`, 8.6
+  um every 75.6 um, clear of the TopMetal1 straps' via stacks) keep cells away and raise the
+  utilization from 71 % to 80 %; the Metal3 straps lie mid-row and connect to TopMetal1 too. The
+  SRAM macro moved to the top left corner of the core: a 25 um strip beside it made pdngen put a
+  strap pair under a TopMetal1 strap, which left 36 rails unconnected.
+  With both, the chip (`RUN_2026-11-03_22-00-09`) closes: setup +3.52 / +14.14 / +16.15 ns, hold
+  +0.10 ns, 21.2 mW, routing DRC 0, density 0, LVS 0, KLayout DRC 0, KLayout antenna 0 (OpenROAD's
+  check leaves one net 14 % over), XOR 0.
+- A hold violation (-0.09 ns, fast corner) from `gpio_PAD[0]` to the GPIO synchronizer: the reset,
+  UART receive and GPIO inputs are asynchronous and synchronized in the SoC, so `chip_top.sdc`
+  makes them false paths.
+- Magic's filler cuts a TopMetal1 fill square at x = 581.995 um, which Magic's own check reads as a
+  5 nm sliver (`TM1Fil.a`, 2 violations); KLayout DRC is clean, and `check_drc.py` reports it as a
+  warning.
 - The chip in SG13CMOS5L (`make PDK=ihp-sg13cmos5l CONFIG=asic_soc_rv32imc`, macro at 400, 400, the
   KLayout filler): setup +4.90 / +14.46 / +16.32 ns, hold +0.01 ns, 21.1 mW, routing DRC 0, one
   antenna violation, and 12 density violations (Metal2 18-22 %, Metal3 23-24.5 %, Metal4 17-24 %,
-  where the vertical power straps are, and global Metal2 34.2 %).
+  where the vertical power straps are, and global Metal2 34.2 %); LVS 0, KLayout DRC 0, XOR 0.
+  Magic reports three more rules inside the SG13CMOS5L pad cells, where KLayout DRC is clean:
+  `Slt.c` (3582, slots in Metal5, a layer the process lacks), `CntB.h1` (156) and `Seal.a` (58);
+  `check_drc.py` reports them as warnings, as the pad ring overlaps.
 
 ## IHP open-source shuttles and packaging
 
@@ -264,10 +292,9 @@ For `asic_soc_rv32imc` (2.0 × 2.0 mm, 20 pads):
 ## Next
 
 1. The chip `asic_soc_rv32imc`:
-   - minimum metal density: Metal2/Metal3 straps in the core PDN (routing with them stops at 32
-     violations in the antenna repair pass); the full Chip flow ending clean (now it stops at the
-     density checker), then the same in SG13CMOS5L, where the straps must avoid the Metal4 ones;
-   - the chip in SG13CMOS5L (`make PDK=ihp-sg13cmos5l CONFIG=asic_soc_rv32imc`);
+   - minimum metal density in SG13CMOS5L: the channels and straps of SG13G2, the macro in the
+     corner and the Magic filler, with the straps clear of the vertical Metal4 ones, and Metal4
+     itself (17-24 %);
    - gate-level simulation of the final netlist with the cocotb test (`make chipsim` runs the RTL);
    - 40 ns for now: at 30 ns a path from the PLIC (`MExtInt` is combinational from the priority
      registers) through the trap logic to the 64-bit counters fails the slow corner by 6.8 ns

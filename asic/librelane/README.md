@@ -37,7 +37,7 @@ Configurations:
   for the other shapes. `make sramsim` checks the adapter, with the macro's behavioral model, against
   Wally's RAM under random stimulus.
 - `asic_soc_*`: chips. `chip/chip_top.sv` puts `wallypipelinedsoc` inside a ring of IHP pads (clock,
-  reset, UART, SPI, 8 GPIOs and 4 power pads), after IHP's
+  reset, UART, SPI, 8 GPIOs and 8 power pads), after IHP's
   [LibreLane template](https://github.com/IHP-GmbH/ihp-sg13-librelane-template); the bondpad comes
   from the template (`chip/ip/`), since the PDKs have none. The BOOTROM holds `chip/boot.S`
   (built into `chip/boot.mem`): it reads a baud divisor from GPIO[7:0], sends `W` on the UART,
@@ -61,15 +61,25 @@ Notes:
   set `ERROR_ON_MAGIC_DRC` to false and `make` runs `check_drc.py`, which waives only those rules
   inside the macros' bounding boxes. In a chip Magic also reports overlaps between the subcells of
   the pad ring (`Can't overlap those layers`, `This layer can't abut or partially overlap between
-  subcells`); KLayout DRC, the PDK's official deck, finds no error there, and `check_drc.py` reports
-  them outside the core area as warnings when KLayout DRC is clean. Any other Magic violation fails.
+  subcells`), and in SG13CMOS5L three rules inside the pad cells (`Slt.c`, `CntB.h1`, `Seal.a`);
+  KLayout DRC, the PDK's official deck, finds no error there, and `check_drc.py` reports them
+  outside the core area as warnings when KLayout DRC is clean. So it does with `TM1Fil.a`, a 5 nm
+  sliver that Magic reads next to a fill square its filler cut at a 5 nm coordinate. Any other
+  Magic violation fails.
 - `sram/pdn_cfg.tcl` is LibreLane's with one more connection, Metal4 (the macro's power pins) to
   the horizontal straps, in SG13G2 only (in SG13CMOS5L the vertical straps are on Metal4).
-- The chip does not yet meet IHP's minimum metal density (`M2Fil.h`, `M3Fil.h`: 25 % of Metal2
-  and Metal3 in every 800 x 800 um window, a precheck rule): routed Metal2 leaves gaps too narrow for
-  fill in the core. The chips use IHP's Magic filler (`KLayout.Filler: Magic.Filler`), which leaves 5
-  windows short (the KLayout filler 15), the worst at 20 %, and adds no DRC error. Planned:
-  Metal2/Metal3 straps in the core power grid.
+- IHP's minimum metal density (`MxFil.h`: 25 % of each metal in every 800 x 800 um window, a
+  precheck rule): routed Metal2 and Metal3 leave gaps too narrow for fill in the core. The chips use
+  IHP's Magic filler (`KLayout.Filler: Magic.Filler`), which fills more than the KLayout one, and
+  `chip/pdn_cfg.tcl` adds Metal2 and Metal3 straps to the core power grid. The Metal2 straps lie in
+  channels without cells (`FP_OBSTRUCTIONS` in `gen_config.py`, which must agree with the straps'
+  offset and pitch): over cells they covered pins, and the antenna repair could not route its
+  diodes next to them. The SG13G2 chip meets the rule; the SG13CMOS5L one not yet (its vertical
+  straps are on Metal4).
+- The chip has two pads of each supply on opposite sides, 24 pads in all; `OpenROAD.PadRing` needs
+  whole microns between the pads, so a side of the 2.0 mm die takes 5 or 7 pads, not 6.
+- `chip/chip_top.sdc` makes the reset, UART receive and GPIO inputs false paths: they are
+  asynchronous, and the SoC synchronizes them.
 - `chip/chip_top.sdc` defines the clock on the clock pad's output, as IHP's template does, and sets
   the clock activity of that pin for power: OpenSTA gives a clock on an internal pin none, and the
   chip's power read 1.2 mW instead of 21 mW.

@@ -105,10 +105,12 @@ if sram:
             "vh": [str(here / f"sram/{macro}_bb.v")],
             "lib": {"*typ*": [f"{timing}_typ_1p20V_25C.lib"], "*fast*": [f"{timing}_fast_1p32V_m55C.lib"],
                     "*slow*": [f"{timing}_slow_1p08V_125C.lib"]},
-            "instances": {inst: {"location": [400, 400] if chip else [100, 100], "orientation": "N"}},
+            # In a chip, the top left corner of the core (its pins, on the bottom edge, face the core):
+            # its halo reaches past the core edge and leaves no narrow strip (see chip/pdn_cfg.tcl)
+            "instances": {inst: {"location": [370, 1294] if chip else [100, 100], "orientation": "N"}},
         }},
         "PDN_MACRO_CONNECTIONS": [f"{inst} {vdd} {gnd} VDD! VSS!", f"{inst} {vdd} {gnd} VDDARRAY! VSS!"],
-        "PDN_CFG": str(here / "sram/pdn_cfg.tcl"),
+        "PDN_CFG": str(here / ("chip/pdn_cfg.tcl" if chip else "sram/pdn_cfg.tcl")),
         # Subcells of the macros that Magic must flatten to read their GDS, from the PDK's
         # libs.tech/magic/read_sram_gds.tcl (IHP-Open-PDK PR #863)
         "MAGIC_GDS_FLATGLOB": ["lvsres_*", "*_CELL_SUB", "VIA_M1_*", "VIA_M2_*", "RSC_*", "*_CELL_CORNER"],
@@ -130,9 +132,11 @@ if chip:
         "SIGNOFF_SDC_FILE": str(here / "chip/chip_top.sdc"),
         "VDD_NETS": ["VDD"],
         "GND_NETS": ["VSS"],
-        "PAD_SOUTH": ["clk_pad", "rst_n_pad", "vdd_pad", "vss_pad", "uart_rx_pad"],
-        "PAD_EAST": ["uart_tx_pad", "spi_sck_pad", "spi_mosi_pad", "spi_miso_pad", "spi_cs_pad"],
-        "PAD_NORTH": gpio[:4] + ["iovdd_pad"],
+        # Each power pad has its twin on the opposite side.  OpenROAD.PadRing needs whole microns
+        # between the pads (80 um wide, 1360 um per side): 5 or 7 pads on a side, not 6.
+        "PAD_SOUTH": ["clk_pad", "rst_n_pad", "vdd_pad", "vss_pad", "uart_rx_pad", "uart_tx_pad", "iovdd2_pad"],
+        "PAD_EAST": ["spi_sck_pad", "spi_mosi_pad", "iovss2_pad", "spi_miso_pad", "spi_cs_pad"],
+        "PAD_NORTH": gpio[:2] + ["vss2_pad", "vdd2_pad"] + gpio[2:4] + ["iovdd_pad"],
         "PAD_WEST": gpio[4:] + ["iovss_pad"],
         "FP_SIZING": "absolute",
         # The template's 2.2 mm die left the core half empty (49 % standard cell utilization), and
@@ -152,6 +156,17 @@ if chip:
         "EXTRA_GDS": [str(here / f"chip/ip/{lib}_bondpad_70x70_novias/gds/bondpad_70x70_novias.gds")],
         "EXTRA_LEFS": [str(here / f"chip/ip/{lib}_bondpad_70x70_novias/lef/bondpad_70x70_novias.lef")],
         "IGNORE_DISCONNECTED_MODULES": ["bondpad_70x70_novias"],
+        # Repair antennas after global routing with a 30 % margin (10 % by default), so that few are
+        # left for the repair after detailed routing.  (RUN_HEURISTIC_DIODE_INSERTION puts a diode on
+        # every sink of a net over 90 um: 40,293 here, and detailed placement failed.)
+        "GRT_ANTENNA_REPAIR_MARGIN": 30,
+        # Channels without cells under the Metal2 straps of chip/pdn_cfg.tcl (width 2.8, spacing 2,
+        # first pair centred 51 and 55.8 um from the row start at 365.28, pitch 75.6), 0.5 um wider
+        # than a pair on each side: with cells under them, the straps covered pins and the antenna
+        # diodes inserted after detailed routing shorted to them.  Above the SRAM macro's halo
+        # they stop at it.
+        "FP_OBSTRUCTIONS": [[x, 365, x + 8.6, 1284 if x < 786.64 + 10 else 1635]
+                            for x in (round(365.28 + 49.1 + 75.6 * k, 2) for k in range(17))],
     }
     if lib == "sg13cmos5l":
         config["VERILOG_DEFINES"] = ["SG13CMOS5L"]   # chip_top.sv instantiates the pads of the process

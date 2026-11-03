@@ -11,10 +11,13 @@ ERROR_ON_MAGIC_DRC to false, and this script fails instead on any Magic violatio
 one of those rules inside the bounding box of a macro instance.  KLayout DRC stays fatal.
 
 In a chip, Magic also reports overlaps between the subcells of IHP's pad ring (the pad, corner
-and filler cells abut with shapes that Magic's hierarchical check does not accept).  The
-official checker of the PDK, KLayout's DRC deck, finds no error there, and IHP's LibreLane
-template removes Checker.IllegalOverlap for them; this script turns those rules outside the
-core area into warnings when KLayout DRC is clean.
+and filler cells abut with shapes that Magic's hierarchical check does not accept), and in
+SG13CMOS5L three rules inside the pad cells (Slt.c on Metal5, a layer that process does not
+have, CntB.h1 and Seal.a).  The official checker of the PDK, KLayout's DRC deck, finds no error
+there, and IHP's LibreLane template removes Checker.IllegalOverlap for them; this script turns
+those rules outside the core area into warnings when KLayout DRC is clean.  It does the same
+anywhere with TM1Fil.a, which applies to fill only: Magic's filler cuts fill squares at 5 nm
+coordinates (581.995 um), which Magic's own check reads as a 5 nm wide sliver next to the square.
 """
 
 import argparse
@@ -26,8 +29,12 @@ from pathlib import Path
 
 # Magic rules violated inside the IHP SRAM macros; remove when IHP fixes the macros
 MACRO_RULES = {"Cnt.c", "Cnt.c SRAM exception"}
-# Magic rules violated where the cells of the pad ring overlap; these have no rule name
-PAD_RING_RULES = {"Can't overlap those layers", "This layer can't abut or partially overlap between subcells"}
+# Magic rules violated where the cells of the pad ring overlap (these have no rule name), and
+# inside the SG13CMOS5L pad cells
+PAD_RING_RULES = {"Can't overlap those layers", "This layer can't abut or partially overlap between subcells",
+                  "Slt.c", "CntB.h1", "Seal.a"}
+# Magic rules violated by the fill of Magic's filler
+FILL_RULES = {"TM1Fil.a"}
 
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("run", type=Path, nargs="?", help="Run directory (default: the newest in runs/)")
@@ -57,7 +64,7 @@ core = resolved["CORE_AREA"] if any(resolved.get(f"PAD_{s}") for s in ("SOUTH", 
 klayout_errors = json.loads((run / "final/metrics.json").read_text())["klayout__drc_error__count"]
 
 report = next(run.glob("*-magic-drc/reports/drc.magic.rpt"))
-waived, padring, other, rule = Counter(), Counter(), Counter(), None
+waived, padring, fill, other, rule = Counter(), Counter(), Counter(), Counter(), None
 for line in report.read_text().splitlines()[1:]:
     coords = re.findall(r"(-?[\d.]+)um", line)
     if len(coords) == 4:
@@ -68,6 +75,8 @@ for line in report.read_text().splitlines()[1:]:
             waived[rule] += 1
         elif in_ring and rule in PAD_RING_RULES and klayout_errors == 0:
             padring[rule] += 1
+        elif rule in FILL_RULES and klayout_errors == 0:
+            fill[rule] += 1
         else:
             other[rule] += 1
     elif line.strip() and not line.startswith(("---", "[INFO]")):
@@ -80,6 +89,8 @@ for r, n in sorted(waived.items()):
     print(f"  {r}: {n}")
 for r, n in sorted(padring.items()):
     print(f"  WARNING {r}: {n} in the pad ring, where KLayout DRC (the PDK's official deck) finds 0 errors")
+for r, n in sorted(fill.items()):
+    print(f"  WARNING {r}: {n} on fill, where KLayout DRC (the PDK's official deck) finds 0 errors")
 for r, n in sorted(other.items()):
     print(f"  NOT WAIVED {r}: {n}")
 print("DRC FAILED" if other else "DRC OK")

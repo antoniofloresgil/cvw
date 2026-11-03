@@ -2,7 +2,8 @@
 // Chip top of asic_soc_rv32imc: Wally's SoC inside an IHP pad ring, after the layout of IHP's
 // LibreLane template (github.com/IHP-GmbH/ihp-sg13-librelane-template, src/chip_top.sv).  The pads
 // are those of SG13G2, or of SG13CMOS5L with SG13CMOS5L defined.
-// 16 signal pads (clock, reset, UART, SPI, 8 GPIOs) and 4 power pads.  The bootloader in the
+// 16 signal pads (clock, reset, UART, SPI, 8 GPIOs) and 8 power pads, two of each on opposite
+// sides (gen_config.py places them), so that no single bond wire powers the core or the IOs.  The bootloader in the
 // BOOTROM (chip/boot.S) loads programs over the UART; GPIO[7:0] at reset set its baud divisor.
 
 import cvw::*;
@@ -41,6 +42,10 @@ module chip_top (
   (* keep *) `PAD(IOPadIOVss) iovss_pad(`PAD_POWER_ONLY);
   (* keep *) `PAD(IOPadVdd)   vdd_pad(`PAD_POWER_ONLY);
   (* keep *) `PAD(IOPadVss)   vss_pad(`PAD_POWER_ONLY);
+  (* keep *) `PAD(IOPadIOVdd) iovdd2_pad(`PAD_POWER_ONLY);
+  (* keep *) `PAD(IOPadIOVss) iovss2_pad(`PAD_POWER_ONLY);
+  (* keep *) `PAD(IOPadVdd)   vdd2_pad(`PAD_POWER_ONLY);
+  (* keep *) `PAD(IOPadVss)   vss2_pad(`PAD_POWER_ONLY);
 
   `PAD(IOPadIn)      clk_pad(`PAD_POWER .p2c(clk), .pad(clk_PAD));
   `PAD(IOPadIn)      rst_n_pad(`PAD_POWER .p2c(rst_n), .pad(rst_n_PAD));

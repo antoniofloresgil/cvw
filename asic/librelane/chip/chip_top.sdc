@@ -79,6 +79,11 @@ set_input_delay -min 0 -clock $clocks $clk_core_inout_ports
 set_input_delay -max $input_delay_value -clock $clocks $clk_core_inout_ports
 set_output_delay $output_delay_value -clock $clocks $clk_core_inout_ports
 
+# The reset, UART receive and GPIO inputs are asynchronous to the clock, and the SoC synchronizes
+# them (resetsync, SINd/SINsync, gpio sync1-3): their hold checks against the pad clock are
+# meaningless (one was 0.09 ns short in the fast corner), and so are their setup checks.
+set_false_path -from [get_ports {rst_n_PAD uart_rx_PAD gpio_PAD[*]}]
+
 set cap_load [expr $::env(OUTPUT_CAP_LOAD) / 1000.0]
 puts "\[INFO] Setting load to: $cap_load"
 set_load $cap_load [all_outputs]
