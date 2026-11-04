@@ -270,7 +270,6 @@ module fpgaOpenSource import cvw::*; (
     .HTRANS,
     .HMASTLOCK,
     .HREADY,
-    .TIMECLK(wally_clk),
     .GPIOIN,
     .GPIOOUT,
     .GPIOEN,

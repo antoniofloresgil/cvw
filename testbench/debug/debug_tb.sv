@@ -91,7 +91,7 @@ module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHAR
   wallypipelinedsoc #(.P(P), .NCORES(NHARTS)) dut(.clk, .reset_ext, .reset, .ExternalStall(1'b0),
     .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT,
     .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
-    .HTRANS, .HMASTLOCK, .HREADY, .TIMECLK(1'b0), .GPIOIN, .GPIOOUT, .GPIOEN,
+    .HTRANS, .HMASTLOCK, .HREADY, .GPIOIN, .GPIOOUT, .GPIOEN,
     .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO,
     .TCK, .TMS, .TDI, .TDO);
 
