@@ -139,31 +139,47 @@ sysbus`, then `mww`/`mdw`); a program can do them itself, as `etracetest.S` does
 
 ## Verification
 
-The specification's repository has a **reference flow in Python** (BSD-2-Clause, standard
-library only): `encoder_model.py` is the flowchart of the algorithm as executable code,
-`decoder_model.py` reconstructs the program counters from the packets, and `compare_te_inst.py`
-compares two packet streams. It is **not** copied into this repository: a clone is used from the
-path in an environment variable, and the checks are skipped when it is missing.
+Two checks, both in `testbench/debug/etrace/etracecheck.py`:
 
-1. The testbench writes the ITI lines that the encoder takes in the reference's CSV format
-   (`itype_0, cause, tval, priv, iaddr_0, context, ctype, iretire_0, ilastsize_0`).
-2. The reference `encoder_model.py` turns them into packets; the packets that the program reads
-   back from the RAM sink (the testbench records the `trRamData` reads with `+EtracePackets=`)
-   must be **equal, byte for byte, packet by packet**.
-3. The reference `decoder_model.py` decodes the RTL packets, with the program's disassembly; the
-   program counters it reconstructs must equal the ones the core retired.
+- **Our decoder**, `testbench/debug/etrace/etracedecode.py` (Python, standard library only),
+  decodes the packets that the program reads back from the RAM sink (the testbench records the
+  `trRamData` reads with `+EtracePackets=`) and reconstructs the program counters, which must
+  equal the ones the hart retired. It decodes the configuration of Wally's encoder only (formats
+  1, 2 and 3), reads the program from the ELF's executable sections itself, and follows the
+  algorithm of the specification as the reference `decoder_model.py` writes it, step for step.
+  It always runs, so the regression needs nothing outside the repository.
+- **The reference flow** of the specification's repository (BSD-2-Clause, standard library only):
+  `encoder_model.py` is the flowchart of the encoder as executable code, `decoder_model.py`
+  reconstructs the program counters from the packets. It is **not** copied into this repository:
+  it runs when `ETRACE_SPEC` names a clone, and is skipped otherwise.
+  1. The testbench writes the ITI lines that the encoder takes in the reference's CSV format
+     (`itype_0, cause, tval, priv, iaddr_0, context, ctype, iretire_0, ilastsize_0`).
+  2. The reference `encoder_model.py` turns them into packets; Wally's packets must be **equal,
+     byte for byte, packet by packet**.
+  3. The reference `decoder_model.py` decodes them, with the program's disassembly; the program
+     counters it reconstructs must equal the ones the core retired.
 
-Without the clone the check is skipped; a decoder of our own in Python, for the regression, is to
-do.
+Our decoder was checked against the reference: both reconstruct the same program counters from
+every trace of `make check` and `make check-harts` (32 and 64 bits, one and two harts,
+`RESYNC_MAX` 0, 1 and 3). Flipping one random bit of a trace makes it fail in about 9 cases out of
+10; the rest fall in fields that do not decide the path (a trap's `tval` and cause, the privilege,
+the support packet's options, the unused bits of a branch map). Removing one packet makes it fail
+for 111 of the 114 packets of a trace; the other three are the support packets at either end and
+a resynchronization packet, which repeat what the decoder already knows.
 
 ## Running the check
 
 ```bash
+make -C testbench/debug/etrace check                                # our decoder only
 git clone https://github.com/riscv-non-isa/riscv-trace-spec.git ~/riscv-trace-spec   # once, outside Wally
-make -C testbench/debug/etrace check ETRACE_SPEC=~/riscv-trace-spec
+make -C testbench/debug/etrace check ETRACE_SPEC=~/riscv-trace-spec   # and the reference flow
 make -C testbench/debug/etrace check ETRACE_SPEC=~/riscv-trace-spec RESYNC_MAX=1   # another period
 make -C testbench/debug/etrace check-harts ETRACE_SPEC=~/riscv-trace-spec           # two harts
+python3 testbench/debug/etrace/etracedecode.py --packets <file> --elf <elf> --xlen 64 --print   # any trace
 ```
+
+`regression-wally --nightly` runs `make check` and `make check-harts` (and `debug_tb`), with the
+reference flow too when `ETRACE_SPEC` is set.
 
 `make check` builds `etracetest.S` (`testbench/debug/etrace`) for RV32 and RV64, runs it on
 `trace_rv32gc` (the trace without the Debug Module) and `debug_rv64gc` with `+EtraceCsv=` and
@@ -205,9 +221,6 @@ each). `debug_tb.sv` also reads `trTeImpl` and `trRamImpl` of every hart through
 
 ## To do
 
-- **A decoder of our own, in Python without dependencies**, so that the regression checks the
-  trace without a clone of riscv-trace-spec (today `make check` and `make check-harts` need
-  `ETRACE_SPEC`, and nothing runs them automatically).
 - **Restart after lost trace.** A packet that finds the sink's queue full is dropped and sets
   `trTeInstStallOrOverflow`, but the encoder does not then send a support packet with
   `qual_status` 2 (trace lost) and a new sync, as the specification recommends; a decoder cannot

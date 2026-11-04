@@ -392,9 +392,9 @@ The DTM, the DMI and System Bus Access stay as they are.
   syntax 0.12 rejects) these tests could run; `debug_tb` covers the trigger types meanwhile.
 - **`hasel` and the hart array mask** (`hawindowsel`, `hawindow`): halting or resuming several
   harts with one write. Optional in the specification; OpenOCD works hart by hart without it.
-- **The debug tests in the regression.** `regression-wally` does not run `testbench/debug`
-  (`debug_tb`, `make openocd`, the riscv-tests suite) nor the trace checks
-  (`testbench/debug/etrace`); they are run by hand before each change to `src/debug`. They need
-  OpenOCD and, for the trace, a clone of riscv-trace-spec (`docs/trace.md`, "To do").
+- **OpenOCD in the regression.** `regression-wally --nightly` runs `debug_tb` (one and two
+  harts) and the trace checks (`docs/trace.md`), which need nothing outside the repository; `make
+  openocd` and the riscv-tests suite need OpenOCD and are run by hand before each change to
+  `src/debug`.
 - **The lint hook of `bin/check-extio`** in `lint-wally` belongs to this fork; keep it out of a
   pull request to upstream.

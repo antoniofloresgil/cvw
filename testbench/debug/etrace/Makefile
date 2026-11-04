@@ -1,12 +1,12 @@
-# Instruction trace (docs/trace.md): the test program for RV32 and RV64, and its check against
-# the E-Trace reference flow.
+# Instruction trace (docs/trace.md): the test program for RV32 and RV64, and its check.
 #   make                # build etracetest32_r0.elf and etracetest64_r0.elf
-#   make check          # run them on trace_rv32gc and debug_rv64gc, then check the trace and the
-#                       # packets that the program reads back from the RAM sink with
-#                       # etracecheck.py (needs ETRACE_SPEC: a clone of riscv-trace-spec)
+#   make check          # run them on trace_rv32gc and debug_rv64gc, then check with etracecheck.py
+#                       # the packets that the program reads back from the RAM sink: decoded by
+#                       # etracedecode.py, they give the program counters that the hart retired
+#   make check ETRACE_SPEC=<riscv-trace-spec clone>   # also against the reference flow, byte for byte
 #   make check RESYNC_MAX=2   # another resynchronization period
 #   make check-harts    # the same on SoCs with NHARTS (2) harts that trace at once, debug_rv32imc
-#                       # and debug_rv64gc_nocache (etrace_tb.sv): each hart against the reference
+#                       # and debug_rv64gc_nocache (etrace_tb.sv): each hart is checked
 # Needs $WALLY (source setup.sh).
 
 LINK  = $(WALLY)/examples/link/link.ld

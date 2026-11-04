@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-"""Check Wally's instruction trace against the E-Trace reference flow (docs/trace.md).
+"""Check Wally's instruction trace (docs/trace.md).
 
-The reference flow lives in the specification's repository, which is not part of Wally:
-    git clone https://github.com/riscv-non-isa/riscv-trace-spec.git
-Point ETRACE_SPEC (or --spec) at the clone.  Its models are Python with the standard library
-only, and its decoder reads the program with riscv64-unknown-elf-objdump from $RISCV.
+Given the CSV of the instruction trace interface that the testbench writes with
++EtraceCsv=<file> (testbench/common/etracedump.sv) and, with --rtl-packets, the packets of Wally's
+encoder (src/debug/etraceencoder.sv) as the program read them back from the RAM sink
+(src/debug/etracesink.sv; +EtracePackets=: hex bytes, in order), this script
+  1. decodes Wally's packets with etracedecode.py (in this directory, standard library only) and
+     checks that the program counters it reconstructs are the ones that the hart retired;
+and, with the E-Trace reference flow of the specification's repository (ETRACE_SPEC or --spec, a
+clone of https://github.com/riscv-non-isa/riscv-trace-spec.git, not part of Wally; Python with the
+standard library only, its decoder reads the program with riscv64-unknown-elf-objdump from $RISCV):
+  2. encodes the CSV with the reference encoder (encoder_model.py), which validates the interface,
+  3. decodes the reference packets with the reference decoder (decoder_model.py), and checks the
+     program counters it reconstructs in the same way,
+  4. checks that Wally's packets are those of the reference, byte for byte.
+Without the reference flow it does step 1 only, which needs --rtl-packets.
 
-Given the CSV of the instruction trace interface that testbench.sv writes with
-+EtraceCsv=<file> (testbench/common/etracedump.sv), this script
-  1. encodes it with the reference encoder (encoder_model.py), which validates the interface,
-  2. decodes the packets with the reference decoder (decoder_model.py), and checks that the
-     program counters it reconstructs are the ones that the hart retired, in order.
-With --rtl-packets it also checks that the packets of Wally's encoder (src/debug/etraceencoder.sv),
-as the program read them back from the RAM sink (src/debug/etracesink.sv; the testbench writes
-them with +EtracePackets=: hex bytes, in order), are those of the reference, byte for byte.
-
-    etracecheck.py --csv trace.csv --elf program.elf --xlen 64
+    etracecheck.py --csv trace.csv --elf program.elf --xlen 64 --rtl-packets trace.packets
 """
 
 import argparse
@@ -27,6 +28,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from etracedecode import DecodeError, compare, decode, read_packets, read_program, split_packets
 
 # The configuration of Wally's encoder (docs/trace.md)
 STATIC_CONFIG = """[Required Attributes]
@@ -87,20 +90,6 @@ def run(cmd, cwd, env, what):
     return result.stdout
 
 
-def split_packets(raw):
-    """Split a te_inst byte stream into packets: a header byte, whose low 5 bits are the payload length.
-    Bytes 0 between packets are idle bytes (the RAM sink fills its last word with them)."""
-    packets, i = [], 0
-    while i < len(raw):
-        if raw[i] == 0:
-            i += 1
-            continue
-        end = i + 1 + (raw[i] & 0x1F)
-        packets.append(raw[i:end])
-        i = end
-    return packets
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--csv", required=True, help="instruction trace interface CSV (+EtraceCsv=)")
@@ -112,8 +101,27 @@ def main():
     parser.add_argument("--keep", help="keep the work files in this directory")
     args = parser.parse_args()
 
+    # The program counters the hart retired, in order: the expected decoder output
+    with open(args.csv, newline="") as fd:
+        retired = [row["iaddr_0"] for row in csv.DictReader(fd) if row["iretire_0"] != "0"]
+
+    # 1. Wally's packets, with the decoder of this directory
+    if args.rtl_packets:
+        try:
+            decoded = decode(read_packets(args.rtl_packets), read_program(args.elf, args.xlen), args.xlen)
+        except DecodeError as e:
+            sys.exit(f"FAIL: decoding Wally's packets: {e}")
+        error = compare(decoded, [int(a, 16) for a in retired])
+        if error:
+            sys.exit(f"FAIL: decoding Wally's packets: {error}")
+        print(f"decoder: the {len(decoded)} program counters of Wally's packets match")
+
     if not args.spec:
-        sys.exit("SKIP: set ETRACE_SPEC (or --spec) to a clone of riscv-trace-spec")
+        if not args.rtl_packets:
+            sys.exit("FAIL: nothing to check: give --rtl-packets, or ETRACE_SPEC for the reference flow")
+        print("reference flow skipped (set ETRACE_SPEC to a clone of riscv-trace-spec to run it)")
+        print("PASS")
+        return
     scripts = Path(args.spec) / "referenceFlow" / "scripts"
     if not (scripts / "encoder_model.py").exists():
         sys.exit(f"FAIL: no referenceFlow/scripts/encoder_model.py under {args.spec}")
@@ -136,12 +144,9 @@ def main():
         rv32="true" if args.xlen == 32 else "false"))
     shutil.copyfile(args.csv, work / f"{stem}_input")
 
-    # The program counters the hart retired, in order: the expected decoder output
-    with open(args.csv, newline="") as fd:
-        retired = [row["iaddr_0"] for row in csv.DictReader(fd) if row["iretire_0"] != "0"]
     (work / "expected").write_text("".join(f"{int(a, 16):x}\n" for a in retired))
 
-    # 1. The reference encoder
+    # 2. The reference encoder
     run([sys.executable, scripts / "encoder_model.py", "-c", "wally.scf", "-u", "wally.ucf"],
         work, env, "the reference encoder rejected the trace")
     # The reference names its outputs after its input, <file-stem>_input
@@ -149,7 +154,7 @@ def main():
     packets = sum(1 for _ in open(work / f"{out}.te_inst")) - 1
     print(f"reference encoder: {len(retired)} instructions, {packets} packets")
 
-    # 2. The reference decoder, on the reference packets
+    # 3. The reference decoder, on the reference packets
     run([sys.executable, scripts / "decoder_model.py", "-c", "wally.scf", "-u", "wally.ucf",
          "-i", f"{out}.te_inst_raw", "--expected", "expected"],
         work, env, "the reference decoder did not reconstruct the retired program counters")
@@ -158,9 +163,9 @@ def main():
         sys.exit(f"FAIL: the decoder reconstructed {decoded} instructions, the hart retired {len(retired)}")
     print(f"reference decoder: the {decoded} program counters match")
 
-    # 3. Wally's encoder, packet by packet
+    # 4. Wally's encoder, packet by packet
     if args.rtl_packets:
-        ours = split_packets(bytes.fromhex("".join(Path(args.rtl_packets).read_text().split())))
+        ours = split_packets(read_packets(args.rtl_packets))
         reference = split_packets((work / f"{out}.te_inst_raw").read_bytes())
         for n, (a, b) in enumerate(zip(ours, reference)):
             if a != b:
