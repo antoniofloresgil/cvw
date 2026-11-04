@@ -5,7 +5,7 @@ Status (2026-11-04): **a first chip.** With LibreLane 3.1.0.dev4 and a 40 ns clo
 pad ring, booting over the UART) run from RTL to a GDS with LVS, KLayout DRC and antenna clean and
 positive slack in all corners; the chip in SG13G2 also meets IHP's minimum metal density.
 `asic_rv32imc` also closes in SG13CMOS5L. Open: the chip's density in SG13CMOS5L, debug access,
-and the 64-bit core.  The sections up to "SRAM
+and the 64-bit core; the direction toward a microcontroller is [ADR 0022](../decisions/0022-asic-microcontroller.md).  The sections up to "SRAM
 macro" are the first runs, with LibreLane 3.0.17 at 30 ns; "LibreLane 3.1, the chip and
 SG13CMOS5L" has the current ones.
 
