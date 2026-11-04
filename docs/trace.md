@@ -202,3 +202,20 @@ each). `debug_tb.sv` also reads `trTeImpl` and `trRamImpl` of every hart through
 2. The encoder, compared with the reference packet by packet (done).
 3. The sink and its control registers, read through System Bus Access or by the harts (done).
 4. Several harts traced at once, each against the reference (done).
+
+## To do
+
+- **A decoder of our own, in Python without dependencies**, so that the regression checks the
+  trace without a clone of riscv-trace-spec (today `make check` and `make check-harts` need
+  `ETRACE_SPEC`, and nothing runs them automatically).
+- **Restart after lost trace.** A packet that finds the sink's queue full is dropped and sets
+  `trTeInstStallOrOverflow`, but the encoder does not then send a support packet with
+  `qual_status` 2 (trace lost) and a new sync, as the specification recommends; a decoder cannot
+  tell where the trace was broken. The test programs fail if it happens.
+- **Optional E-Trace features** left out to keep the encoder small (table at the top): format 0
+  (branch counts, jump target cache), the resynchronization timer (`trTeInstSyncMode` 2, cycles),
+  implicit returns and the call stack, time, context and data trace, and other trace sinks
+  (SMEM, SBA streaming, an external trace port). `trTeInstMode` is fixed at 3 (baseline).
+- **The ASIC configuration** (`open-asic-flow`): the trace adds about 70,000 µm² for one RV32 hart
+  in IHP SG13G2 (RAM aside), half of its flops in the 4-packet queue of the sink; `QUEUE` 2 and a
+  smaller `TRACE_RAM_WORDS` are the knobs to measure.
