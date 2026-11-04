@@ -131,6 +131,7 @@ typedef struct packed {
   logic         EXT_IO_SUPPORTED;   // I/O window inside EXT_MEM: not cacheable, not idempotent
   logic [63:0]  EXT_IO_BASE;
   logic [63:0]  EXT_IO_RANGE;
+  logic         DEBUG_SUPPORTED;    // JTAG DTM and Debug Module with System Bus Access (src/debug)
   logic         CLINT_SUPPORTED;
   logic [63:0]  CLINT_BASE;
   logic [63:0]  CLINT_RANGE;

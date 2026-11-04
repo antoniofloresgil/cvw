@@ -150,6 +150,7 @@ There is no central test list; tests are ELF files passed to `wsim` by path or d
 - `addins/riscv-arch-test/work/cvw-<config>/elfs/` — RISC-V Arch Tests (ACT4), built per cvw configuration by `make act` (or by `regression-wally`); one leaf directory per extension/feature
 - `tests/periph/rv32/`, `tests/periph/rv64/` — Self-checking peripheral tests: one source per test in `tests/periph/src/`, built for both widths by `make periph`; each embeds its expected signature and compares every entry as it is written
 - `tests/coverage64gc/`, `tests/coverage32gc/`, `tests/coverage32imc/` — Coverage-targeted tests for each unit of the rv64gc, rv32gc and rv32imc configurations; they pass if they run to completion
+- `testbench/debug/` — the JTAG debug port (`src/debug`, `DEBUG_SUPPORTED`; RISC-V Debug 1.0 DTM and Debug Module with System Bus Access, `hartreset`, `ndmreset`, no halting yet; `docs/debug.md`): `make` runs `debug_tb.sv` on `debug_rv32imc` and `debug_rv64gc`, `make openocd` runs OpenOCD against the simulation through remote_bitbang. The core is untouched; `wallypipelinedsoc` instantiates the DTM, the DM and `ahbdebugarb` (the DM's bus master, merged with the core's without adding latency)
 
 Every test reports its result by storing to `tohost`: 1 = pass, `(exit code << 1) | 1` = fail. A test that halts without storing to `tohost` is reported as a failure.
 - `buildroot` — Linux boot from prebuilt memory images (`wsim buildroot buildroot`)

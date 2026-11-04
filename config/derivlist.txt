@@ -1807,3 +1807,17 @@ deriv multicore_pmu multicore_coherent
 SSCOFPMF_SUPPORTED 1
 SMCNTRPMF_SUPPORTED 1
 SMCDELEG_SUPPORTED 1
+
+# JTAG debug (src/debug): DTM and Debug Module with System Bus Access, tested by
+# testbench/debug/ (a JTAG driver in the testbench) and by OpenOCD through remote_bitbang
+# debug_rv32imc fetches and loads over the bus, like the chip, so that System Bus Access
+# can load programs into its RAM
+deriv debug_rv32imc rv32imc
+DEBUG_SUPPORTED      1
+IROM_SUPPORTED       0
+DTIM_SUPPORTED       0
+UNCORE_RAM_SUPPORTED 1
+UNCORE_RAM_RANGE     64'h0000FFFF
+
+deriv debug_rv64gc rv64gc
+DEBUG_SUPPORTED    1

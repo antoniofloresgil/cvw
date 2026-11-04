@@ -14,7 +14,7 @@ module pmu_tb import cvw::*; (
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),
         .HBURST(), .HPROT(), .HTRANS(), .HMASTLOCK(), .HREADY(),
         .TIMECLK(1'b0), .GPIOIN('0), .GPIOOUT(), .GPIOEN(), .UARTSin(1'b1), .UARTSout(),
-        .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
+        .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO(), .TDO());
     assign ConsoleValid = dut.uncoregen.uncore.PSEL[3] && dut.uncoregen.uncore.PWRITE &&
         dut.uncoregen.uncore.PENABLE && dut.uncoregen.uncore.PREADY[3] &&
         dut.uncoregen.uncore.PADDR[2:0] == 0 && !dut.uncoregen.uncore.uartgen.uart.uartPC.DLAB;
