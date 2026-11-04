@@ -1,7 +1,8 @@
 # Instruction trace (E-Trace)
 
 Status: **the instruction trace interface, the encoder, the RAM sink and their control registers
-are done and verified** (steps 1 to 3 below); multi-hart verification is to do. This page records the decisions, so that the
+are done and verified, on one hart and on several harts tracing at once** (steps 1 to 4 below).
+This page records the decisions, so that the
 implementation and its verification follow one plan. It is phase 5 of the debug work
 (`docs/debug.md`).
 
@@ -161,6 +162,7 @@ do.
 git clone https://github.com/riscv-non-isa/riscv-trace-spec.git ~/riscv-trace-spec   # once, outside Wally
 make -C testbench/debug/etrace check ETRACE_SPEC=~/riscv-trace-spec
 make -C testbench/debug/etrace check ETRACE_SPEC=~/riscv-trace-spec RESYNC_MAX=1   # another period
+make -C testbench/debug/etrace check-harts ETRACE_SPEC=~/riscv-trace-spec           # two harts
 ```
 
 `make check` builds `etracetest.S` (`testbench/debug/etrace`) for RV32 and RV64, runs it on
@@ -172,18 +174,31 @@ encoder: branch maps of 1 to 31 branches, full maps sent without
 address, `updiscon`, traps with `thaddr` 0 and 1, interrupts, privilege changes and periodic
 resynchronization.
 
-Result of step 3, with `RESYNC_MAX` 0, 1 and 3: the reference decoder reconstructs every retired
-program counter (891 in 32 bits, 895 in 64), and the packets read back from the RAM sink are equal
-to the reference's, byte for byte (with `RESYNC_MAX` 0: 123 packets, 465 bytes in 32 bits and 484
+Result, with `RESYNC_MAX` 0, 1 and 3: the reference decoder reconstructs every retired
+program counter (888 in 32 bits, 904 in 64), and the packets read back from the RAM sink are equal
+to the reference's, byte for byte (with `RESYNC_MAX` 0: 123 packets, 463 bytes in 32 bits and 485
 in 64, idle bytes included). `testbench/debug/debug_tb.sv` checks the System Bus Access path:
 each hart's `trTeImpl`, `trRamImpl`, reset values and `trRamLimitLow`, then it traces hart 0
 while the program runs, from enabling to reading back, as an external debugger does.
 The program has no data in its code section, which the reference decoder cannot parse; that is
 also why the ACT programs (which have some) are not used here.
 
+`make check-harts` (`NHARTS`, 2 by default) does the same on SoCs with several harts,
+`debug_rv32imc` and `debug_rv64gc_nocache` (several harts need a configuration without caches).
+`testbench.sv` runs one hart, so `testbench/debug/etrace/etrace_tb.sv` instantiates the SoC with
+`NCORES` harts, loads the program into RAM and waits for every hart's result. Every hart runs
+`etracetest.S` at once, each with its own encoder and sink (`TRACE_BASE + hartid*0x2000`),
+`mtimecmp` and interrupt flag; hart h goes h more times round the first loop, so that the harts'
+traces differ and a trace routed to the wrong sink fails the check. `etracedump.sv` writes the
+files of hart h with the suffix `.h<h>`, and `etracecheck.py` checks each hart.
+
+Result of step 4, two harts: in 32 bits 877 and 879 program counters, in 64 bits 875 and 877
+(the extra loop of hart 1), each hart's packets equal to the reference byte for byte (123 packets
+each). `debug_tb.sv` also reads `trTeImpl` and `trRamImpl` of every hart through System Bus Access.
+
 ## Order of work
 
 1. The ingress and the CSV dump, checked with the reference encoder and decoder (done).
 2. The encoder, compared with the reference packet by packet (done).
 3. The sink and its control registers, read through System Bus Access or by the harts (done).
-4. Several harts traced at once (the blocks exist per hart; the trace of each is to verify).
+4. Several harts traced at once, each against the reference (done).

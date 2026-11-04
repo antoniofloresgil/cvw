@@ -11,6 +11,8 @@
 //          +EtracePackets=<file>: the words that the program reads from the RAM sink's trRamData
 //                                 (src/debug/etracesink.sv), one per line in hex bytes, first
 //                                 byte first: the packets of the encoder as the sink stored them
+//          With HART >= 0 (a SoC with several harts, testbench/debug/etrace/etrace_tb.sv), the
+//          names of the files end in .h<HART>.
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
@@ -18,7 +20,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module etracedump import cvw::*; #(parameter cvw_t P) (
+module etracedump import cvw::*; #(parameter cvw_t P, parameter int HART = -1) (
   input logic                  clk, reset,
   input logic [2*P.XLEN+13:0]  ITrace,
   input logic                  LineTaken,
@@ -33,16 +35,19 @@ module etracedump import cvw::*; #(parameter cvw_t P) (
   logic [P.XLEN-1:0] IAddr, Tval;
   assign {Valid, Halted, IType, IRetire, ILastSize, Priv, Cause, IAddr, Tval} = ITrace;
 
-  string file;
+  string file, suffix;
   int    fd, pfd;
   initial begin
     fd = 0; pfd = 0;
+    suffix = HART >= 0 ? $sformatf(".h%0d", HART) : "";
     if ($value$plusargs("EtraceCsv=%s", file)) begin
+      file = {file, suffix};
       fd = $fopen(file, "w");
       if (fd == 0) $display("Error: cannot write %s", file);
       else $fwrite(fd, "itype_0,cause,tval,priv,iaddr_0,context,ctype,iretire_0,ilastsize_0\n");
     end
     if ($value$plusargs("EtracePackets=%s", file)) begin
+      file = {file, suffix};
       pfd = $fopen(file, "w");
       if (pfd == 0) $display("Error: cannot write %s", file);
     end

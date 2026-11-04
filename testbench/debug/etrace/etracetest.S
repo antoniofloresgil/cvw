@@ -8,6 +8,11 @@
 // sent without an address, and the periodic resynchronization.  It programs the trace itself,
 // through the trace control registers, and reads it back from the RAM sink at the end.
 //
+// Every hart of the SoC runs it at once, each with its own trace encoder and RAM sink
+// (TRACE_BASE + hartid*0x2000), mtimecmp and interrupt flag; hart h goes once more round the first
+// loop per unit of h, so that the harts' traces differ.  Hart 0 reports the result to tohost, the
+// other harts to results[hartid] (etrace_tb.sv waits for all of them).
+//
 // The code section holds instructions only: the reference decoder of the E-Trace specification
 // reads the program with objdump and cannot parse data in it.  It ends by writing 1 to tohost.
 //
@@ -25,7 +30,7 @@
 #define MTIMECMP 0x02004000
 #define UNMAPPED 0x70000000             // no region decodes it: a load access fault
 
-// Trace control (docs/trace.md): hart 0's trace encoder and RAM sink
+// Trace control (docs/trace.md): hart 0's trace encoder and RAM sink; hart h's at +h*0x2000
 #define TRACE_TE  0x04000000
 #define TRACE_RAM 0x04001000
 #ifndef RESYNC_MAX
@@ -47,21 +52,29 @@ rvtest_entry_point:
     li      t0, 0x0F                    // TOR, RWX
     csrw    pmpcfg0, t0
 
+    // s3 = hartid*8: this hart's mtimecmp, interrupt flag and result; s4 = hartid*0x2000
+    csrr    s3, mhartid
+    slli    s4, s3, 13
+    slli    s3, s3, 3
+
     // Trace on, as the Trace Control Interface orders it: the RAM sink, then the encoder
     li      s0, TRACE_RAM
+    add     s0, s0, s4
     li      t0, 1
     sw      t0, 0(s0)                   // trRamControl: trRamActive
     sw      zero, 0x20(s0)              // trRamWPLow: the trace from word 0
     li      t0, 3
     sw      t0, 0(s0)                   // trRamControl: trRamEnable
     li      s1, TRACE_TE
+    add     s1, s1, s4
     li      t0, 1
     sw      t0, 0(s1)                   // trTeControl: trTeActive
     li      t0, TE_TRACE
     sw      t0, 0(s1)                   // trTeControl: trace from here
 
     // Branches: a loop (taken, then not taken), and both outcomes of beq and bne
-    li      t1, 5
+    csrr    t1, mhartid
+    addi    t1, t1, 5
 1:  addi    t1, t1, -1
     bnez    t1, 1b
     beq     zero, zero, 2f
@@ -118,6 +131,7 @@ after_user:
     LREG    t1, 0(t0)
     addi    t1, t1, 100
     li      t0, MTIMECMP
+    add     t0, t0, s3
 #if __riscv_xlen == 64
     sd      t1, 0(t0)
 #else
@@ -128,6 +142,7 @@ after_user:
     csrw    mie, t0
     csrsi   mstatus, 0x8                // mstatus.MIE
     la      t0, irq_seen
+    add     t0, t0, s3
 8:  LREG    t1, 0(t0)
     beqz    t1, 8b
     csrci   mstatus, 0x8
@@ -192,15 +207,15 @@ after_user:
     j       17b
 18:
 
-    // Done
-    li      t0, 1
-    la      t1, tohost
-    SREG    t0, 0(t1)
-9:  j       9b
+    // Done: the result, in a3, to tohost (hart 0) or to results[hartid]
+    li      a3, 1
 fail:
     la      t1, tohost
-    SREG    a3, 0(t1)
-    j       9b
+    beqz    s3, 19f
+    la      t1, results
+    add     t1, t1, s3
+19: SREG    a3, 0(t1)
+9:  j       9b
 
 leaf:
     addi    a1, a1, 1
@@ -235,13 +250,19 @@ skip:
 1:  csrw    mepc, sp
     j       return
 interrupt:
-    li      sp, MTIMECMP                // no more timer interrupts
+    csrr    tp, mhartid                 // no more timer interrupts for this hart
+    slli    tp, tp, 3
+    li      sp, MTIMECMP
+    add     sp, sp, tp
     li      tp, -1
     SREG    tp, 0(sp)
 #if __riscv_xlen == 32
     sw      tp, 4(sp)
 #endif
+    csrr    tp, mhartid
+    slli    tp, tp, 3
     la      sp, irq_seen
+    add     sp, sp, tp
     li      tp, 1
     SREG    tp, 0(sp)
 return:
@@ -258,4 +279,6 @@ fromhost: .dword 0
 
     .data
     .align 3
-irq_seen: .dword 0
+irq_seen: .dword 0, 0, 0, 0, 0, 0, 0, 0     // per hart (up to 8)
+    .global results
+results:  .dword 0, 0, 0, 0, 0, 0, 0, 0     // the result of each hart but hart 0
