@@ -70,6 +70,6 @@ module wallywrapper import cvw::*; #(`CVW_MULTICORE_PARAMS(AHBW)) (
   wallypipelinedsoc #(.P(P), `CVW_MULTICORE_CONNECT) dut(.clk, .reset_ext, .reset, .ExternalStall, .HRDATAEXT,.HREADYEXT, .HRESPEXT,.HSELEXT,
                         .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
                         .HTRANS, .HMASTLOCK, .HREADY, .GPIOIN, .GPIOOUT, .GPIOEN,
-                        .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO);
+                        .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO, .TDO());
 
 endmodule

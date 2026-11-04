@@ -20,7 +20,7 @@ module soc_tb import cvw::*; #(parameter int LATENCY = 0, `CVW_MULTICORE_PARAMS(
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),
         .HBURST(), .HPROT(), .HTRANS(), .HMASTLOCK(), .HREADY(),
         .GPIOIN('0), .GPIOOUT(), .GPIOEN(), .UARTSin(1'b1), .UARTSout(),
-        .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
+        .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO(), .TDO());
     bus_fault_guard #(.NCORES(NCORES)) fault_guard(
         .clk, .reset, .GlobalError(dut.HRESP), .HartError(dut.CoreHRESP));
     `include "soc_observer.svh"

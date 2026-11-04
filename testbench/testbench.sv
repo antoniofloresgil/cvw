@@ -563,7 +563,7 @@ module testbench;
     .HRDATAEXT, .HREADYEXT, .HRESPEXT, .HSELEXT,
     .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
     .HTRANS, .HMASTLOCK, .HREADY, .GPIOIN, .GPIOOUT, .GPIOEN,
-    .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO);
+    .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO, .TDO());
 
   // generate clock to sequence tests
   always begin
@@ -654,6 +654,15 @@ module testbench;
         end
       end
     end
+  end
+
+  // The instruction trace of hart 0 that the encoder takes, and the trace that the program reads
+  // back from the RAM sink, for the E-Trace reference flow (+EtraceCsv=, +EtracePackets=;
+  // docs/trace.md)
+  if (P.TRACE_SUPPORTED) begin : etrace
+    etracedump #(P) etracedump(.clk, .reset, .ITrace(dut.core.ITrace),
+      .LineTaken(dut.etracegen.etrace.hart[0].LineTaken),
+      .DataRead(dut.etracegen.etrace.hart[0].DataRead), .RamDout(dut.etracegen.etrace.hart[0].RamDout));
   end
 
   // The EXT_IO window is not executable: no instruction fetch may reach it on the bus,

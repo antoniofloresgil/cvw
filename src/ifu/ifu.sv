@@ -68,6 +68,7 @@ module ifu import cvw::*; #(parameter cvw_t P) (
   output logic                     InstrMisalignedFaultM,                    // Branch target not aligned to 4 bytes if no compressed allowed (2 bytes if allowed)
   // mmu management
   input  logic [1:0]               PrivilegeModeW,                           // Privilege mode in Writeback stage
+  input  logic                     DebugMode,                                // the hart is in Debug Mode (DEBUG_SUPPORTED)
   input  logic [P.XLEN-1:0]        PTE,                                      // Hardware page table walker (HPTW) writes Page table entry (PTE) to ITLB
   input  logic [2:0]               PageType,                                 // Hardware page table walker (HPTW) writes PageType to ITLB
   input  logic                     ITLBWriteF,                               // Writes PTE and PageType to ITLB
@@ -191,7 +192,7 @@ module ifu import cvw::*; #(parameter cvw_t P) (
 
     mmu #(.P(P), .TLB_ENTRIES(P.ITLB_ENTRIES), .IMMU(1))
     immu(.clk, .reset, .SATP_REGW, .STATUS_MXR, .STATUS_SUM, .STATUS_MPRV, .STATUS_MPP, .ENVCFG_PBMTE, .ENVCFG_ADUE,
-         .PrivilegeModeW, .DisableTranslation(1'b0),
+         .PrivilegeModeW, .DebugMode, .DisableTranslation(1'b0),
          .VAdr(PCFExt),
          .Size(2'b10),
          .PTE(PTE),

@@ -40,6 +40,7 @@ module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0)
   output logic [P.LLEN-1:0]        ReadDataW,                            // Read data to IEU or FPU
   // cpu privilege
   input  logic [1:0]               PrivilegeModeW,                       // Current privilege mode
+  input  logic                     DebugMode,                            // the hart is in Debug Mode (DEBUG_SUPPORTED)
   input  logic                     BigEndianM,                           // Swap byte order to big endian
   input  logic                     sfencevmaM,                           // Virtual memory address fence, invalidate TLB entries
   input  logic                     sfencevmaAllM,                        // sfence.vma with rs2=x0: flush all TLB entries including global
@@ -262,7 +263,7 @@ module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0)
     assign WriteAccessM = PreLSURWM[0];
     mmu #(.P(P), .TLB_ENTRIES(P.DTLB_ENTRIES), .IMMU(0))
     dmmu(.clk, .reset, .SATP_REGW, .STATUS_MXR, .STATUS_SUM, .STATUS_MPRV, .STATUS_MPP, .ENVCFG_PBMTE, .ENVCFG_ADUE,
-      .PrivilegeModeW, .DisableTranslation, .VAdr(IHAdrM), .Size(LSUFunct3M[1:0]),
+      .PrivilegeModeW, .DebugMode, .DisableTranslation, .VAdr(IHAdrM), .Size(LSUFunct3M[1:0]),
       .PTE, .PageTypeWriteVal(PageType), .TLBWrite(DTLBWriteM), .TLBFlush(sfencevmaM), .TLBFlushAll(sfencevmaAllM),
       .PhysicalAddress(PAdrM), .TLBMiss(DTLBMissM), .Cacheable(CacheableM), .Idempotent(), .SelTIM(SelDTIM),
       .InstrAccessFaultF(), .LoadAccessFaultM(LSULoadAccessFaultM),

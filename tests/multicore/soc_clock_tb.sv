@@ -18,7 +18,7 @@ module soc_clock_tb import cvw::*;();
             .HCLK(hclk), .HRESETn(hresetn), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),
             .HBURST(), .HPROT(), .HTRANS(), .HMASTLOCK(), .HREADY(),
             .GPIOIN('0), .GPIOOUT(), .GPIOEN(), .UARTSin(1'b1), .UARTSout(),
-            .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
+            .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO(), .TDO());
         // Sample both clock edges, while reset is asserted and after release.
         always @(clk) begin
             #1;

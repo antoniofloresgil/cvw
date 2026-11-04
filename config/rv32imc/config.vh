@@ -161,6 +161,12 @@ localparam logic [63:0] EXT_MEM_RANGE    = 64'h07FFFFFF;
 localparam logic EXT_IO_SUPPORTED = 0;
 localparam logic [63:0] EXT_IO_BASE      = 64'h00000000;
 localparam logic [63:0] EXT_IO_RANGE     = 64'h00000000;
+
+// JTAG debug: DTM and Debug Module with System Bus Access (src/debug)
+localparam logic DEBUG_SUPPORTED = 0;
+localparam DEBUG_TRIGGERS = 32'd0;  // Sdtrig triggers, with DEBUG_SUPPORTED
+localparam logic TRACE_SUPPORTED = 0;  // E-Trace instruction trace (docs/trace.md)
+localparam TRACE_RAM_WORDS = 32'd1024;  // 32-bit words of each hart's trace RAM sink, with TRACE_SUPPORTED
 localparam logic CLINT_SUPPORTED = 1;
 localparam logic [63:0] CLINT_BASE       = 64'h02000000;
 localparam logic [63:0] CLINT_RANGE      = 64'h0000FFFF;

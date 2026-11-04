@@ -890,6 +890,21 @@ def selectTests(args, sims, coverStr):
         for config, tests in deriv_coverage_tests.items():
             addTestGroup("coverage", coverageDir("rv64gc"), tests, config, defaultsim, coverStr, configs)
         # addTests(bpredtests, defaultsim) # This is currently broken in regression due to something related to the new wsim script.
+        # The JTAG debug port and the instruction trace (docs/debug.md, docs/trace.md), with Verilator:
+        # debug_tb with one and two harts, and the trace of one and two harts checked by
+        # etracedecode.py (and against the E-Trace reference flow when ETRACE_SPEC names a clone of
+        # riscv-trace-spec).  One test case, run in sequence: each SoC build takes several GB.
+        debugtests = " && ".join([
+            f"make -C {WALLY}/testbench/debug",
+            f"make -C {WALLY}/testbench/debug CONFIGS='debug_rv32imc debug_rv64gc_nocache' NHARTS=2",
+            f"make -C {WALLY}/testbench/debug/etrace check",
+            f"make -C {WALLY}/testbench/debug/etrace check-harts",
+            "echo 'SUCCESS! Debug and trace tests passed'"])
+        configs.append(TestCase(
+            name="debug", variant="debug_rv32imc, debug_rv64gc",
+            cmd=["bash", "-c", debugtests],
+            log=f"{regressionDir}/verilator/logs/debug.log",
+            grepstr="SUCCESS! Debug and trace tests passed", stderrToLog=True))
     # testfloat tests
     if (args.testfloat or args.nightly): # for nightly, run testfloat along with others
         buildTests(periph=False, deriv=True, testfloat=True)
