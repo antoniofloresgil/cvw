@@ -99,7 +99,8 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   input  logic              InvalidateICacheM,                              // fence.i instruction
   output logic              BigEndianM,                                     // Use big endian in current privilege mode
   // Fault outputs
-  output logic              WaitM                                           // wfi is waiting for an interrupt: stall the pipeline
+  output logic              WaitM,                                          // wfi is waiting for an interrupt: stall the pipeline
+  output logic [2*P.XLEN+13:0] ITrace                                      // instruction trace interface (TRACE_SUPPORTED)
 );
 
   logic [4:0]               CauseM;                                         // trap cause
@@ -222,6 +223,16 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   assign IllegalInstrFaultM = PrivIllegalInstrFaultM & ~dretM;
   assign IllegalCSRAccessM  = CSRIllegalCSRAccessM & ~DebugCSRHitM;
   assign CSRReadValW = CSRCSRReadValW | DebugCSRReadValW;
+  ///////////////////////////////////////////
+  // Instruction trace interface (TRACE_SUPPORTED, docs/trace.md)
+  ///////////////////////////////////////////
+
+  if (P.TRACE_SUPPORTED) begin : trace
+    etraceingress #(P) etraceingress(.clk, .reset, .StallW, .FlushW, .InstrValidM, .PCM, .PCSpillM,
+      .IEUAdrxTvalM, .InstrOrigM, .xRetM(mretM | sretM), .PrivilegeModeW, .DebugMode, .ArchTrapM,
+      .InterruptM, .EcallM(EcallFaultM), .EBreakM(BreakpointFaultM), .CauseM, .DebugEnterM, .ITrace);
+  end else assign ITrace = '0;
+
   // mstatus.MPRV does not apply in Debug Mode (dcsr.mprven = 0)
   assign STATUS_MPRV = STATUS_MPRV_CSR & ~DebugMode;
 endmodule

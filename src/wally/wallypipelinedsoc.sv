@@ -127,6 +127,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic [NCORES-1:0][3:0] CoreHPROT;
   logic [NCORES-1:0][1:0] CoreHTRANS, CoreHTRANSOut, CoreHATOMIC;
   logic [NCORES-1:0][3:0] CoreCacheEvents;
+  logic [NCORES-1:0][2*P.XLEN+13:0] CoreITrace;   // instruction trace of each hart (TRACE_SUPPORTED)
 
   // Preserve the upstream no-bus outputs; bus-enabled harts share clock/reset.
   assign HCLK = P.BUS_SUPPORTED ? clk : 1'b0;
@@ -138,7 +139,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     .HRDATA(CoreHRDATA[0]), .HREADY(CoreHREADY[0]), .HRESP(CoreHRESP[0]), .HCLK(), .HRESETn(),
     .HADDR(CoreHADDR[0]), .HWDATA(CoreHWDATA[0]), .HWSTRB(CoreHWSTRB[0]),
     .HWRITE(CoreHWRITE[0]), .HSIZE(CoreHSIZE[0]), .HBURST(CoreHBURST[0]), .HPROT(CoreHPROT[0]),
-    .HTRANS(CoreHTRANSOut[0]), .HMASTLOCK(CoreHMASTLOCK[0]), .ExternalStall);
+    .HTRANS(CoreHTRANSOut[0]), .HMASTLOCK(CoreHMASTLOCK[0]), .ExternalStall, .ITrace(CoreITrace[0]));
 
   for (genvar h = 1; h < NCORES; h++) begin : harts
     wallypipelinedcore #(.P(P), .HART_ID(h), .SHARED_ATOMICS(1)) core(.clk, .reset(CoreReset[h]),
@@ -148,7 +149,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
       .HRDATA(CoreHRDATA[h]), .HREADY(CoreHREADY[h]), .HRESP(CoreHRESP[h]), .HCLK(), .HRESETn(),
       .HADDR(CoreHADDR[h]), .HWDATA(CoreHWDATA[h]), .HWSTRB(CoreHWSTRB[h]),
       .HWRITE(CoreHWRITE[h]), .HSIZE(CoreHSIZE[h]), .HBURST(CoreHBURST[h]), .HPROT(CoreHPROT[h]),
-      .HTRANS(CoreHTRANSOut[h]), .HMASTLOCK(CoreHMASTLOCK[h]), .ExternalStall);
+      .HTRANS(CoreHTRANSOut[h]), .HMASTLOCK(CoreHMASTLOCK[h]), .ExternalStall, .ITrace(CoreITrace[h]));
   end
 
   // A hart held in reset by the Debug Module still presents its first fetch: silence it, so

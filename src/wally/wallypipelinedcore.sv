@@ -42,7 +42,8 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
    output logic [3:0]            HPROT,
    output logic [1:0]            HTRANS,
    output logic                  HMASTLOCK,
-   input  logic                  ExternalStall
+   input  logic                  ExternalStall,
+   output logic [2*P.XLEN+13:0]  ITrace         // instruction trace interface (TRACE_SUPPORTED)
 );
 
   logic                          StallF, StallD, StallE, StallM, StallW;
@@ -308,8 +309,9 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
       .PrivilegeModeW, .SATP_REGW,
       .STATUS_MXR, .STATUS_SUM, .STATUS_MPRV, .STATUS_MPP, .STATUS_FS,
       .PMPCFG_ARRAY_REGW, .PMPADDR_ARRAY_REGW,
-      .FRM_REGW, .ENVCFG_CBE, .ENVCFG_PBMTE, .ENVCFG_ADUE, .WaitM, .BigEndianM);
+      .FRM_REGW, .ENVCFG_CBE, .ENVCFG_PBMTE, .ENVCFG_ADUE, .WaitM, .BigEndianM, .ITrace);
   end else begin
+    assign ITrace = '0;
     assign {CSRReadValW, PrivilegeModeW,
             SATP_REGW, STATUS_MXR, STATUS_SUM, STATUS_MPRV, STATUS_MPP, STATUS_FS, FRM_REGW,
             // PMPCFG_ARRAY_REGW, PMPADDR_ARRAY_REGW,

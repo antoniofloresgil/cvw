@@ -1815,6 +1815,7 @@ SMCDELEG_SUPPORTED 1
 deriv debug_rv32imc rv32imc
 DEBUG_SUPPORTED      1
 DEBUG_TRIGGERS       32'd4
+TRACE_SUPPORTED      1
 IROM_SUPPORTED       0
 DTIM_SUPPORTED       0
 UNCORE_RAM_SUPPORTED 1
@@ -1823,6 +1824,11 @@ UNCORE_RAM_RANGE     64'h000FFFFF
 deriv debug_rv64gc rv64gc
 DEBUG_SUPPORTED    1
 DEBUG_TRIGGERS     32'd4
+TRACE_SUPPORTED    1
+
+# trace_rv32gc: the instruction trace without the Debug Module, in 32 bits (testbench/debug/etrace)
+deriv trace_rv32gc rv32gc
+TRACE_SUPPORTED    1
 
 # debug_rv64gc_nocache: rv64gc without caches or bursts, because the multicore subsystem needs a
 # cacheless memory system for a SoC with several harts (NCORES > 1): it tests the Debug Module's
@@ -1830,6 +1836,7 @@ DEBUG_TRIGGERS     32'd4
 deriv debug_rv64gc_nocache rv64gc
 DEBUG_SUPPORTED    1
 DEBUG_TRIGGERS     32'd4
+TRACE_SUPPORTED    1
 ICACHE_SUPPORTED   0
 DCACHE_SUPPORTED   0
 BURST_EN           0

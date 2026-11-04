@@ -657,6 +657,11 @@ module testbench;
     end
   end
 
+  // The instruction trace interface of hart 0 as CSV for the E-Trace reference flow (+EtraceCsv=)
+  if (P.TRACE_SUPPORTED) begin : etrace
+    etracedump #(P) etracedump(.clk, .reset, .ITrace(dut.core.ITrace));
+  end
+
   // The EXT_IO window is not executable: no instruction fetch may reach it on the bus,
   // not even on a mispredicted path, because reading an I/O register can have side effects
   if (P.EXT_IO_SUPPORTED) begin : extiofetchcheck
