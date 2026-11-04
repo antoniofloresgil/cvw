@@ -38,7 +38,7 @@ wsim rv64gc $ACT/rv64i/I/I-add-01.elf --gui     # one ELF, Questa with waveform 
 wsim rv32gc a.elf b.elf c.elf --sim verilator   # an explicit group of ELFs
 wsim rv64gc test.elf --sim verilator --vcd      # Generate VCD waveform
 wsim rv64gc test.elf --lockstep                 # Lock-step vs ImperasDV (Questa/VCS only; one ELF at a time)
-wsim rv64gc $ACT/priv/Sv --fcov                 # Functional coverage (Questa only)
+wsim rv64gc $ACT/priv/Sv --fcov                 # Functional coverage (any simulator; not with --lockstep)
 wsim rv64gc buildroot                           # Linux boot from prebuilt memory images
 wsim rv32gc bench.elf --test coremark           # ELF run with a special testbench mode (coremark, embench)
 ```
@@ -55,8 +55,9 @@ regression-wally --nightly              # extended nightly suite
 ### Run code coverage
 ```bash
 regression-wally --ccov             # look at results in rv64gc_uncovered_hierarchical.rpt
+regression-wally --ccov --coveragesim vcs   # VCS: sim/vcs/cov/rv64gc_coverage_hierarchical.rpt
 ```
-Also possible to run individual files and merge them into the overall coverage.
+Also possible to run individual files and merge them into the overall coverage.  Each simulation writes its own database (`sim/questa/ucdb/*.ucdb`, or `sim/vcs/ucdb/*.vdb` with VCS); `make -C sim QuestaCodeCoverage` (or `VcsCodeCoverage`) merges them for one configuration (`CONFIG=rv64gc`, the default, `rv32gc` or `rv32imc`) and applies `sim/questa/coverage-exclusions-<config>.do`, which `sim/vcs/exclusions2el` translates into a URG exclusion file for VCS (`sim/vcs/cov/exclusions-<config>.log` says what each exclusion became).
 
 ### Lint
 ```bash
@@ -120,8 +121,10 @@ Five stages: Fetch (F), Decode (D), Execute (E), Memory (M), Writeback (W). Stal
 ### Simulators
 
 - **Verilator**: Default for regression; open-source; no license needed. Compiled per config in `sim/verilator/wkdir/`.
-- **Questa** (Siemens): Required for code/functional coverage, lockstep, testbench_fp, and GUI waveforms. Uses `sim/questa/wkdir/`.
-- **VCS** (Synopsys): Supports standard tests and lockstep.
+- **Questa** (Siemens): Required for testbench_fp and GUI waveforms; runs code/functional coverage and lockstep. Uses `sim/questa/wkdir/`.
+- **VCS** (Synopsys): Supports standard tests, lockstep, and code/functional coverage (merged and reported with `urg`).
+
+All three collect functional coverage (`wsim --fcov`) into `sim/questa/fcov_ucdb`, `sim/verilator/fcov_dat` or `sim/vcs/fcov_ucdb`; `make -C sim QuestaFunctCoverage`, `VerilatorFunctCoverage` or `VcsFunctCoverage` merges the rv64gc runs and writes reports to `sim/<simulator>/fcov/`.
 
 Lockstep mode runs Wally in lock-step against ImperasDV (commercial) or the RISC-V Sail model for instruction-by-instruction comparison.
 
@@ -161,6 +164,8 @@ There is no central test list; tests are ELF files passed to `wsim` by path or d
 - `addins/riscv-arch-test/work/cvw-<config>/elfs/` — RISC-V Arch Tests (ACT4), built per cvw configuration by `make act` (or by `regression-wally`); one leaf directory per extension/feature
 - `tests/periph/rv32/`, `tests/periph/rv64/` — Self-checking peripheral tests: one source per test in `tests/periph/src/`, built for both widths by `make periph`; each embeds its expected signature and compares every entry as it is written
 - `tests/coverage64gc/`, `tests/coverage32gc/`, `tests/coverage32imc/` — Coverage-targeted tests for each unit of the rv64gc, rv32gc and rv32imc configurations; they pass if they run to completion
+- `testbench/debug/` — the JTAG debug port (`src/debug`, `DEBUG_SUPPORTED`; RISC-V Debug 1.0: DTM, an execution-based Debug Module like PULP riscv-dbg with halt/resume/step, Access Register, an 8-word program buffer and System Bus Access; `docs/debug.md`): `make` runs `debug_tb.sv` on `debug_rv32imc` and `debug_rv64gc`, `make openocd [OPENOCD_CONFIG=...]` runs OpenOCD against the simulation through remote_bitbang, and `testbench/debug/riscv-tests/` holds the targets for the official `riscv-tests/debug/gdbserver.py` (run it with `LC_ALL=C`: it parses GDB's English messages; with OpenOCD 0.12 use riscv-tests before commit 6ca449c). Debug Mode lives in `src/debug/debugmode.sv`; `privileged.sv` only steers the existing trap/return paths with it, and `trap`, `privmode`, `privdec` and `csr` are unchanged. The core's accesses to 0x0–0xFFF go to the DM's debug memory (`ahbdebugarb`, `pmachecker`)
+- `testbench/debug/etrace/` — the E-Trace instruction trace (`TRACE_SUPPORTED`, `docs/trace.md`; interface `src/debug/etraceingress.sv`, encoder `etraceencoder.sv`, RAM sink `etracesink.sv`, Trace Control Interface registers at `TRACE_BASE` in `etrace.sv`): `make check` decodes the packets read back from the sink with `etracedecode.py` (our decoder, standard library only) and checks the program counters the hart retired; with `ETRACE_SPEC=<riscv-trace-spec clone>` it also checks them byte for byte against the specification's reference Python models, which stay outside the repository; `make check-harts` does it for every hart of a 2-hart SoC at once (`etrace_tb.sv`); `regression-wally --nightly` runs both and `debug_tb` (any tool added to the repo must be Python without new dependencies)
 
 Every test reports its result by storing to `tohost`: 1 = pass, `(exit code << 1) | 1` = fail. A test that halts without storing to `tohost` is reported as a failure.
 - `buildroot` — Linux boot from prebuilt memory images (`wsim buildroot buildroot`)

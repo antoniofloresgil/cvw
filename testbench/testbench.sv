@@ -16,7 +16,6 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 `include "config.vh"
-`include "BranchPredictorType.vh"
 
 `ifdef USE_IMPERAS_DV
     `include "idv/idv.svh"
@@ -563,8 +562,8 @@ module testbench;
   wallypipelinedsoc  #(P) dut(.clk, .reset_ext, .reset, .ExternalStall,
     .HRDATAEXT, .HREADYEXT, .HRESPEXT, .HSELEXT,
     .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
-    .HTRANS, .HMASTLOCK, .HREADY, .TIMECLK(1'b0), .GPIOIN, .GPIOOUT, .GPIOEN,
-    .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO);
+    .HTRANS, .HMASTLOCK, .HREADY, .GPIOIN, .GPIOOUT, .GPIOEN,
+    .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO, .TDO());
 
   // generate clock to sequence tests
   always begin
@@ -657,6 +656,15 @@ module testbench;
     end
   end
 
+  // The instruction trace of hart 0 that the encoder takes, and the trace that the program reads
+  // back from the RAM sink, for the E-Trace reference flow (+EtraceCsv=, +EtracePackets=;
+  // docs/trace.md)
+  if (P.TRACE_SUPPORTED) begin : etrace
+    etracedump #(P) etracedump(.clk, .reset, .ITrace(dut.core.ITrace),
+      .LineTaken(dut.etracegen.etrace.hart[0].LineTaken),
+      .DataRead(dut.etracegen.etrace.hart[0].DataRead), .RamDout(dut.etracegen.etrace.hart[0].RamDout));
+  end
+
   // The EXT_IO window is not executable: no instruction fetch may reach it on the bus,
   // not even on a mispredicted path, because reading an I/O register can have side effects
   if (P.EXT_IO_SUPPORTED) begin : extiofetchcheck
@@ -733,7 +741,7 @@ module testbench;
 `endif
 
 // Functional coverage.  riscv_arch_test comes from riscv-arch-test and samples the generated
-// covergroups off the RVVI trace; wally-compile.do supplies it and its include paths with --fcov.
+// covergroups off the RVVI trace; each simulator's compile script supplies it and its include paths with --fcov.
 `ifdef FCOV
   riscv_arch_test riscv_arch_test(rvvi);
 `endif

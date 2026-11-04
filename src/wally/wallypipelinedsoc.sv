@@ -39,7 +39,6 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   output logic                 HMASTLOCK,
   output logic                 HREADY,
   // I/O Interface
-  input  logic                 TIMECLK,         // optional for CLINT MTIME counter
   input  logic [31:0]          GPIOIN,          // inputs from GPIO
   output logic [31:0]          GPIOOUT,         // output values for GPIO
   output logic [31:0]          GPIOEN,          // output enables for GPIO
@@ -53,7 +52,13 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   output logic                 SDCCmd,          // SDC CMD         from   SPI DO
   output logic [3:0]           SDCCS,           // SDC Card Detect from   SPI CS
   output logic                 SDCCLK,          // SDC Clock       from   SPI Clock
-  output logic [3:0]           PWMGPIO          // PWM GPIO output
+  output logic [3:0]           PWMGPIO,         // PWM GPIO output
+  // JTAG debug port (DEBUG_SUPPORTED).  The inputs default to 0, so that the SoC's existing
+  // instances need not connect them.
+  input  logic                 TCK = 1'b0,
+  input  logic                 TMS = 1'b0,
+  input  logic                 TDI = 1'b0,
+  output logic                 TDO
 );
 
   // Uncore signals
@@ -64,7 +69,53 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic [NCORES-1:0]          MExtInt,SExtInt;  // from PLIC
 
   // synchronize reset to SOC clock domain
-  synchronizer resetsync(.clk, .d(reset_ext), .q(reset));
+  logic                       PowerOnReset;     // resets everything, the Debug Module too
+  logic [NCORES-1:0]          CoreReset;        // each hart: reset, or held by the Debug Module
+  logic                       NDMReset;
+  logic [NCORES-1:0]          HartReset;
+  synchronizer resetsync(.clk, .d(reset_ext), .q(PowerOnReset));
+  assign reset = PowerOnReset | NDMReset;
+  assign CoreReset = {NCORES{reset}} | HartReset;
+
+  // AHB between the memory system and the uncore, and the Debug Module's System Bus Access
+  logic [P.PA_BITS-1:0]       MemHADDR, DbgHADDR;
+  logic [P.AHBW-1:0]          MemHWDATA, DbgHWDATA;
+  logic [P.XLEN/8-1:0]        MemHWSTRB, DbgHWSTRB;
+  logic                       MemHWRITE, MemHMASTLOCK, MemHREADY, DbgHWRITE, DbgHREADY;
+  logic [2:0]                 MemHSIZE, MemHBURST, DbgHSIZE;
+  logic [3:0]                 MemHPROT;
+  logic [1:0]                 MemHTRANS, DbgHTRANS;
+  logic [P.AHBW-1:0]          MemHRDATA;
+  logic [NCORES-1:0]          DebugHaltReq, DebugResetHaltReq;   // to each hart
+
+  if (P.DEBUG_SUPPORTED) begin : debug
+    logic       DMIReq, DMIWrite, DMIError;
+    logic [6:0] DMIAddr;
+    logic [31:0] DMIWData, DMIRData;
+    dtm dtm(.TRSTn(~reset_ext), .TCK, .TMS, .TDI, .TDO, .clk, .reset(PowerOnReset),
+      .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError);
+    logic              DMHSEL;
+    logic [P.AHBW-1:0] DMHRDATA;
+    dm #(.P(P), .NHARTS(NCORES)) dm(.clk, .reset(PowerOnReset), .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError,
+      .NDMReset, .HartReset, .DebugHaltReq, .DebugResetHaltReq,
+      .DMHSEL, .DMHADDR(MemHADDR[11:0]), .DMHWRITE(MemHWRITE), .DMHREADY(HREADY), .DMHWDATA(MemHWDATA),
+      .DMHWSTRB(MemHWSTRB), .DMHRDATA, .SBHADDR(DbgHADDR), .SBHWDATA(DbgHWDATA), .SBHWSTRB(DbgHWSTRB),
+      .SBHWRITE(DbgHWRITE), .SBHSIZE(DbgHSIZE), .SBHTRANS(DbgHTRANS), .SBHREADY(DbgHREADY),
+      .SBHRDATA(HRDATA), .SBHRESP(HRESP));
+    ahbdebugarb #(.P(P)) arb(.HCLK, .HRESETn,
+      .CoreHADDR(MemHADDR), .CoreHWDATA(MemHWDATA), .CoreHWSTRB(MemHWSTRB), .CoreHWRITE(MemHWRITE),
+      .CoreHSIZE(MemHSIZE), .CoreHBURST(MemHBURST), .CoreHPROT(MemHPROT), .CoreHTRANS(MemHTRANS),
+      .CoreHMASTLOCK(MemHMASTLOCK), .CoreHREADY(MemHREADY), .CoreHRDATA(MemHRDATA),
+      .DbgHADDR, .DbgHWDATA, .DbgHWSTRB, .DbgHWRITE, .DbgHSIZE, .DbgHTRANS, .DbgHREADY, .DMHSEL, .DMHRDATA,
+      .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HREADY, .HRDATA);
+  end else begin : nodebug
+    assign {NDMReset, HartReset, DebugHaltReq, DebugResetHaltReq, TDO} = '0;
+    assign MemHRDATA = HRDATA;
+    assign {HADDR, HWDATA, HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK} =
+      {MemHADDR, MemHWDATA, MemHWSTRB, MemHWRITE, MemHSIZE, MemHBURST, MemHPROT, MemHTRANS, MemHMASTLOCK};
+    assign MemHREADY = HREADY;
+    assign {DbgHADDR, DbgHWDATA, DbgHWSTRB, DbgHWRITE, DbgHSIZE, DbgHTRANS, DbgHREADY} = '0;
+  end
 
   // Keep hart zero named core for existing single-core verification probes.
   logic [NCORES-1:0][P.PA_BITS-1:0] CoreHADDR;
@@ -73,30 +124,37 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic [NCORES-1:0] CoreHWRITE, CoreHMASTLOCK, CoreHREADY, CoreHRESP, CoreSCFail;
   logic [NCORES-1:0][2:0] CoreHSIZE, CoreHBURST;
   logic [NCORES-1:0][3:0] CoreHPROT;
-  logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC;
+  logic [NCORES-1:0][1:0] CoreHTRANS, CoreHTRANSOut, CoreHATOMIC;
   logic [NCORES-1:0][3:0] CoreCacheEvents;
+  logic [NCORES-1:0][2*P.XLEN+13:0] CoreITrace;   // instruction trace of each hart (TRACE_SUPPORTED)
 
   // Preserve the upstream no-bus outputs; bus-enabled harts share clock/reset.
   assign HCLK = P.BUS_SUPPORTED ? clk : 1'b0;
   assign HRESETn = P.BUS_SUPPORTED ? ~reset : 1'b0;
-  wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset,
+  wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset(CoreReset[0]),
     .SCFail(CoreSCFail[0]), .HATOMIC(CoreHATOMIC[0]),
     .MTimerInt(MTimerInt[0]), .MExtInt(MExtInt[0]), .SExtInt(SExtInt[0]), .MSwInt(MSwInt[0]), .MTIME_CLINT,
-    .ExtCacheEvents(CoreCacheEvents[0]),
+    .ExtCacheEvents(CoreCacheEvents[0]), .DebugHaltReq(DebugHaltReq[0]), .DebugResetHaltReq(DebugResetHaltReq[0]),
     .HRDATA(CoreHRDATA[0]), .HREADY(CoreHREADY[0]), .HRESP(CoreHRESP[0]), .HCLK(), .HRESETn(),
     .HADDR(CoreHADDR[0]), .HWDATA(CoreHWDATA[0]), .HWSTRB(CoreHWSTRB[0]),
     .HWRITE(CoreHWRITE[0]), .HSIZE(CoreHSIZE[0]), .HBURST(CoreHBURST[0]), .HPROT(CoreHPROT[0]),
-    .HTRANS(CoreHTRANS[0]), .HMASTLOCK(CoreHMASTLOCK[0]), .ExternalStall);
+    .HTRANS(CoreHTRANSOut[0]), .HMASTLOCK(CoreHMASTLOCK[0]), .ExternalStall, .ITrace(CoreITrace[0]));
 
   for (genvar h = 1; h < NCORES; h++) begin : harts
-    wallypipelinedcore #(.P(P), .HART_ID(h), .SHARED_ATOMICS(1)) core(.clk, .reset,
+    wallypipelinedcore #(.P(P), .HART_ID(h), .SHARED_ATOMICS(1)) core(.clk, .reset(CoreReset[h]),
       .SCFail(CoreSCFail[h]), .HATOMIC(CoreHATOMIC[h]),
       .MTimerInt(MTimerInt[h]), .MExtInt(MExtInt[h]), .SExtInt(SExtInt[h]), .MSwInt(MSwInt[h]), .MTIME_CLINT,
-      .ExtCacheEvents(CoreCacheEvents[h]),
+      .ExtCacheEvents(CoreCacheEvents[h]), .DebugHaltReq(DebugHaltReq[h]), .DebugResetHaltReq(DebugResetHaltReq[h]),
       .HRDATA(CoreHRDATA[h]), .HREADY(CoreHREADY[h]), .HRESP(CoreHRESP[h]), .HCLK(), .HRESETn(),
       .HADDR(CoreHADDR[h]), .HWDATA(CoreHWDATA[h]), .HWSTRB(CoreHWSTRB[h]),
       .HWRITE(CoreHWRITE[h]), .HSIZE(CoreHSIZE[h]), .HBURST(CoreHBURST[h]), .HPROT(CoreHPROT[h]),
-      .HTRANS(CoreHTRANS[h]), .HMASTLOCK(CoreHMASTLOCK[h]), .ExternalStall);
+      .HTRANS(CoreHTRANSOut[h]), .HMASTLOCK(CoreHMASTLOCK[h]), .ExternalStall, .ITrace(CoreITrace[h]));
+  end
+
+  // A hart held in reset by the Debug Module still presents its first fetch: silence it, so
+  // that the Debug Module can use the bus (HartReset is 0 without DEBUG_SUPPORTED)
+  for (genvar h = 0; h < NCORES; h++) begin : holdharts
+    assign CoreHTRANS[h] = HartReset[h] ? 2'b00 : CoreHTRANSOut[h];
   end
 
   // Memory topology and capability checks are owned by the optional subsystem.
@@ -104,18 +162,33 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHMASTLOCK,
     .CoreHSIZE, .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHATOMIC,
     .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP, .CoreCacheEvents,
-    .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK,
-    .HRDATA, .HREADY, .HRESP);
+    .HADDR(MemHADDR), .HWDATA(MemHWDATA), .HWSTRB(MemHWSTRB), .HWRITE(MemHWRITE), .HSIZE(MemHSIZE),
+    .HBURST(MemHBURST), .HPROT(MemHPROT), .HTRANS(MemHTRANS), .HMASTLOCK(MemHMASTLOCK),
+    .HRDATA(MemHRDATA), .HREADY(MemHREADY), .HRESP);
+
+  // Instruction trace (TRACE_SUPPORTED, docs/trace.md): an encoder and a RAM sink per hart, whose
+  // control registers sit in a window that the uncore does not decode; they supply the read data
+  // of a transfer there
+  logic [P.AHBW-1:0] UncoreHRDATA;
+  if (P.TRACE_SUPPORTED & P.BUS_SUPPORTED) begin : etracegen
+    logic              TraceHSEL;
+    logic [P.AHBW-1:0] TraceHRDATA;
+    etrace #(.P(P), .NHARTS(NCORES)) etrace(.clk, .reset(PowerOnReset), .ITrace(CoreITrace), .HADDR, .HTRANS, .HWRITE,
+      .HREADY, .HWDATA, .TraceHSEL, .TraceHRDATA);
+    assign HRDATA = TraceHSEL ? TraceHRDATA : UncoreHRDATA;
+  end else begin : noetrace
+    assign HRDATA = UncoreHRDATA;
+  end
 
   // instantiate uncore if a bus interface exists
-  if (P.BUS_SUPPORTED) begin : uncoregen // Hack to work around Verilator bug https://github.com/verilator/verilator/issues/4769
-    uncore #(.P(P), .NCORES(NCORES)) uncore(.HCLK, .HRESETn, .TIMECLK,
+  if (P.BUS_SUPPORTED) begin : uncoregen
+    uncore #(.P(P), .NCORES(NCORES)) uncore(.HCLK, .HRESETn,
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HRDATAEXT,
-      .HREADYEXT, .HRESPEXT, .HRDATA, .HREADY, .HRESP, .HSELEXT,
+      .HREADYEXT, .HRESPEXT, .HRDATA(UncoreHRDATA), .HREADY, .HRESP, .HSELEXT,
       .MTimerInt, .MSwInt, .MExtInt, .SExtInt, .GPIOIN, .GPIOOUT, .GPIOEN, .UARTSin,
       .UARTSout, .MTIME_CLINT, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO);
   end else begin
-    assign {HRDATA, HREADY, HRESP, HSELEXT, MTimerInt, MSwInt, MExtInt, SExtInt,
+    assign {UncoreHRDATA, HREADY, HRESP, HSELEXT, MTimerInt, MSwInt, MExtInt, SExtInt,
             MTIME_CLINT, GPIOOUT, GPIOEN, UARTSout, SPIOut, SPICS, SPICLK, SDCCmd, SDCCS, SDCCLK, PWMGPIO} = '0;
   end
 

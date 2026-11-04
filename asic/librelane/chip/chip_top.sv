@@ -61,11 +61,11 @@ module chip_top (
   end
   assign GPIOIN[31:8] = '0;
 
-  // No external memory, debug stall, separate timer clock or SD card
+  // No external memory, debug stall, SD card or JTAG port (its inputs default to 0)
   wallypipelinedsoc #(.P(P)) soc(.clk, .reset_ext(~rst_n), .reset(),
     .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(), .ExternalStall(1'b0),
     .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(), .HBURST(), .HPROT(),
-    .HTRANS(), .HMASTLOCK(), .HREADY(), .TIMECLK(1'b0),
+    .HTRANS(), .HMASTLOCK(), .HREADY(),
     .GPIOIN, .GPIOOUT, .GPIOEN, .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK,
     .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
 endmodule

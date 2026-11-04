@@ -16,8 +16,8 @@ module linux_tb import cvw::*; #(`CVW_MULTICORE_PARAMS(AHBW)
         .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(),
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),
         .HBURST(), .HPROT(), .HTRANS(), .HMASTLOCK(), .HREADY(),
-        .TIMECLK(1'b0), .GPIOIN('0), .GPIOOUT(), .GPIOEN(), .UARTSin(1'b1), .UARTSout(),
-        .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
+        .GPIOIN('0), .GPIOOUT(), .GPIOEN(), .UARTSin(1'b1), .UARTSout(),
+        .SPIIn(1'b0), .SPIOut(), .SPICS(), .SPICLK(), .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO(), .TDO());
     bus_fault_guard #(.NCORES(NCORES)) fault_guard(
         .clk, .reset, .GlobalError(dut.HRESP), .HartError(dut.CoreHRESP));
     // Observe actual UART transmit-register writes. The real UART remains in

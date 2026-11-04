@@ -25,6 +25,8 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
    // Privileged
    input  logic                  MTimerInt, MExtInt, SExtInt, MSwInt,
    input  logic [63:0]           MTIME_CLINT,
+   input  logic                  DebugHaltReq = 1'b0,  // halt request from the Debug Module (DEBUG_SUPPORTED)
+   input  logic                  DebugResetHaltReq = 1'b0, // it is resethaltreq's
    // PMU events of caches outside the core: {ICacheMiss, ICacheAccess, DCacheMiss, DCacheAccess}
    input  logic [3:0]            ExtCacheEvents,
    // Bus Interface
@@ -40,7 +42,8 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
    output logic [3:0]            HPROT,
    output logic [1:0]            HTRANS,
    output logic                  HMASTLOCK,
-   input  logic                  ExternalStall
+   input  logic                  ExternalStall,
+   output logic [2*P.XLEN+13:0]  ITrace         // instruction trace interface (TRACE_SUPPORTED)
 );
 
   logic                          StallF, StallD, StallE, StallM, StallW;
@@ -106,6 +109,7 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
   logic                          STATUS_MXR, STATUS_SUM, STATUS_MPRV;
   logic [1:0]                    STATUS_MPP, STATUS_FS;
   logic [1:0]                    PrivilegeModeW;
+  logic                          DebugMode;          // the hart is in Debug Mode (DEBUG_SUPPORTED)
   logic [P.XLEN-1:0]             PTE;
   logic [2:0]                    PageType;
   logic                          sfencevmaM, sfencevmaAllM;
@@ -186,7 +190,7 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
     // Faults out
     .IllegalBaseInstrD, .IllegalFPUInstrD, .InstrPageFaultF, .IllegalIEUFPUInstrD, .InstrMisalignedFaultM,
     // mmu management
-    .PrivilegeModeW, .PTE, .PageType, .SATP_REGW, .STATUS_MXR, .STATUS_SUM, .STATUS_MPRV,
+    .PrivilegeModeW, .DebugMode, .PTE, .PageType, .SATP_REGW, .STATUS_MXR, .STATUS_SUM, .STATUS_MPRV,
     .STATUS_MPP, .ENVCFG_PBMTE, .ENVCFG_ADUE, .ITLBWriteF, .sfencevmaM, .sfencevmaAllM, .ITLBMissOrUpdateAF,
     .HPTWInstrAccessFaultF, .HPTWInstrPageFaultF, .HPTWInstrAccessFaultHeldF, .HPTWInstrPageFaultHeldF,
     // pmp/pma (inside mmu) signals.
@@ -229,7 +233,7 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
     .LSUHADDR, .HRDATA, .LSUHWDATA, .LSUHWSTRB, .LSUHSIZE,
     .LSUHBURST, .LSUHTRANS, .LSUHWRITE, .LSUHREADY,
     // connect to csr or privilege and stay the same.
-    .PrivilegeModeW, .BigEndianM, // connects to csr
+    .PrivilegeModeW, .DebugMode, .BigEndianM, // connects to csr
     .PMPCFG_ARRAY_REGW,           // connects to csr
     .PMPADDR_ARRAY_REGW,          // connects to csr
     // hptw keep i/o
@@ -302,12 +306,14 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
       .LoadMisalignedFaultM, .StoreAmoMisalignedFaultM,
       .MTimerInt, .MExtInt, .SExtInt, .MSwInt,
       .MTIME_CLINT, .IEUAdrxTvalM, .SetFflagsM,
-      .InstrAccessFaultF, .HPTWInstrAccessFaultF(HPTWInstrAccessFaultHeldF), .HPTWInstrPageFaultF(HPTWInstrPageFaultHeldF), .LoadAccessFaultM, .StoreAmoAccessFaultM, .SelHPTW,
+      .InstrAccessFaultF, .HPTWInstrAccessFaultF(HPTWInstrAccessFaultHeldF), .HPTWInstrPageFaultF(HPTWInstrPageFaultHeldF), .LoadAccessFaultM, .StoreAmoAccessFaultM, .SelHPTW, .DebugHaltReq, .DebugResetHaltReq,
       .PrivilegeModeW, .SATP_REGW,
       .STATUS_MXR, .STATUS_SUM, .STATUS_MPRV, .STATUS_MPP, .STATUS_FS,
       .PMPCFG_ARRAY_REGW, .PMPADDR_ARRAY_REGW,
-      .FRM_REGW, .ENVCFG_CBE, .ENVCFG_PBMTE, .ENVCFG_ADUE, .WaitM, .BigEndianM);
+      .FRM_REGW, .ENVCFG_CBE, .ENVCFG_PBMTE, .ENVCFG_ADUE, .WaitM, .BigEndianM, .ITrace, .DebugMode);
   end else begin
+    assign ITrace = '0;
+    assign DebugMode = 1'b0;
     assign {CSRReadValW, PrivilegeModeW,
             SATP_REGW, STATUS_MXR, STATUS_SUM, STATUS_MPRV, STATUS_MPP, STATUS_FS, FRM_REGW,
             // PMPCFG_ARRAY_REGW, PMPADDR_ARRAY_REGW,
