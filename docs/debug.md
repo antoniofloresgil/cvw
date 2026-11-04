@@ -69,10 +69,14 @@ requires.
 
 - **Entry.** The hart enters Debug Mode before the instruction in the Memory stage, which does
   not execute, at the same instruction boundaries as an interrupt. It enters:
-  - on a halt request (`dcsr.cause` 3; `setresethaltreq` also reports 3);
+  - on a halt request (`dcsr.cause` 3);
+  - on its first instruction after a reset, with `setresethaltreq` (`cause` 5);
   - after a single step (`cause` 4);
   - on an `ebreak` that `dcsr.ebreakm`, `ebreaks` or `ebreaku` sends to the debugger for the
     current privilege mode (`cause` 1).
+
+  When several apply, `cause` follows the specification's priority: `ebreak`, `resethaltreq`,
+  halt request, step.
 
   It saves the PC in `dpc` and the privilege mode in `dcsr.prv`, changes to M-mode and jumps to
   the DM's ROM at 0x800. No other CSR changes.
@@ -81,7 +85,8 @@ requires.
 - **dret** returns to `dpc` in the privilege mode of `dcsr.prv`. With `dcsr.step` set, the hart
   executes one instruction (or takes one trap, and then halts on the first instruction of the
   handler) and enters Debug Mode again. Interrupts stay masked during the step unless
-  `dcsr.stepie` is set.
+  `dcsr.stepie` is set. A `wfi` that is stepped over does not wait: it is a `nop`.
+- A halt request also ends a `wfi`: the `wfi` completes and the hart halts after it.
 
 ## Structure
 
@@ -173,18 +178,19 @@ To keep merges from upstream simple, the core's own modules (`trap`, `privmode`,
   - the debug CSRs are read in parallel with `csr` (their value is ORed into `CSRReadValW`) and
     clear its illegal-access flag; `dret` clears the illegal-instruction flag;
   - `mstatus.MPRV` is gated off in Debug Mode;
-  - a halt request wakes a `wfi`.
+  - a halt request, or a step, ends a `wfi`.
 
   With `DEBUG_SUPPORTED` = 0 every debug signal is 0 and the wiring is as before.
-- `src/wally/wallypipelinedcore.sv`: the `DebugHaltReq` input (default 0), passed to
-  `privileged`.
+- `src/wally/wallypipelinedcore.sv`: the `DebugHaltReq` and `DebugResetHaltReq` (the request
+  is `resethaltreq`'s, for `dcsr.cause` 5) inputs, default 0, passed to `privileged`.
 - `src/mmu/pmachecker.sv`: with `DEBUG_SUPPORTED`, 0x0–0xFFF is a region that the hart may
   read, write and execute (not cacheable, idempotent), so that it can run the ROM.
 - `src/wally/wallypipelinedsoc.sv`:
   - the four JTAG pins;
   - separate resets: power-on for the DM, `reset` = power-on or `ndmreset` for the SoC, and
     `reset` or `hartreset` for the cores;
-  - the `debug` block between `multicore_memory_system` and the uncore, and `DebugHaltReq`.
+  - the `debug` block between `multicore_memory_system` and the uncore, and the halt
+    requests to the core.
 - `src/cvw.sv`, `config/shared/parameter-defs.vh`, `config/*/config.vh`: the `DEBUG_SUPPORTED`
   parameter.
 - `.TDO()` in the SoC instances that Verilator compiles with `-Wall`, where an unconnected output
@@ -221,6 +227,8 @@ make openocd OPENOCD_CONFIG=debug_rv64gc    # the same on debug_rv64gc
     `mhartid`, and `cmderr` 3 for a CSR that does not exist;
   - the program buffer, alone and after a transfer (`postexec`), and an illegal instruction in
     it (`cmderr` 3);
+  - single steps, also over a `wfi`; an `ebreak` with `dcsr.ebreakm`; `setresethaltreq`
+    (`dcsr.cause` 4, 1 and 5, and `dpc`);
   - resuming (`resumeack`), a command while the hart runs (`cmderr` 4), an unsupported command
     (`cmderr` 2);
   - `ndmreset`.
@@ -273,7 +281,8 @@ LC_ALL=C ./gdbserver.py --exclude-tests $WALLY/testbench/debug/riscv-tests/exclu
 ## Roadmap
 
 1. **Halt and resume** (done): Debug Mode, Access Register, the program buffer, GDB.
-2. **Step and resets:** `dcsr.cause` 5 for `resethaltreq`, step refinements.
+2. **Step and resets** (done): `dcsr.cause` 5 for `resethaltreq` and the priority of causes,
+   `wfi` as a `nop` when stepped over.
 3. **Triggers (Sdtrig):** `tselect`/`tdata1`-`tdata3`, address and data matches (`mcontrol6`),
    instruction count.
 4. **Multiple harts:** `hartsel`, `hasel`, `haltsum`, one `FLAGS` byte per hart.

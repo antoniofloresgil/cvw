@@ -29,6 +29,7 @@ module debugmode import cvw::*; #(parameter cvw_t P,
   input  logic              clk, reset,
   input  logic              StallW, FlushW,
   input  logic              DebugHaltReq,                // halt request from the Debug Module
+  input  logic              DebugResetHaltReq,           // the halt request is resethaltreq's
   // The instruction in the Memory stage
   input  logic [31:0]       InstrM,
   input  logic              PrivilegedM, InstrValidM,
@@ -52,13 +53,14 @@ module debugmode import cvw::*; #(parameter cvw_t P,
   output logic [P.XLEN-1:0] DPC,
   output logic [1:0]        DCSRPrv,                     // privilege mode to return to
   output logic              DebugIntMask,                // mask interrupts: in Debug Mode, or stepping without stepie
+  output logic              DebugWakeM,                  // end a wfi: a halt request, or a step (wfi is then a nop)
   output logic              DebugCSRHitM,                // the instruction accesses a debug CSR in Debug Mode
   output logic [P.XLEN-1:0] DebugCSRReadValM
 );
 
   localparam logic [11:0] DCSR = 12'h7B0, DPCADR = 12'h7B1, DSCRATCH0 = 12'h7B2, DSCRATCH1 = 12'h7B3;
   // dcsr.cause
-  localparam logic [2:0] CAUSE_EBREAK = 3'd1, CAUSE_HALTREQ = 3'd3, CAUSE_STEP = 3'd4;
+  localparam logic [2:0] CAUSE_EBREAK = 3'd1, CAUSE_HALTREQ = 3'd3, CAUSE_STEP = 3'd4, CAUSE_RESETHALTREQ = 3'd5;
 
   logic             EBreakM, EBreakS, EBreakU, StepIE, Step;
   logic [2:0]       Cause, NextCause;
@@ -84,8 +86,9 @@ module debugmode import cvw::*; #(parameter cvw_t P,
   assign Interruptible = InstrValidM & ~CommittedM & ~CommittedF & ~WaitedM;
   assign HaltM = ~DebugMode & (DebugHaltReq | StepHalt) & Interruptible;
   assign DebugEnterM = EBreakToDebugM | HaltM;
-  // Priority of dcsr.cause: ebreak, then haltreq, then step
-  assign NextCause = EBreakToDebugM ? CAUSE_EBREAK : DebugHaltReq ? CAUSE_HALTREQ : CAUSE_STEP;
+  // Priority of dcsr.cause (the dcsr table of the Debug Specification): ebreak, resethaltreq, haltreq, step
+  assign NextCause = EBreakToDebugM ? CAUSE_EBREAK :
+                     DebugHaltReq ? (DebugResetHaltReq ? CAUSE_RESETHALTREQ : CAUSE_HALTREQ) : CAUSE_STEP;
 
   assign dretM = DebugMode & PrivilegedM & InstrM[31:20] == 12'h7B2 & InstrM[19:7] == '0 & InstrValidM;
 
@@ -112,6 +115,9 @@ module debugmode import cvw::*; #(parameter cvw_t P,
     end
 
   assign DebugIntMask = DebugMode | (StepArmed | StepHalt) & ~StepIE;
+  // A wfi does not wait for a halt request, nor while stepping: the specification's Single Step
+  // section treats it as a nop, so the step completes
+  assign DebugWakeM = DebugHaltReq | DebugMode | StepArmed;
 
   ///////////////////////////////////////////
   // Debug CSRs: accessible only in Debug Mode

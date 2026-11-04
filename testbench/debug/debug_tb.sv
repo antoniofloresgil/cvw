@@ -16,6 +16,8 @@
 //          - halt, dpc and dcsr, Access Register for GPRs and CSRs (cmderr 3 for a CSR that does
 //            not exist), the program buffer with and without a transfer, an exception in it,
 //            resume, and cmderr 2 and 4;
+//          - single step (also over a wfi, which is then a nop), ebreak with dcsr.ebreakm, and
+//            setresethaltreq, with dcsr.cause 4, 1 and 5;
 //          - ndmreset: the SoC resets (GPIOs back to 0) and the Debug Module stays active.
 //          It prints "SUCCESS! All tests ran without failures." or the number of failures.
 //
@@ -43,8 +45,9 @@ module debug_tb;
   localparam int unsigned ABITS = 7;
 
   // The program that System Bus Access loads (position independent, for RV32 and RV64):
-  // drive 42 on the GPIOs, write 0x600dc0de at 0x80001000, loop
-  localparam logic [31:0] PROGRAM [10] = '{
+  // drive 42 on the GPIOs, write 0x600dc0de at 0x80001000, loop; then an ebreak, a wfi and a
+  // loop that only the debugger runs, by setting dpc
+  localparam logic [31:0] PROGRAM [13] = '{
     32'h100602b7,   // lui   t0, 0x10060
     32'h0ff00313,   // li    t1, 255
     32'h0062a423,   // sw    t1, 8(t0)       output_en
@@ -54,7 +57,10 @@ module debug_tb;
     32'h600dc337,   // lui   t1, 0x600dc
     32'h0de30313,   // addi  t1, t1, 0xde
     32'hfe63a623,   // sw    t1, -20(t2)     0x80001000
-    32'h0000006f};  // j     .
+    32'h0000006f,   // j     .               0x80000024
+    32'h00100073,   // ebreak                0x80000028
+    32'h10500073,   // wfi                   0x8000002c
+    32'h0000006f};  // j     .               0x80000030
 
   logic        clk, reset_ext, reset;
   logic        TCK, TMS, TDI, TDO;
@@ -235,13 +241,31 @@ module debug_tb;
     do dmiread(DMSTATUS, st); while (!st[9]);         // allhalted
   endtask
 
+  // Resume at pc, and wait for the hart to halt again (a step or an ebreak)
+  task automatic resumeat(input logic [31:0] pc);
+    logic [31:0] st;
+    writereg(16'h07B1, pc);                            // dpc
+    dmiwrite(DMCONTROL, 32'h4000_0001);                // resumereq
+    do dmiread(DMSTATUS, st); while (!st[17]);        // allresumeack
+    waithalted();
+  endtask
+
+  // dcsr.cause and dpc after the hart halts
+  task automatic checkhalt(input string what, input logic [2:0] cause, input logic [31:0] pc);
+    logic [31:0] d;
+    readreg(16'h07B0, d);
+    check({what, ": dcsr.cause"}, 32'(d[8:6]), 32'(cause));
+    readreg(16'h07B1, d);
+    check({what, ": dpc"}, d, pc);
+  endtask
+
   ///////////////////////////////////////////////////////////////
   // The test
   ///////////////////////////////////////////////////////////////
 
   initial begin
     logic [63:0] dout;
-    logic [31:0] d;
+    logic [31:0] d, dcsr;
     logic [2:0]  err;
     Errors = 0;
     TCK = 1'b0; TMS = 1'b1; TDI = 1'b0;
@@ -399,8 +423,24 @@ module debug_tb;
     check("cmderr after an exception", 32'(err), 32'd3);
     readreg(16'h1008, d);
     check("x8 (s0) kept across the exception", d, 32'h0000_0BAD);
-    // Restore the registers the program uses, and resume
+    // Single step (dcsr.step): the hart halts again after one instruction, with cause 4
+    readreg(16'h07B0, dcsr);
+    writereg(16'h07B0, dcsr | 32'h4);
+    resumeat(RAM);
+    checkhalt("step from the first instruction", 3'd4, RAM + 4);
+    resumeat(RAM + 4);
+    checkhalt("second step", 3'd4, RAM + 8);
+    // A wfi that is stepped over is a nop
+    resumeat(RAM + 32'h2C);
+    checkhalt("step over wfi", 3'd4, RAM + 32'h30);
+    // An ebreak in M-mode with dcsr.ebreakm enters Debug Mode, with cause 1, dpc at the ebreak
+    writereg(16'h07B0, dcsr | 32'h8000);
+    resumeat(RAM + 32'h28);
+    checkhalt("ebreak with ebreakm", 3'd1, RAM + 32'h28);
+    writereg(16'h07B0, dcsr);
+    // Restore the registers the program uses, and resume in its loop
     writereg(16'h1008, 32'h0);
+    writereg(16'h07B1, RAM + 32'h24);
     dmiwrite(DMCONTROL, 32'h4000_0001);                // resumereq
     dmiread(DMSTATUS, d);
     check("dmstatus: all running, resumeack", d & 32'h0003_0F00, 32'h0003_0C00);
@@ -408,6 +448,17 @@ module debug_tb;
     check("cmderr of a command while running", 32'(err), 32'd4);
     repeat (50) @(posedge clk);
     check("GPIOs after resuming", GPIOOUT, 32'd42);
+
+    // setresethaltreq: the hart halts on its first instruction after a reset, with cause 5
+    dmiwrite(DMCONTROL, 32'h0000_0009);                // setresethaltreq
+    dmiwrite(DMCONTROL, 32'h2000_0001);                // hartreset
+    dmiwrite(DMCONTROL, 32'h1000_0001);                // release it, ackhavereset
+    waithalted();
+    checkhalt("halt after reset with resethaltreq", 3'd5, RAM);
+    dmiwrite(DMCONTROL, 32'h0000_0005);                // clrresethaltreq
+    dmiwrite(DMCONTROL, 32'h4000_0001);                // resumereq
+    repeat (200) @(posedge clk);
+    check("GPIOs after resuming from the reset halt", GPIOOUT, 32'd42);
 
     // ndmreset resets the SoC but not the Debug Module
     dmiwrite(DMCONTROL, 32'h0000_0003);

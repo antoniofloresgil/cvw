@@ -43,6 +43,7 @@ module dm import cvw::*; #(parameter cvw_t P) (
   output logic                  NDMReset,     // the SoC, except the DTM and DM
   output logic                  HartReset,    // the core
   output logic                  DebugHaltReq, // halt request to the core's Debug Mode
+  output logic                  DebugResetHaltReq, // the halt request is resethaltreq's (dcsr.cause 5)
   // Debug memory: AHB-Lite slave at 0x0-0xFFF, with no wait states
   input  logic                  DMHSEL,       // address phase of a transfer to the debug memory
   input  logic [11:0]           DMHADDR,
@@ -130,6 +131,7 @@ module dm import cvw::*; #(parameter cvw_t P) (
   assign Unavail = NDMReset | HartReset;           // the hart is in reset
   assign Busy = CmdState != CMD_IDLE;
   assign DebugHaltReq = DMActive & (HaltReq | ResetHaltPending) & ~Halted;
+  assign DebugResetHaltReq = DMActive & ResetHaltPending;
 
   ///////////////////////////////////////////
   // Abstract command: Access Register

@@ -76,6 +76,7 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   input  logic [4:0]        SetFflagsM,                                     // set FCSR flags from FPU
   input  logic              SelHPTW,                                        // HPTW in use.  Causes system to use S-mode endianness for accesses
   input  logic              DebugHaltReq,                                   // halt request from the Debug Module (DEBUG_SUPPORTED)
+  input  logic              DebugResetHaltReq,                              // it is resethaltreq's
   // CSR outputs
   output logic [P.XLEN-1:0] CSRReadValW,                                    // Value read from CSR
   output logic [1:0]        PrivilegeModeW,                                 // current privilege mode
@@ -126,7 +127,7 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
 
   // Debug Mode (src/debug/debugmode.sv): it steers the trap and return paths below
   logic                     ArchTrapM, TrapRawM;                            // architectural trap; trap from the trap logic
-  logic                     DebugMode, DebugEnterM, DebugTrapM, EBreakToDebugM, dretM, DebugIntMask, DebugCSRHitM;
+  logic                     DebugMode, DebugEnterM, DebugTrapM, EBreakToDebugM, dretM, DebugIntMask, DebugCSRHitM, DebugWakeM;
   logic [P.XLEN-1:0]        DebugTrapVectorM, DPC, DebugCSRReadValM, DebugCSRReadValW;
   logic [1:0]               DCSRPrv;
   logic [P.XLEN-1:0]        CSREPCM, CSRTrapVectorM, CSRCSRReadValW;
@@ -141,7 +142,7 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   // decode privileged instructions
   privdec #(P) pmd(.clk, .reset, .StallM, .InstrM(InstrM[31:7]),
     .PrivilegedM, .IllegalIEUFPUInstrM, .IllegalCSRAccessM,
-    .PrivilegeModeW, .STATUS_TSR, .STATUS_TVM, .STATUS_TW, .IntPendingM(IntPendingM | DebugHaltReq | DebugMode),
+    .PrivilegeModeW, .STATUS_TSR, .STATUS_TVM, .STATUS_TW, .IntPendingM(IntPendingM | DebugWakeM),
     .IllegalInstrFaultM(PrivIllegalInstrFaultM),
     .EcallFaultM, .BreakpointFaultM, .sretM, .mretM, .RetM(PrivRetM), .WaitM, .WaitedM, .sfencevmaM, .sfencevmaAllM);
 
@@ -183,14 +184,14 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   ///////////////////////////////////////////
 
   if (P.DEBUG_SUPPORTED) begin : debug
-    debugmode #(P) debugmode(.clk, .reset, .StallW, .FlushW, .DebugHaltReq,
+    debugmode #(P) debugmode(.clk, .reset, .StallW, .FlushW, .DebugHaltReq, .DebugResetHaltReq,
       .InstrM, .PrivilegedM, .InstrValidM, .CommittedM, .CommittedF, .WaitedM, .PCM, .PrivilegeModeW,
       .BreakpointFaultM, .ExceptionM, .ArchTrapM, .CSRReadM, .CSRWriteM, .SrcAM,
       .DebugMode, .DebugEnterM, .DebugTrapM, .DebugTrapVectorM, .EBreakToDebugM, .dretM, .DPC, .DCSRPrv,
-      .DebugIntMask, .DebugCSRHitM, .DebugCSRReadValM);
+      .DebugIntMask, .DebugWakeM, .DebugCSRHitM, .DebugCSRReadValM);
     flopenrc #(P.XLEN) dcsrvalreg(clk, reset, FlushW, ~StallW, DebugCSRReadValM, DebugCSRReadValW);
   end else begin : nodebug
-    assign {DebugMode, DebugEnterM, DebugTrapM, EBreakToDebugM, dretM, DebugIntMask, DebugCSRHitM} = '0;
+    assign {DebugMode, DebugEnterM, DebugTrapM, EBreakToDebugM, dretM, DebugIntMask, DebugWakeM, DebugCSRHitM} = '0;
     assign {DebugTrapVectorM, DPC, DebugCSRReadValW} = '0;
     assign DCSRPrv = P.M_MODE;
   end

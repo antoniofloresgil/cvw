@@ -86,7 +86,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic [3:0]                 MemHPROT;
   logic [1:0]                 MemHTRANS, DbgHTRANS;
   logic [P.AHBW-1:0]          MemHRDATA;
-  logic                       DebugHaltReq;
+  logic                       DebugHaltReq, DebugResetHaltReq;
 
   if (P.DEBUG_SUPPORTED) begin : debug
     logic       DMIReq, DMIWrite, DMIError;
@@ -97,7 +97,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     logic              DMHSEL;
     logic [P.AHBW-1:0] DMHRDATA;
     dm #(.P(P)) dm(.clk, .reset(PowerOnReset), .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError,
-      .NDMReset, .HartReset, .DebugHaltReq,
+      .NDMReset, .HartReset, .DebugHaltReq, .DebugResetHaltReq,
       .DMHSEL, .DMHADDR(MemHADDR[11:0]), .DMHWRITE(MemHWRITE), .DMHREADY(HREADY), .DMHWDATA(MemHWDATA),
       .DMHWSTRB(MemHWSTRB), .DMHRDATA, .SBHADDR(DbgHADDR), .SBHWDATA(DbgHWDATA), .SBHWSTRB(DbgHWSTRB),
       .SBHWRITE(DbgHWRITE), .SBHSIZE(DbgHSIZE), .SBHTRANS(DbgHTRANS), .SBHREADY(DbgHREADY),
@@ -109,7 +109,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
       .DbgHADDR, .DbgHWDATA, .DbgHWSTRB, .DbgHWRITE, .DbgHSIZE, .DbgHTRANS, .DbgHREADY, .DMHSEL, .DMHRDATA,
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HREADY, .HRDATA);
   end else begin : nodebug
-    assign {NDMReset, HartReset, DebugHaltReq, TDO} = '0;
+    assign {NDMReset, HartReset, DebugHaltReq, DebugResetHaltReq, TDO} = '0;
     assign MemHRDATA = HRDATA;
     assign {HADDR, HWDATA, HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK} =
       {MemHADDR, MemHWDATA, MemHWSTRB, MemHWRITE, MemHSIZE, MemHBURST, MemHPROT, MemHTRANS, MemHMASTLOCK};
@@ -133,7 +133,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset(CoreReset),
     .SCFail(CoreSCFail[0]), .HATOMIC(CoreHATOMIC[0]),
     .MTimerInt(MTimerInt[0]), .MExtInt(MExtInt[0]), .SExtInt(SExtInt[0]), .MSwInt(MSwInt[0]), .MTIME_CLINT,
-    .ExtCacheEvents(CoreCacheEvents[0]), .DebugHaltReq,
+    .ExtCacheEvents(CoreCacheEvents[0]), .DebugHaltReq, .DebugResetHaltReq,
     .HRDATA(CoreHRDATA[0]), .HREADY(CoreHREADY[0]), .HRESP(CoreHRESP[0]), .HCLK(), .HRESETn(),
     .HADDR(CoreHADDR[0]), .HWDATA(CoreHWDATA[0]), .HWSTRB(CoreHWSTRB[0]),
     .HWRITE(CoreHWRITE[0]), .HSIZE(CoreHSIZE[0]), .HBURST(CoreHBURST[0]), .HPROT(CoreHPROT[0]),
