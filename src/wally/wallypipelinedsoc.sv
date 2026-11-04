@@ -85,6 +85,8 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic [2:0]                 MemHSIZE, MemHBURST, DbgHSIZE;
   logic [3:0]                 MemHPROT;
   logic [1:0]                 MemHTRANS, DbgHTRANS;
+  logic [P.AHBW-1:0]          MemHRDATA;
+  logic                       DebugHaltReq;
 
   if (P.DEBUG_SUPPORTED) begin : debug
     logic       DMIReq, DMIWrite, DMIError;
@@ -92,18 +94,23 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     logic [31:0] DMIWData, DMIRData;
     dtm dtm(.TRSTn(~reset_ext), .TCK, .TMS, .TDI, .TDO, .clk, .reset(PowerOnReset),
       .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError);
+    logic              DMHSEL;
+    logic [P.AHBW-1:0] DMHRDATA;
     dm #(.P(P)) dm(.clk, .reset(PowerOnReset), .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError,
-      .NDMReset, .HartReset, .SBHADDR(DbgHADDR), .SBHWDATA(DbgHWDATA), .SBHWSTRB(DbgHWSTRB),
+      .NDMReset, .HartReset, .DebugHaltReq,
+      .DMHSEL, .DMHADDR(MemHADDR[11:0]), .DMHWRITE(MemHWRITE), .DMHREADY(HREADY), .DMHWDATA(MemHWDATA),
+      .DMHWSTRB(MemHWSTRB), .DMHRDATA, .SBHADDR(DbgHADDR), .SBHWDATA(DbgHWDATA), .SBHWSTRB(DbgHWSTRB),
       .SBHWRITE(DbgHWRITE), .SBHSIZE(DbgHSIZE), .SBHTRANS(DbgHTRANS), .SBHREADY(DbgHREADY),
       .SBHRDATA(HRDATA), .SBHRESP(HRESP));
     ahbdebugarb #(.P(P)) arb(.HCLK, .HRESETn, .CoreHold(HartReset),
       .CoreHADDR(MemHADDR), .CoreHWDATA(MemHWDATA), .CoreHWSTRB(MemHWSTRB), .CoreHWRITE(MemHWRITE),
       .CoreHSIZE(MemHSIZE), .CoreHBURST(MemHBURST), .CoreHPROT(MemHPROT), .CoreHTRANS(MemHTRANS),
-      .CoreHMASTLOCK(MemHMASTLOCK), .CoreHREADY(MemHREADY),
-      .DbgHADDR, .DbgHWDATA, .DbgHWSTRB, .DbgHWRITE, .DbgHSIZE, .DbgHTRANS, .DbgHREADY,
-      .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HREADY);
+      .CoreHMASTLOCK(MemHMASTLOCK), .CoreHREADY(MemHREADY), .CoreHRDATA(MemHRDATA),
+      .DbgHADDR, .DbgHWDATA, .DbgHWSTRB, .DbgHWRITE, .DbgHSIZE, .DbgHTRANS, .DbgHREADY, .DMHSEL, .DMHRDATA,
+      .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HREADY, .HRDATA);
   end else begin : nodebug
-    assign {NDMReset, HartReset, TDO} = '0;
+    assign {NDMReset, HartReset, DebugHaltReq, TDO} = '0;
+    assign MemHRDATA = HRDATA;
     assign {HADDR, HWDATA, HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK} =
       {MemHADDR, MemHWDATA, MemHWSTRB, MemHWRITE, MemHSIZE, MemHBURST, MemHPROT, MemHTRANS, MemHMASTLOCK};
     assign MemHREADY = HREADY;
@@ -126,7 +133,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset(CoreReset),
     .SCFail(CoreSCFail[0]), .HATOMIC(CoreHATOMIC[0]),
     .MTimerInt(MTimerInt[0]), .MExtInt(MExtInt[0]), .SExtInt(SExtInt[0]), .MSwInt(MSwInt[0]), .MTIME_CLINT,
-    .ExtCacheEvents(CoreCacheEvents[0]),
+    .ExtCacheEvents(CoreCacheEvents[0]), .DebugHaltReq,
     .HRDATA(CoreHRDATA[0]), .HREADY(CoreHREADY[0]), .HRESP(CoreHRESP[0]), .HCLK(), .HRESETn(),
     .HADDR(CoreHADDR[0]), .HWDATA(CoreHWDATA[0]), .HWSTRB(CoreHWSTRB[0]),
     .HWRITE(CoreHWRITE[0]), .HSIZE(CoreHSIZE[0]), .HBURST(CoreHBURST[0]), .HPROT(CoreHPROT[0]),
@@ -150,7 +157,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP, .CoreCacheEvents,
     .HADDR(MemHADDR), .HWDATA(MemHWDATA), .HWSTRB(MemHWSTRB), .HWRITE(MemHWRITE), .HSIZE(MemHSIZE),
     .HBURST(MemHBURST), .HPROT(MemHPROT), .HTRANS(MemHTRANS), .HMASTLOCK(MemHMASTLOCK),
-    .HRDATA, .HREADY(MemHREADY), .HRESP);
+    .HRDATA(MemHRDATA), .HREADY(MemHREADY), .HRESP);
 
   // instantiate uncore if a bus interface exists
   if (P.BUS_SUPPORTED) begin : uncoregen // Hack to work around Verilator bug https://github.com/verilator/verilator/issues/4769

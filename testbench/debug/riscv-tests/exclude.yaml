@@ -1,0 +1,26 @@
+# Tests that gdbserver.py skips on Wally (--exclude-tests), with the riscv-tests version that
+# OpenOCD 0.12 needs (before commit 6ca449c).
+all:
+  # Loads 256 KiB and lets the hart checksum it: hours in Verilator, beyond GDB's timeouts.
+  - DownloadTest
+  # Triggers (Sdtrig), which Wally does not have yet.  This version of the suite runs these
+  # whatever the target declares; IcountTest then waits on an infinite loop until its timeout.
+  - EtriggerTest
+  - IcountTest
+  - ItriggerTest
+  - ProgramHwWatchpoint
+  - TriggerExecuteInstant
+  - TriggerLoadAddressInstant
+  - TriggerStoreAddressInstant
+  # Uses "riscv repeat_read", which OpenOCD 0.12 does not have.
+  - RepeatReadTest
+  # Expects more than 1000 timer interrupts within 20 s of wall-clock time, with the timer
+  # rearmed 256 ticks ahead.  MTIME counts every clock cycle in the simulation: debug_rv64gc
+  # takes about 400 in that time.  On debug_rv32imc (no caches, every fetch over the bus) main
+  # makes no progress between interrupts, apparently because the handler outlasts the 256
+  # cycles and the interrupt is pending again on every mret.
+  - InterruptTest
+debug_rv32imc:
+  # rv32imc has no satp.  Writing it fails (cmderr 3, as debug_tb checks), but GDB with
+  # OpenOCD 0.12 reads back the value it wrote, so the test does not see that Sv32 is missing.
+  - Sv32Test

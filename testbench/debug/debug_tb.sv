@@ -9,10 +9,13 @@
 //            hartreset, ackhavereset, an abstract command failing with cmderr 2;
 //          - System Bus Access: loading a program into RAM with auto-increment while hartreset
 //            holds the core, reading it back with sbreadonaddr and sbreadondata, byte and
-//            halfword accesses, an alignment error;
+//            halfword accesses, the alignment and bad-address errors;
 //          - the program running after hartreset is released (it drives 42 on the GPIOs and
 //            writes a signature to RAM), and System Bus Access reading RAM and a peripheral
 //            while the core fetches over the same bus;
+//          - halt, dpc and dcsr, Access Register for GPRs and CSRs (cmderr 3 for a CSR that does
+//            not exist), the program buffer with and without a transfer, an exception in it,
+//            resume, and cmderr 2 and 4;
 //          - ndmreset: the SoC resets (GPIOs back to 0) and the Debug Module stays active.
 //          It prints "SUCCESS! All tests ran without failures." or the number of failures.
 //
@@ -31,7 +34,11 @@ module debug_tb;
 
   // DMI registers
   localparam logic [6:0] DMCONTROL = 7'h10, DMSTATUS = 7'h11, ABSTRACTCS = 7'h16, COMMAND = 7'h17,
-                         SBCS = 7'h38, SBADDRESS0 = 7'h39, SBDATA0 = 7'h3C;
+                         SBCS = 7'h38, SBADDRESS0 = 7'h39, SBDATA0 = 7'h3C, DATA0 = 7'h04, DATA1 = 7'h05,
+                         PROGBUF0 = 7'h20, HARTINFO = 7'h12;
+  // Access Register: aarsize 2 (32 bits) or XLEN, transfer, write
+  localparam logic [31:0] AR32 = 32'h0022_0000, ARX = P.XLEN == 64 ? 32'h0032_0000 : 32'h0022_0000,
+                          ARWRITE = 32'h0001_0000, POSTEXEC = 32'h0004_0000;
   localparam logic [31:0] RAM = 32'h8000_0000, SIGNATURE = 32'h8000_1000, GPIO = 32'h1006_0000;
   localparam int unsigned ABITS = 7;
 
@@ -193,6 +200,41 @@ module debug_tb;
     sbwait();
   endtask
 
+  // An abstract command: write it, wait while busy, return cmderr and clear it
+  task automatic command(input logic [31:0] cmd, output logic [2:0] cmderr);
+    logic [31:0] cs;
+    dmiwrite(COMMAND, cmd);
+    do dmiread(ABSTRACTCS, cs); while (cs[12]);       // busy
+    cmderr = cs[10:8];
+    if (cmderr != 0) dmiwrite(ABSTRACTCS, 32'h700);
+  endtask
+
+  task automatic readreg(input logic [15:0] regno, output logic [31:0] data);
+    logic [2:0] err;
+    command(ARX | 32'(regno), err);
+    if (err != 0) begin
+      $display("FAIL: reading register 0x%04h: cmderr %0d", regno, err);
+      Errors++;
+    end
+    dmiread(DATA0, data);
+  endtask
+
+  task automatic writereg(input logic [15:0] regno, input logic [31:0] data);
+    logic [2:0] err;
+    dmiwrite(DATA0, data);
+    if (P.XLEN == 64) dmiwrite(DATA1, 32'(0));
+    command(ARX | ARWRITE | 32'(regno), err);
+    if (err != 0) begin
+      $display("FAIL: writing register 0x%04h: cmderr %0d", regno, err);
+      Errors++;
+    end
+  endtask
+
+  task automatic waithalted();
+    logic [31:0] st;
+    do dmiread(DMSTATUS, st); while (!st[9]);         // allhalted
+  endtask
+
   ///////////////////////////////////////////////////////////////
   // The test
   ///////////////////////////////////////////////////////////////
@@ -200,6 +242,7 @@ module debug_tb;
   initial begin
     logic [63:0] dout;
     logic [31:0] d;
+    logic [2:0]  err;
     Errors = 0;
     TCK = 1'b0; TMS = 1'b1; TDI = 1'b0;
     reset_ext = 1'b1;
@@ -226,8 +269,8 @@ module debug_tb;
     check("dmstatus: version 3, authenticated, all unavailable, havereset",
           d & 32'h000F_3F8F, 32'h000C_3083);
 
-    // Abstract commands are not supported
-    dmiwrite(COMMAND, 32'h0);
+    // Only Access Register is supported: a Quick Access command fails with cmderr 2
+    dmiwrite(COMMAND, 32'h0100_0000);
     dmiread(ABSTRACTCS, d);
     check("abstractcs.cmderr after a command", 32'(d[10:8]), 32'd2);
     dmiwrite(ABSTRACTCS, 32'h700);
@@ -273,6 +316,12 @@ module debug_tb;
     dmiwrite(SBCS, 32'h7000);
     dmiread(SBCS, d);
     check("sberror cleared", 32'(d[14:12]), 32'd0);
+    // An address that no region decodes fails with sberror 2 (bad address)
+    sbcs(3'd2, 1'b1, 1'b0, 1'b0);
+    dmiwrite(SBADDRESS0, RAM - 8);
+    dmiread(SBCS, d);
+    check("sberror on an unmapped address", 32'(d[14:12]), 32'd2);
+    dmiwrite(SBCS, 32'h7000);
 
     // Release the hart: it runs the program, fetching over the bus that System Bus Access shares
     check("GPIOs while the hart is held in reset", GPIOOUT, 32'h0);
@@ -296,6 +345,69 @@ module debug_tb;
       sbread(3'd2, SIGNATURE + 32'h20 + 4*i, d);
       check($sformatf("write and read while the hart runs, %0d", i), d, 32'h1234_0000 + i);
     end
+
+    // Halt the hart: it loops at 0x80000024
+    dmiread(HARTINFO, d);
+    check("hartinfo: nscratch 1, dataaccess, datasize 2, dataaddr 0x380", d, 32'h0011_2380);
+    dmiread(ABSTRACTCS, d);
+    check("abstractcs: progbufsize 8, datacount 2", d & 32'h1F00_000F, 32'h0800_0002);
+    dmiwrite(DMCONTROL, 32'h8000_0001);               // haltreq
+    waithalted();
+    dmiwrite(DMCONTROL, 32'h0000_0001);
+    dmiread(DMSTATUS, d);
+    check("dmstatus: all halted, impebreak", d & 32'h0040_0F00, 32'h0040_0300);
+    readreg(16'h07B1, d);
+    check("dpc", d, RAM + 32'h24);
+    readreg(16'h07B0, d);
+    check("dcsr: debugver 4, cause haltreq, prv M", d & 32'hF000_01C3, 32'h4000_00C3);
+    readreg(16'h1005, d);
+    check("x5 (t0) written by the program", d, GPIO);
+    readreg(16'h1006, d);
+    check("x6 (t1)", d, 32'h600D_C0DE);
+    readreg(16'h0F14, d);
+    check("mhartid", d, 32'h0);
+    // A CSR that does not exist: the access raises an exception, cmderr 3
+    dmiwrite(DATA0, 32'h8000_0000);
+    if (P.XLEN == 64) dmiwrite(DATA1, 32'(0));
+    command(ARX | ARWRITE | (P.VIRTMEM_SUPPORTED ? 32'h08F0 : 32'h0180), err);
+    check("cmderr after writing a CSR that does not exist", 32'(err), 32'd3);
+    dmiwrite(ABSTRACTCS, 32'h700);
+    command(ARX | 32'h08F0, err);
+    check("cmderr after reading a CSR that does not exist", 32'(err), 32'd3);
+    dmiwrite(ABSTRACTCS, 32'h700);
+    writereg(16'h1007, 32'h1234_5678);
+    readreg(16'h1007, d);
+    check("x7 (t2) written and read back", d, 32'h1234_5678);
+    writereg(16'h1008, 32'h0000_0BAD);                 // s0, which the ROM saves and restores
+    readreg(16'h1008, d);
+    check("x8 (s0) written and read back", d, 32'h0000_0BAD);
+    // Program buffer: addi t2, t2, 1; then read t2
+    dmiwrite(PROGBUF0, 32'h0013_8393);
+    command(POSTEXEC, err);
+    check("cmderr of a program buffer execution", 32'(err), 32'd0);
+    readreg(16'h1007, d);
+    check("x7 after addi in the program buffer", d, 32'h1234_5679);
+    // Transfer then postexec: write t2 = 5, then addi
+    dmiwrite(DATA0, 32'd5);
+    if (P.XLEN == 64) dmiwrite(DATA1, 32'(0));
+    command(ARX | ARWRITE | POSTEXEC | 32'h1007, err);
+    readreg(16'h1007, d);
+    check("x7 written then incremented by postexec", d, 32'd6);
+    // An exception in the program buffer: cmderr 3
+    dmiwrite(PROGBUF0, 32'h0000_0000);                 // illegal instruction
+    command(POSTEXEC, err);
+    check("cmderr after an exception", 32'(err), 32'd3);
+    readreg(16'h1008, d);
+    check("x8 (s0) kept across the exception", d, 32'h0000_0BAD);
+    // Restore the registers the program uses, and resume
+    writereg(16'h1008, 32'h0);
+    dmiwrite(DMCONTROL, 32'h4000_0001);                // resumereq
+    dmiread(DMSTATUS, d);
+    check("dmstatus: all running, resumeack", d & 32'h0003_0F00, 32'h0003_0C00);
+    command(ARX | 32'h1005, err);
+    check("cmderr of a command while running", 32'(err), 32'd4);
+    repeat (50) @(posedge clk);
+    check("GPIOs after resuming", GPIOOUT, 32'd42);
 
     // ndmreset resets the SoC but not the Debug Module
     dmiwrite(DMCONTROL, 32'h0000_0003);

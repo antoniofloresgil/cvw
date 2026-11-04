@@ -25,6 +25,7 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
    // Privileged
    input  logic                  MTimerInt, MExtInt, SExtInt, MSwInt,
    input  logic [63:0]           MTIME_CLINT,
+   input  logic                  DebugHaltReq = 1'b0,  // halt request from the Debug Module (DEBUG_SUPPORTED)
    // PMU events of caches outside the core: {ICacheMiss, ICacheAccess, DCacheMiss, DCacheAccess}
    input  logic [3:0]            ExtCacheEvents,
    // Bus Interface
@@ -302,7 +303,7 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
       .LoadMisalignedFaultM, .StoreAmoMisalignedFaultM,
       .MTimerInt, .MExtInt, .SExtInt, .MSwInt,
       .MTIME_CLINT, .IEUAdrxTvalM, .SetFflagsM,
-      .InstrAccessFaultF, .HPTWInstrAccessFaultF(HPTWInstrAccessFaultHeldF), .HPTWInstrPageFaultF(HPTWInstrPageFaultHeldF), .LoadAccessFaultM, .StoreAmoAccessFaultM, .SelHPTW,
+      .InstrAccessFaultF, .HPTWInstrAccessFaultF(HPTWInstrAccessFaultHeldF), .HPTWInstrPageFaultF(HPTWInstrPageFaultHeldF), .LoadAccessFaultM, .StoreAmoAccessFaultM, .SelHPTW, .DebugHaltReq,
       .PrivilegeModeW, .SATP_REGW,
       .STATUS_MXR, .STATUS_SUM, .STATUS_MPRV, .STATUS_MPP, .STATUS_FS,
       .PMPCFG_ARRAY_REGW, .PMPADDR_ARRAY_REGW,

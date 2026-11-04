@@ -1,6 +1,7 @@
 // OpenOCD remote_bitbang server for a Verilator simulation (DPI).
 // openocd_tb.sv calls jtag_rbb_tick() every few clock cycles; it accepts one connection on
-// the TCP port given by +RBB_PORT (default 9823), then applies one command per call:
+// the TCP port given by +RBB_PORT (default 9823; 0 picks a free one, printed as "Listening on
+// port N", as riscv-tests/debug expects), then applies one command per call:
 //   '0'-'7' set TCK, TMS, TDI (bits 2, 1, 0); 'R' sends TDO as '0' or '1';
 //   'r'-'u' resets (ignored: the TAP resets through TMS); 'B'/'b' blink; 'Q' quits.
 // Returns 1 when OpenOCD quits or closes the connection.  JTAG_RBB_TRACE=<file> logs the
@@ -32,7 +33,9 @@ static void rbb_listen(int port) {
     perror("jtag_rbb: bind/listen");
     exit(1);
   }
-  printf("jtag_rbb: listening for OpenOCD on port %d\n", port);
+  socklen_t len = sizeof(addr);
+  getsockname(listenfd, (sockaddr *)&addr, &len);         // the port chosen for port 0
+  printf("Listening on port %d\n", ntohs(addr.sin_port));
   fflush(stdout);
 }
 

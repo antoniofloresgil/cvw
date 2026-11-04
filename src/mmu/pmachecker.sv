@@ -38,6 +38,7 @@ module pmachecker import cvw::*;  #(parameter cvw_t P) (
   logic                        AtomicAllowed;
   logic                        CacheableRegion, IdempotentRegion;
   logic                        SelExtIO, SelExtMem;
+  logic                        SelDebug;
 
   // Determine what type of access is being made
   assign AccessRW  = ReadAccessM | WriteAccessM;
@@ -54,13 +55,19 @@ module pmachecker import cvw::*;  #(parameter cvw_t P) (
   adrdec #(P.PA_BITS) extiodec(PhysicalAddress, P.EXT_IO_BASE[P.PA_BITS-1:0], P.EXT_IO_RANGE[P.PA_BITS-1:0], P.EXT_IO_SUPPORTED, AccessRWXC, Size, 4'b1111, SelExtIO);
   assign SelExtMem = SelRegions[3] & ~SelExtIO;
 
+  // Debug Module memory (DEBUG_SUPPORTED): its ROM, program buffer and data registers at
+  // 0x0-0xFFF, which the hart executes in Debug Mode (src/debug/dm.sv): not cacheable, any size
+  // the bus carries, executable.
+  adrdec #(P.PA_BITS) debugdec(PhysicalAddress, '0, P.PA_BITS'(12'hFFF), P.DEBUG_SUPPORTED, AccessRWXC, Size,
+    P.AHBW >= 64 ? 4'b1111 : 4'b0111, SelDebug);
+
   // Only non-core RAM/ROM memory regions are cacheable. PBMT can override cacheable; NC and IO are uncachable
   assign CacheableRegion = SelExtMem | SelRegions[4] | SelRegions[5];  // exclusion-tag: unused-cacheable
   assign Cacheable = (PBMemoryType == 2'b00) ? CacheableRegion : 1'b0;
 
   // Non-idempotent means access could have side effect and must not be done speculatively or redundantly
   // I/O is nonidempotent.  PBMT can override PMA; NC is idempotent and IO is non-idempotent
-  assign IdempotentRegion = SelRegions[1] | SelRegions[2] | SelExtMem | SelRegions[4] | SelRegions[5];
+  assign IdempotentRegion = SelRegions[1] | SelRegions[2] | SelExtMem | SelRegions[4] | SelRegions[5] | SelDebug;
   assign Idempotent = (PBMemoryType == 2'b00) ? IdempotentRegion : (PBMemoryType == 2'b01);
 
   // Atomic operations are only allowed on RAM
@@ -70,7 +77,7 @@ module pmachecker import cvw::*;  #(parameter cvw_t P) (
 
   // Detect access faults.  An address outside the physical address space selects no region.
   // A fetch from the I/O window faults, so the IFU never reads it, not even on a wrong path.
-  assign PMAAccessFault          = (SelRegions[0] | PAOutOfRange) & AccessRWXC | AtomicAccessM & ~AtomicAllowed | ExecuteAccessF & SelExtIO;
+  assign PMAAccessFault          = (SelRegions[0] & ~SelDebug | PAOutOfRange) & AccessRWXC | AtomicAccessM & ~AtomicAllowed | ExecuteAccessF & SelExtIO;
   assign PMAInstrAccessFaultF    = ExecuteAccessF & PMAAccessFault;
   assign PMALoadAccessFaultM     = ReadAccessM & ~WriteAccessM & PMAAccessFault;
   assign PMAStoreAmoAccessFaultM = (WriteAccessM | (|CMOpM))   & PMAAccessFault;
