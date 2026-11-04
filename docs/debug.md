@@ -10,7 +10,8 @@ hart. A debugger such as OpenOCD, with GDB on top, can:
 - read and write memory and peripherals, through the hart or through System Bus Access;
 - hold the core in reset while it loads a program, and reset the SoC.
 
-Several harts and trace come in later phases (see the roadmap at the end).
+It serves several harts, and each hart can have an E-Trace instruction trace with a RAM sink
+(`TRACE_SUPPORTED`, `docs/trace.md`), read through System Bus Access or by the harts.
 
 ## Enabling it
 
@@ -376,8 +377,9 @@ LC_ALL=C ./gdbserver.py --exclude-tests $WALLY/testbench/debug/riscv-tests/exclu
    `itrigger`, `etrigger`.
 4. **Multiple harts** (done, without `hasel`): `hartsel`, `haltsum0`/`haltsum1`, state per hart,
    one `FLAGS` byte per hart.
-5. **Trace:** a trace buffer peripheral read through System Bus Access, then the RISC-V
-   Efficient Trace (E-Trace) encoder.
+5. **Trace** (done, `docs/trace.md`): the E-Trace encoder of each hart and its RAM sink,
+   controlled through the registers of the RISC-V Trace Control Interface and read through System
+   Bus Access or by the harts.
 
 The DTM, the DMI and System Bus Access stay as they are.
 
