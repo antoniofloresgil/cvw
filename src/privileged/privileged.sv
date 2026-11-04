@@ -100,7 +100,8 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   output logic              BigEndianM,                                     // Use big endian in current privilege mode
   // Fault outputs
   output logic              WaitM,                                          // wfi is waiting for an interrupt: stall the pipeline
-  output logic [2*P.XLEN+13:0] ITrace                                      // instruction trace interface (TRACE_SUPPORTED)
+  output logic [2*P.XLEN+13:0] ITrace,                                     // instruction trace interface (TRACE_SUPPORTED)
+  output logic              DebugMode                                       // the hart is in Debug Mode (DEBUG_SUPPORTED)
 );
 
   logic [4:0]               CauseM;                                         // trap cause
@@ -128,7 +129,7 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
 
   // Debug Mode (src/debug/debugmode.sv): it steers the trap and return paths below
   logic                     ArchTrapM, TrapRawM;                            // architectural trap; trap from the trap logic
-  logic                     DebugMode, DebugEnterM, DebugTrapM, EBreakToDebugM, dretM, DebugIntMask, DebugCSRHitM, DebugWakeM;
+  logic                     DebugEnterM, DebugTrapM, EBreakToDebugM, dretM, DebugIntMask, DebugCSRHitM, DebugWakeM;
   logic [P.XLEN-1:0]        DebugTrapVectorM, DPC, DebugCSRReadValM, DebugCSRReadValW;
   logic [1:0]               DCSRPrv;
   logic [P.XLEN-1:0]        CSREPCM, CSRTrapVectorM, CSRCSRReadValW;

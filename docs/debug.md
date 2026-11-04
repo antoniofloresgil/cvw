@@ -200,9 +200,11 @@ executes code from the DM's **debug memory**, an AHB slave at 0x0–0xFFF:
 
   `postexec` jumps on to the program buffer instead of ending with `ebreak`.
 - **The core's accesses to 0x0–0xFFF** go to the DM instead of the uncore: `ahbdebugarb`
-  selects the DM's slave and returns its read data with no wait states. Outside Debug Mode the
-  same addresses are readable (as in other execution-based DMs), but the hart has no reason to
-  touch them.
+  selects the DM's slave and returns its read data with no wait states. Only a hart in Debug
+  Mode can reach them: outside it the PMA checker treats 0x0–0xFFF as unmapped, so a fetch, load
+  or store there faults (access fault, `mtval` the address), and software cannot run the ROM or
+  disturb the data registers and flags. Some execution-based DMs leave the region open (PULP's
+  riscv-dbg); Wally closes it, as Ibex does.
 
 ### Bus and clock domains
 
@@ -250,9 +252,13 @@ To keep merges from upstream simple, the core's own modules (`trap`, `privmode`,
 
   With `DEBUG_SUPPORTED` = 0 every debug signal is 0 and the wiring is as before.
 - `src/wally/wallypipelinedcore.sv`: the `DebugHaltReq` and `DebugResetHaltReq` (the request
-  is `resethaltreq`'s, for `dcsr.cause` 5) inputs, default 0, passed to `privileged`.
+  is `resethaltreq`'s, for `dcsr.cause` 5) inputs, default 0, passed to `privileged`; and
+  `DebugMode`, from `privileged` to the IFU and the LSU.
+- `src/ifu/ifu.sv`, `src/lsu/lsu.sv`, `src/mmu/mmu.sv`: a `DebugMode` input passed on to the PMA
+  checker.
 - `src/mmu/pmachecker.sv`: with `DEBUG_SUPPORTED`, 0x0–0xFFF is a region that the hart may
-  read, write and execute (not cacheable, idempotent), so that it can run the ROM.
+  read, write and execute in Debug Mode only (not cacheable, idempotent), so that it can run the
+  ROM.
 - `src/wally/wallypipelinedsoc.sv`:
   - the four JTAG pins;
   - separate resets: power-on for the DM, `reset` = power-on or `ndmreset` for the SoC, and
@@ -295,6 +301,7 @@ make openocd NHARTS=2                       # and OpenOCD on it
   - halting the running program: `dpc`, `dcsr` (`cause`, `prv`);
   - Access Register: reading and writing GPRs (including `s0`, which the ROM borrows) and
     `mhartid`, and `cmderr` 3 for a CSR that does not exist;
+  - a load from the debug memory outside Debug Mode: a load access fault;
   - the program buffer, alone and after a transfer (`postexec`), and an illegal instruction in
     it (`cmderr` 3);
   - single steps, also over a `wfi`; an `ebreak` with `dcsr.ebreakm`; `setresethaltreq`

@@ -52,7 +52,7 @@ module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHAR
   // The program that System Bus Access loads (position independent, for RV32 and RV64):
   // drive 42 on the GPIOs, write 0x600dc0de at 0x80001000, loop; then an ebreak, a wfi and a
   // loop that only the debugger runs, by setting dpc
-  localparam logic [31:0] PROGRAM [13] = '{
+  localparam logic [31:0] PROGRAM [15] = '{
     32'h100602b7,   // lui   t0, 0x10060
     32'h0ff00313,   // li    t1, 255
     32'h0062a423,   // sw    t1, 8(t0)       output_en
@@ -65,7 +65,9 @@ module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHAR
     32'h0000006f,   // j     .               0x80000024
     32'h00100073,   // ebreak                0x80000028
     32'h10500073,   // wfi                   0x8000002c
-    32'h0000006f};  // j     .               0x80000030
+    32'h0000006f,   // j     .               0x80000030
+    32'h38002283,   // lw    t0, 0x380(zero) 0x80000034: the Debug Module's data0
+    32'h0000006f};  // j     .               0x80000038
 
   logic        clk, reset_ext, reset;
   logic        TCK, TMS, TDI, TDO;
@@ -524,6 +526,18 @@ module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHAR
     writetdata1(32'h0);
     readtdata1(d);
     check("tdata1: type 0 written reads a free trigger (mcontrol6, all 0)", d, 32'h6000_0000);
+    // Outside Debug Mode the Debug Module's memory is unmapped: a load from it faults
+    writereg(16'h07B1, RAM + 32'h34);                  // lw t0, 0x380(zero)
+    dmiwrite(DMCONTROL, 32'h4000_0001);                // resume; the handler loops at RAM + 0x30
+    repeat (100) @(posedge clk);
+    dmiwrite(DMCONTROL, 32'h8000_0001);
+    waithalted();
+    dmiwrite(DMCONTROL, 32'h0000_0001);
+    checkhalt("halt in the handler of the load from the debug memory", 3'd3, RAM + 32'h30);
+    readreg(16'h0342, d);
+    check("load from the debug memory outside Debug Mode: mcause load access fault", d, 32'd5);
+    readreg(16'h0343, d);
+    check("load from the debug memory outside Debug Mode: mtval", d, 32'h380);
     writereg(16'h0300, mstatus);
     writereg(16'h0305, mtvec);
     sbwrite(3'd2, GPIO + 32'hC, 32'd42);

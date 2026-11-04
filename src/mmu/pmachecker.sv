@@ -26,6 +26,7 @@ module pmachecker import cvw::*;  #(parameter cvw_t P) (
   input  logic                 WriteAccessM,   // Write access
   input  logic                 ReadAccessM,    // Read access
   input  logic [1:0]           PBMemoryType,   // PBMT field of PTE during TLB hit, or 00 otherwise
+  input  logic                 DebugMode,      // the hart is in Debug Mode (DEBUG_SUPPORTED)
   output logic                 Cacheable, Idempotent, SelTIM,
   output logic                 PMAInstrAccessFaultF,
   output logic                 PMALoadAccessFaultM,
@@ -57,9 +58,12 @@ module pmachecker import cvw::*;  #(parameter cvw_t P) (
 
   // Debug Module memory (DEBUG_SUPPORTED): its ROM, program buffer and data registers at
   // 0x0-0xFFF, which the hart executes in Debug Mode (src/debug/dm.sv): not cacheable, any size
-  // the bus carries, executable.
+  // the bus carries, executable.  Only in Debug Mode: outside it the region is unmapped, and an
+  // access faults, so that software cannot run or disturb the Debug Module's code and data.
+  logic SelDebugRegion;
   adrdec #(P.PA_BITS) debugdec(PhysicalAddress, '0, P.PA_BITS'(12'hFFF), P.DEBUG_SUPPORTED, AccessRWXC, Size,
-    P.AHBW >= 64 ? 4'b1111 : 4'b0111, SelDebug);
+    P.AHBW >= 64 ? 4'b1111 : 4'b0111, SelDebugRegion);
+  assign SelDebug = SelDebugRegion & DebugMode;
 
   // Only non-core RAM/ROM memory regions are cacheable. PBMT can override cacheable; NC and IO are uncachable
   assign CacheableRegion = SelExtMem | SelRegions[4] | SelRegions[5];  // exclusion-tag: unused-cacheable

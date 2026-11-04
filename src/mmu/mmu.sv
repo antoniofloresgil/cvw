@@ -27,6 +27,7 @@ module mmu import cvw::*;  #(parameter cvw_t P,
   input  logic                 ENVCFG_PBMTE,       // Page-based memory types enabled
   input  logic                 ENVCFG_ADUE,        // HPTW A/D Update enable
   input  logic [1:0]           PrivilegeModeW,     // Current privilege level of the processor
+  input  logic                 DebugMode,          // the hart is in Debug Mode: the Debug Module's memory is accessible
   input  logic                 DisableTranslation, // virtual address translation disabled during D$ flush and HPTW walk that use physical addresses
   input  logic [P.XLEN+1:0]    VAdr,               // virtual/physical address from IEU or physical address from HPTW
   input  logic [1:0]           Size,               // access size: 00 = 8 bits, 01 = 16 bits, 10 = 32 bits, 11 = 64 bits
@@ -113,7 +114,7 @@ module mmu import cvw::*;  #(parameter cvw_t P,
   ///////////////////////////////////////////
 
   pmachecker #(P) pmachecker(.PhysicalAddress, .PAOutOfRange, .Size, .CMOpM,
-    .AtomicAccessM, .ExecuteAccessF, .WriteAccessM, .ReadAccessM, .PBMemoryType,
+    .AtomicAccessM, .ExecuteAccessF, .WriteAccessM, .ReadAccessM, .PBMemoryType, .DebugMode,
     .Cacheable, .Idempotent, .SelTIM,
     .PMAInstrAccessFaultF, .PMALoadAccessFaultM, .PMAStoreAmoAccessFaultM);
 
