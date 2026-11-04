@@ -3,7 +3,9 @@
 // It exercises every case of the instruction trace interface: branches taken and not taken
 // (32 and 16 bits), inferable and uninferable jumps, calls and returns, ecall, ebreak, an illegal
 // instruction, a load access fault, a trip to U-mode and back, and a timer interrupt.  The trap
-// handler skips the instruction that traps and returns with mret.
+// handler skips the instruction that traps and returns with mret.  Then it exercises the packets
+// of the encoder that depend on counts: branch maps of 16 to 31 branches, full maps of 31 branches
+// sent without an address, and the periodic resynchronization.
 //
 // The code section holds instructions only: the reference decoder of the E-Trace specification
 // reads the program with objdump and cannot parse data in it.  It ends by writing 1 to tohost.
@@ -105,6 +107,32 @@ after_user:
 8:  LREG    t1, 0(t0)
     beqz    t1, 8b
     csrci   mstatus, 0x8
+
+    // Branch maps of 16 to 31 branches: 20 branches, then the address packet that a jalr causes
+    li      t1, 10
+10: andi    t2, t1, 1
+    beqz    t2, 11f                     // taken every other iteration
+    nop
+11: addi    t1, t1, -1
+    bnez    t1, 10b
+    la      t0, leaf
+    jalr    ra, 0(t0)
+
+    // Full branch maps: 200 branches without a discontinuity, sent 31 at a time without address
+    li      t1, 100
+12: andi    t2, t1, 1
+    beqz    t2, 13f
+    nop
+13: addi    t1, t1, -1
+    bnez    t1, 12b
+
+    // Resynchronization: 40 calls through jalr, two address packets each, more than
+    // 2^(resync-max+4) packets between sync packets
+    li      t1, 40
+    la      t0, leaf
+14: jalr    ra, 0(t0)
+    addi    t1, t1, -1
+    bnez    t1, 14b
 
     // Done
     li      t0, 1

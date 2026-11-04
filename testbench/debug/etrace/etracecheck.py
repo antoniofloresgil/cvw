@@ -12,8 +12,9 @@ Given the CSV of the instruction trace interface that testbench.sv writes with
   1. encodes it with the reference encoder (encoder_model.py), which validates the interface,
   2. decodes the packets with the reference decoder (decoder_model.py), and checks that the
      program counters it reconstructs are the ones that the hart retired, in order.
-With --rtl-raw it also checks that the packets of Wally's encoder are those of the reference,
-byte for byte.
+With --rtl-packets it also checks that the packets of Wally's encoder (src/debug/etraceencoder.sv,
+dumped by the testbench with +EtracePackets=: one per line in hex bytes, header first) are those of
+the reference, byte for byte.
 
     etracecheck.py --csv trace.csv --elf program.elf --xlen 64
 """
@@ -86,13 +87,23 @@ def run(cmd, cwd, env, what):
     return result.stdout
 
 
+def split_packets(raw):
+    """Split a te_inst byte stream into packets: a header byte, whose low 5 bits are the payload length."""
+    packets, i = [], 0
+    while i < len(raw):
+        end = i + 1 + (raw[i] & 0x1F)
+        packets.append(raw[i:end])
+        i = end
+    return packets
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--csv", required=True, help="instruction trace interface CSV (+EtraceCsv=)")
     parser.add_argument("--elf", required=True, help="the program that ran")
     parser.add_argument("--xlen", type=int, choices=(32, 64), required=True)
     parser.add_argument("--resync-max", type=int, default=0, help="resync every 2^(n+4) packets")
-    parser.add_argument("--rtl-raw", help="packets of Wally's encoder, to compare with the reference")
+    parser.add_argument("--rtl-packets", help="packets of Wally's encoder (+EtracePackets=), to compare")
     parser.add_argument("--spec", default=os.environ.get("ETRACE_SPEC"), help="riscv-trace-spec clone")
     parser.add_argument("--keep", help="keep the work files in this directory")
     args = parser.parse_args()
@@ -143,15 +154,17 @@ def main():
         sys.exit(f"FAIL: the decoder reconstructed {decoded} instructions, the hart retired {len(retired)}")
     print(f"reference decoder: the {decoded} program counters match")
 
-    # 3. Wally's encoder, byte for byte
-    if args.rtl_raw:
-        ours = Path(args.rtl_raw).read_bytes()
-        reference = (work / f"{out}.te_inst_raw").read_bytes()
-        if ours != reference:
-            first = next((i for i, (a, b) in enumerate(zip(ours, reference)) if a != b), min(len(ours), len(reference)))
-            sys.exit(f"FAIL: Wally's packets differ from the reference at byte {first} "
-                     f"({len(ours)} bytes against {len(reference)})")
-        print(f"Wally's encoder: {len(ours)} bytes, equal to the reference")
+    # 3. Wally's encoder, packet by packet
+    if args.rtl_packets:
+        ours = [bytes.fromhex(line) for line in Path(args.rtl_packets).read_text().split()]
+        reference = split_packets((work / f"{out}.te_inst_raw").read_bytes())
+        for n, (a, b) in enumerate(zip(ours, reference)):
+            if a != b:
+                sys.exit(f"FAIL: Wally's packet {n} is {a.hex()}, the reference's is {b.hex()} "
+                         f"(line {n + 2} of {out}.te_inst with --keep)")
+        if len(ours) != len(reference):
+            sys.exit(f"FAIL: Wally's encoder sent {len(ours)} packets, the reference {len(reference)}")
+        print(f"Wally's encoder: {len(ours)} packets, {sum(map(len, ours))} bytes, equal to the reference")
 
     if not args.keep:
         shutil.rmtree(work)

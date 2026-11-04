@@ -1,11 +1,15 @@
 ///////////////////////////////////////////
 // etracedump.sv
 //
-// Purpose: Writes the instruction trace interface of hart 0 (src/debug/etraceingress.sv) as the
-//          encoder input CSV of the E-Trace reference flow (riscv-trace-spec/referenceFlow), with
-//          +EtraceCsv=<file>: one row per line, columns itype_0, cause, tval (hex), priv,
-//          iaddr_0 (hex), context, ctype, iretire_0, ilastsize_0.  docs/trace.md explains how the
-//          reference encoder and decoder check it.
+// Purpose: Dumps the instruction trace of hart 0 for the E-Trace reference flow
+//          (riscv-trace-spec/referenceFlow); docs/trace.md explains the check.
+//          +EtraceCsv=<file>:     the lines of the instruction trace interface
+//                                 (src/debug/etraceingress.sv) as the reference encoder's input
+//                                 CSV: itype_0, cause, tval (hex), priv, iaddr_0 (hex), context,
+//                                 ctype, iretire_0, ilastsize_0
+//          +EtracePackets=<file>: the packets of Wally's encoder (src/debug/etraceencoder.sv), one
+//                                 per line in hex bytes, header first
+//          Both cover the same lines: those while TraceOn is 1.
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
@@ -13,9 +17,13 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module etracedump import cvw::*; #(parameter cvw_t P) (
+module etracedump import cvw::*; #(parameter cvw_t P, parameter int NBYTES = 1) (
   input logic                  clk, reset,
-  input logic [2*P.XLEN+13:0]  ITrace
+  input logic                  TraceOn,
+  input logic [2*P.XLEN+13:0]  ITrace,
+  input logic                  PacketValid,
+  input logic [4:0]            PacketLen,
+  input logic [8*NBYTES-1:0]   Packet
 );
 
   logic              Valid, Halted, IRetire, ILastSize;
@@ -26,19 +34,32 @@ module etracedump import cvw::*; #(parameter cvw_t P) (
   assign {Valid, Halted, IType, IRetire, ILastSize, Priv, Cause, IAddr, Tval} = ITrace;
 
   string file;
-  int    fd;
+  int    fd, pfd;
   initial begin
-    fd = 0;
+    fd = 0; pfd = 0;
     if ($value$plusargs("EtraceCsv=%s", file)) begin
       fd = $fopen(file, "w");
       if (fd == 0) $display("Error: cannot write %s", file);
       else $fwrite(fd, "itype_0,cause,tval,priv,iaddr_0,context,ctype,iretire_0,ilastsize_0\n");
     end
+    if ($value$plusargs("EtracePackets=%s", file)) begin
+      pfd = $fopen(file, "w");
+      if (pfd == 0) $display("Error: cannot write %s", file);
+    end
   end
 
-  always @(posedge clk)
-    if (fd != 0 & ~reset & Valid)
+  always @(posedge clk) begin
+    if (fd != 0 & ~reset & TraceOn & Valid)
       $fwrite(fd, "%0d,%0d,%h,%0d,%h,0,0,%0d,%0d\n", IType, Cause, Tval, Priv, IAddr, IRetire, ILastSize);
+    if (pfd != 0 & ~reset & PacketValid) begin
+      for (int i = 0; i < NBYTES; i++)
+        if (i < int'(PacketLen)) $fwrite(pfd, "%h", Packet[8*i +: 8]);
+      $fwrite(pfd, "\n");
+    end
+  end
 
-  final if (fd != 0) $fclose(fd);
+  final begin
+    if (fd != 0) $fclose(fd);
+    if (pfd != 0) $fclose(pfd);
+  end
 endmodule

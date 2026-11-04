@@ -656,9 +656,20 @@ module testbench;
     end
   end
 
-  // The instruction trace interface of hart 0 as CSV for the E-Trace reference flow (+EtraceCsv=)
+  // The E-Trace encoder on hart 0, traced while a test runs, and its input and packets for the
+  // reference flow (+EtraceCsv=, +EtracePackets=, +EtraceResyncMax=; docs/trace.md)
   if (P.TRACE_SUPPORTED) begin : etrace
-    etracedump #(P) etracedump(.clk, .reset, .ITrace(dut.core.ITrace));
+    localparam int NBYTES = 1 + (2*P.XLEN + 13 + 7) / 8;
+    logic                TraceOn, PacketValid;
+    logic [3:0]          ResyncMax;
+    logic [4:0]          PacketLen;
+    logic [8*NBYTES-1:0] Packet;
+    initial if (!$value$plusargs("EtraceResyncMax=%d", ResyncMax)) ResyncMax = 4'd0;
+    assign TraceOn = CurrState == STATE_RUN_TEST;
+    etraceencoder #(P) etraceencoder(.clk, .reset, .TraceOn, .ResyncMax, .ITrace(dut.core.ITrace),
+      .PacketValid, .PacketLen, .Packet);
+    etracedump #(P, NBYTES) etracedump(.clk, .reset, .TraceOn, .ITrace(dut.core.ITrace),
+      .PacketValid, .PacketLen, .Packet);
   end
 
   // The EXT_IO window is not executable: no instruction fetch may reach it on the bus,

@@ -1,7 +1,7 @@
 # Instruction trace (E-Trace)
 
-Status: **the instruction trace interface is done and verified** (step 1 below); the encoder,
-the sink and their control are to do. This page records the decisions, so that the
+Status: **the instruction trace interface and the encoder are done and verified** (steps 1 and 2
+below); the sink and the control registers are to do. This page records the decisions, so that the
 implementation and its verification follow one plan. It is phase 5 of the debug work
 (`docs/debug.md`).
 
@@ -29,6 +29,10 @@ etrace (src/debug/trace)     per hart, outside the core
 └── sink             a RAM, read through System Bus Access, with the control registers
 ```
 
+Until the sink exists (step 3), `testbench.sv` instantiates the encoder on hart 0 and turns the
+trace on while a test runs (`STATE_RUN_TEST`); step 3 moves it into `wallypipelinedsoc` with the
+control registers.
+
 Only the ingress sits inside the core, as the debug unit does; it uses signals that `privileged`
 already receives (`InstrOrigM`, `PCM`, `IClassM`, `CauseM`, the privilege mode, the trap
 signals). The core gets output ports for the ITI line and `etrace` is instantiated by
@@ -52,6 +56,35 @@ the reference flow expects:
   retirements and traps never share a cycle.
 - Tracing stops while the hart is in Debug Mode (`priv` 4, the encoder treats it as a halt).
 
+## The encoder
+
+`src/debug/etraceencoder.sv` is the flowchart of the specification's reference algorithm, written
+to follow `encoder_model.py` step for step:
+
+- **Pipeline**: the previous, current and next lines of the interface. A line shifts it in and the
+  current instruction is encoded (the first line of a trace only fills it), so the encoder sends at
+  most one packet per line, in the cycle the line arrives.
+- **Decision**, in the order of the flowchart: after an exception, a trap packet (format 3.1, with
+  `thaddr` 0 when the next instruction traps too) or a start packet; a start packet (3.0) for the
+  first instruction, a privilege change or an overdue resynchronization; after an uninferable jump,
+  an address packet, or a trap packet; an address packet (format 2, or 1 when branches are pending)
+  for a resynchronization with branches pending, a retired exception, or before a trap or privilege
+  change; a branch packet without address (format 1, `branches` 0) when the map holds 31 branches.
+- **Fields**: start and trap packets carry the full address, the others the difference to the last
+  address sent (in units of 2 bytes); `notify`, `updiscon` and `irreport` are sent as the reference
+  sends them, XORed with the bit before, so that compression usually removes them.
+- **On and off** (`TraceOn`): turning trace on sends a support packet (3.3, `ienable` 1,
+  `qual_status` 0) and empties the pipeline; turning it off flushes it in three cycles: the last
+  instruction is encoded, its address is sent, and a support packet with `ienable` 0 and
+  `qual_status` 1 (ended, representative) ends the trace.
+- **Compression and framing**: each packet loses the copies of its most significant bit, is
+  sign-extended to whole bytes, and gets a header byte `{1'b0, msg_type 2, payload bytes}`, the
+  byte stream of the reference (`te_inst_raw`). The output is one whole packet per cycle
+  (`PacketValid`, `PacketLen`, `Packet`: header in byte 0, payload least significant byte first),
+  at most 1 + 18 bytes (a 64-bit trap packet with `tval`).
+- `ResyncMax`: a start packet at least every 2^(`ResyncMax`+4) packets (the reference's
+  `resync-max`).
+
 ## Verification
 
 The specification's repository has a **reference flow in Python** (BSD-2-Clause, standard
@@ -62,8 +95,9 @@ path in an environment variable, and the checks are skipped when it is missing.
 
 1. The testbench writes the ITI lines of a run in the reference's CSV format
    (`itype_0, cause, tval, priv, iaddr_0, context, ctype, iretire_0, ilastsize_0`).
-2. The reference `encoder_model.py` turns them into packets; the RTL packets must be **equal,
-   packet by packet** (`compare_te_inst.py`).
+2. The reference `encoder_model.py` turns them into packets; the RTL packets (dumped with
+   `+EtracePackets=`, one per line in hex bytes) must be **equal, byte for byte, packet by
+   packet**.
 3. The reference `decoder_model.py` decodes the RTL packets, with the program's disassembly; the
    program counters it reconstructs must equal the ones the core retired.
 
@@ -75,18 +109,25 @@ not available.
 ```bash
 git clone https://github.com/riscv-non-isa/riscv-trace-spec.git ~/riscv-trace-spec   # once, outside Wally
 make -C testbench/debug/etrace check ETRACE_SPEC=~/riscv-trace-spec
+make -C testbench/debug/etrace check ETRACE_SPEC=~/riscv-trace-spec RESYNC_MAX=1   # another period
 ```
 
 `make check` builds `etracetest.S` (`testbench/debug/etrace`) for RV32 and RV64, runs it on
-`trace_rv32gc` (the trace without the Debug Module) and `debug_rv64gc` with `+EtraceCsv=`, and
-runs `etracecheck.py` on each trace. Result of step 1: the reference encoder accepts both traces,
-and the reference decoder reconstructs every retired program counter (193 in 32 bits, 197 in 64).
+`trace_rv32gc` (the trace without the Debug Module) and `debug_rv64gc` with `+EtraceCsv=` and
+`+EtracePackets=`, and runs `etracecheck.py` on each trace. The program covers every case of the
+interface and every packet of the encoder: branch maps of 1 to 31 branches, full maps sent without
+address, `updiscon`, traps with `thaddr` 0 and 1, interrupts, privilege changes and periodic
+resynchronization.
+
+Result of step 2, with `RESYNC_MAX` 0, 1 and 3: the reference decoder reconstructs every retired
+program counter (890 in 32 bits, 902 in 64), and Wally's packets are equal to the reference's,
+byte for byte (with `RESYNC_MAX` 0: 123 packets, 419 bytes in 32 bits and 439 in 64).
 The program has no data in its code section, which the reference decoder cannot parse; that is
 also why the ACT programs (which have some) are not used here.
 
 ## Order of work
 
 1. The ingress and the CSV dump, checked with the reference encoder and decoder (done).
-2. The encoder, compared with the reference packet by packet.
+2. The encoder, compared with the reference packet by packet (done).
 3. The sink and its control registers, read through System Bus Access (or through the DM).
 4. Several harts, and `denable`/`ienable` control from the debugger.
