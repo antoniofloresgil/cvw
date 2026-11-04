@@ -132,6 +132,7 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   logic [1:0]               DCSRPrv;
   logic [P.XLEN-1:0]        CSREPCM, CSRTrapVectorM, CSRCSRReadValW;
   logic                     CSRIllegalCSRAccessM, PrivIllegalInstrFaultM, STATUS_MPRV_CSR, PrivRetM;
+  logic                     TrigBreakM;                                     // a trigger raises a breakpoint exception
 
   // track the current privilege level
   // Debug Mode enters M like an undelegated trap, and dret returns like an mret to dcsr.prv
@@ -172,7 +173,7 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   // trap logic
   trap #(P) trap(.reset,
     .InstrMisalignedFaultM, .InstrAccessFaultM, .HPTWInstrAccessFaultM, .HPTWInstrPageFaultM, .IllegalInstrFaultM,
-    .BreakpointFaultM(BreakpointFaultM & ~EBreakToDebugM), .LoadMisalignedFaultM, .StoreAmoMisalignedFaultM,
+    .BreakpointFaultM(BreakpointFaultM & ~EBreakToDebugM | TrigBreakM), .LoadMisalignedFaultM, .StoreAmoMisalignedFaultM,
     .LoadAccessFaultM, .StoreAmoAccessFaultM, .EcallFaultM, .InstrPageFaultM,
     .LoadPageFaultM, .StoreAmoPageFaultM, .PrivilegeModeW,
     .MIP_REGW, .MIE_REGW(DebugIntMask ? '0 : MIE_REGW), .MIDELEG_REGW, .MEDELEG_REGW, .STATUS_MIE, .STATUS_SIE,
@@ -180,18 +181,32 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
     .TrapM(TrapRawM), .WaitedM, .InterruptM, .ExceptionM, .IntPendingM, .DelegateM, .CauseM);
 
   ///////////////////////////////////////////
-  // Debug Mode (DEBUG_SUPPORTED)
+  // Debug Mode and triggers (DEBUG_SUPPORTED)
   ///////////////////////////////////////////
 
   if (P.DEBUG_SUPPORTED) begin : debug
-    debugmode #(P) debugmode(.clk, .reset, .StallW, .FlushW, .DebugHaltReq, .DebugResetHaltReq,
+    logic              TrigDebugM, ModeCSRHitM, TrigCSRHitM;
+    logic [P.XLEN-1:0] ModeCSRReadValM, TrigCSRReadValM;
+    debugmode #(P) debugmode(.clk, .reset, .StallW, .FlushW, .DebugHaltReq, .DebugResetHaltReq, .TrigDebugM,
       .InstrM, .PrivilegedM, .InstrValidM, .CommittedM, .CommittedF, .WaitedM, .PCM, .PrivilegeModeW,
       .BreakpointFaultM, .ExceptionM, .ArchTrapM, .CSRReadM, .CSRWriteM, .SrcAM,
       .DebugMode, .DebugEnterM, .DebugTrapM, .DebugTrapVectorM, .EBreakToDebugM, .dretM, .DPC, .DCSRPrv,
-      .DebugIntMask, .DebugWakeM, .DebugCSRHitM, .DebugCSRReadValM);
+      .DebugIntMask, .DebugWakeM, .DebugCSRHitM(ModeCSRHitM), .DebugCSRReadValM(ModeCSRReadValM));
+    // Triggers (Sdtrig, DEBUG_TRIGGERS)
+    if (P.DEBUG_TRIGGERS > 0) begin : trig
+      triggers #(P) triggers(.clk, .reset, .StallW, .FlushW, .DebugMode, .PrivilegeModeW, .STATUS_MIE,
+        .InstrM, .InstrValidM, .CommittedM, .CommittedF, .WaitedM, .PCM, .IEUAdrM(IEUAdrxTvalM),
+        .ArchTrapM, .InterruptM, .CauseM, .CSRReadM, .CSRWriteM, .SrcAM,
+        .TrigCSRHitM, .TrigCSRReadValM, .TrigDebugM, .TrigBreakM);
+    end else begin : notrig
+      assign {TrigCSRHitM, TrigDebugM, TrigBreakM} = '0;
+      assign TrigCSRReadValM = '0;
+    end
+    assign DebugCSRHitM = ModeCSRHitM | TrigCSRHitM;
+    assign DebugCSRReadValM = ModeCSRReadValM | TrigCSRReadValM;
     flopenrc #(P.XLEN) dcsrvalreg(clk, reset, FlushW, ~StallW, DebugCSRReadValM, DebugCSRReadValW);
   end else begin : nodebug
-    assign {DebugMode, DebugEnterM, DebugTrapM, EBreakToDebugM, dretM, DebugIntMask, DebugWakeM, DebugCSRHitM} = '0;
+    assign {DebugMode, DebugEnterM, DebugTrapM, EBreakToDebugM, dretM, DebugIntMask, DebugWakeM, DebugCSRHitM, TrigBreakM} = '0;
     assign {DebugTrapVectorM, DPC, DebugCSRReadValW} = '0;
     assign DCSRPrv = P.M_MODE;
   end
@@ -203,7 +218,7 @@ module privileged import cvw::*;  #(parameter cvw_t P, parameter int unsigned HA
   assign TrapVectorM = DebugTrapM ? DebugTrapVectorM : CSRTrapVectorM;
   assign RetM        = sretM | mretM | dretM;
   assign EPCM        = dretM ? DPC : CSREPCM;
-  // dret is legal in Debug Mode, and so are the debug CSRs
+  // dret is legal in Debug Mode, and so are the debug CSRs (the trigger CSRs in M-mode too)
   assign IllegalInstrFaultM = PrivIllegalInstrFaultM & ~dretM;
   assign IllegalCSRAccessM  = CSRIllegalCSRAccessM & ~DebugCSRHitM;
   assign CSRReadValW = CSRCSRReadValW | DebugCSRReadValW;

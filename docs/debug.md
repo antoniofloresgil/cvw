@@ -6,11 +6,11 @@ hart. A debugger such as OpenOCD, with GDB on top, can:
 
 - halt the hart and resume it, and single-step it;
 - read and write its registers and CSRs;
-- set software breakpoints (`ebreak`);
+- set software breakpoints (`ebreak`), and hardware breakpoints and watchpoints (triggers);
 - read and write memory and peripherals, through the hart or through System Bus Access;
 - hold the core in reset while it loads a program, and reset the SoC.
 
-Hardware triggers, several harts and trace come in later phases (see the roadmap at the end).
+Several harts and trace come in later phases (see the roadmap at the end).
 
 ## Enabling it
 
@@ -20,6 +20,10 @@ declares it 0. Two derivative configurations in `config/derivlist.txt` enable it
 - `debug_rv32imc`: `rv32imc` with 1 MiB of RAM on the bus instead of IROM/DTIM, as in a chip,
   so that System Bus Access and GDB can load programs.
 - `debug_rv64gc`: `rv64gc` with its caches and 64-bit bus.
+
+`DEBUG_TRIGGERS` sets the number of triggers (0 in every base configuration, 4 in both
+derivative configurations). Each trigger costs two address comparators of `XLEN` bits and its
+registers, so a chip can keep only what it needs.
 
 `wallypipelinedsoc` gets four pins: inputs `TCK`, `TMS` and `TDI`, and output `TDO`. The inputs
 default to 0 (IEEE 1800-2009 port defaults), so existing instances of the SoC need no change
@@ -75,8 +79,10 @@ requires.
   - on an `ebreak` that `dcsr.ebreakm`, `ebreaks` or `ebreaku` sends to the debugger for the
     current privilege mode (`cause` 1).
 
-  When several apply, `cause` follows the specification's priority: `ebreak`, `resethaltreq`,
-  halt request, step.
+  - when a trigger fires with `action` 1 (`cause` 2).
+
+  When several apply, `cause` follows the specification's priority: trigger, `ebreak`,
+  `resethaltreq`, halt request, step.
 
   It saves the PC in `dpc` and the privilege mode in `dcsr.prv`, changes to M-mode and jumps to
   the DM's ROM at 0x800. No other CSR changes.
@@ -88,13 +94,52 @@ requires.
   `dcsr.stepie` is set. A `wfi` that is stepped over does not wait: it is a `nop`.
 - A halt request also ends a `wfi`: the `wfi` completes and the hart halts after it.
 
+### Triggers (Sdtrig)
+
+`src/debug/triggers.sv` implements `DEBUG_TRIGGERS` triggers. They are accessible from M-mode
+and from Debug Mode:
+
+| CSR | Implemented |
+|---|---|
+| `tselect` (0x7A0) | the trigger; a value beyond the last one is not written |
+| `tdata1` (0x7A1) | the trigger's type and fields (below); a free trigger (after reset, or after writing 0 or an unsupported type) reads as `mcontrol6` with every field 0, which never fires (OpenOCD 0.12 skips triggers that read as type 15) |
+| `tdata2` (0x7A2) | the address (`mcontrol`, `mcontrol6`) or the cause bitmask (`itrigger`, `etrigger`) |
+| `tdata3` (0x7A3) | reads 0: no context matching |
+| `tinfo` (0x7A4) | `version` 1, types 2–6 and 15 |
+
+- **`mcontrol` (2) and `mcontrol6` (6)** match the address of an instruction (`execute`), a
+  load or a store (atomics are both). Supported `match` values: equal (0), NAPOT (1), `>=` (2),
+  `<` (3), not equal (8), not NAPOT (9). There is no data matching (`select` 0), no chaining
+  and no size filter (`size` 0: any access).
+- **`icount` (3)** counts instructions that retire or trap in the selected modes. When `count`
+  reaches 0 it fires before the next instruction.
+- **`itrigger` (4) and `etrigger` (5)** fire when the hart takes one of the interrupts or
+  exceptions set in `tdata2`, before the first instruction of the handler.
+
+A trigger fires before the instruction in the Memory stage, at the same boundaries as an
+interrupt, so a matching load or store does not reach memory. If the instruction's bus access
+has already started (an instruction fetch was under way when it reached the Memory stage), the
+trigger fires right after the instruction retires instead. `mcontrol6` reports this in
+`hit1:hit0`: 1 means it fired before the instruction, 3 right after it.
+
+- **`action` 1** enters Debug Mode (`dcsr.cause` 2). It is legal only with `dmode` 1. Only Debug
+  Mode can write a trigger with `dmode` 1.
+- **`action` 0** raises a breakpoint exception, for software in M-mode:
+  - It fires in M-mode only while `mstatus.MIE` is set. There is no `tcontrol`, and this keeps a
+    trigger from firing again in its own handler.
+  - `mtval` holds the instruction's pc, as for `ebreak`. For a load or store match the
+    privileged specification asks for the data address; that would need a change in `csr.sv`.
+  - `icount`, `itrigger` and `etrigger` support only `action` 1.
+- Triggers never fire in Debug Mode.
+
 ## Structure
 
 ```
 wallypipelinedsoc
 ├── core(s)                                     DebugHaltReq ← dm
 │   └── privileged
-│       └── debugmode (src/debug/debugmode.sv)  dcsr, dpc, dscratch; entry, dret, step
+│       ├── debugmode (src/debug/debugmode.sv)  dcsr, dpc, dscratch; entry, dret, step
+│       └── triggers  (src/debug/triggers.sv)   tselect, tdata1-3, tinfo (DEBUG_TRIGGERS)
 ├── multicore_memory_system  ──┐
 ├── debug (DEBUG_SUPPORTED)    │ AHB
 │   ├── dtm (src/debug/dtm.sv)    TCK domain: TAP, dtmcs, dmi; DMI to the clk domain
@@ -175,6 +220,7 @@ To keep merges from upstream simple, the core's own modules (`trap`, `privmode`,
     CSRs do not see (no `mepc`, `mcause` or `mstatus` update); its vector is the ROM;
   - `dret` is a return that `privmode` sees as an `mret` to `dcsr.prv`, to `dpc`;
   - `ebreak` to the debugger does not reach `trap`; interrupts are masked through `MIE_REGW`;
+  - a trigger with `action` 0 adds a breakpoint exception to `trap`'s inputs;
   - the debug CSRs are read in parallel with `csr` (their value is ORed into `CSRReadValW`) and
     clear its illegal-access flag; `dret` clears the illegal-instruction flag;
   - `mstatus.MPRV` is gated off in Debug Mode;
@@ -229,6 +275,9 @@ make openocd OPENOCD_CONFIG=debug_rv64gc    # the same on debug_rv64gc
     it (`cmderr` 3);
   - single steps, also over a `wfi`; an `ebreak` with `dcsr.ebreakm`; `setresethaltreq`
     (`dcsr.cause` 4, 1 and 5, and `dpc`);
+  - triggers: `tselect` and `tinfo`; execute and store address matches (the store does not
+    reach the GPIO); `icount`; `etrigger`; a native trigger raising a breakpoint exception;
+    WARL values of `tdata1`;
   - resuming (`resumeack`), a command while the hart runs (`cmderr` 4), an unsupported command
     (`cmderr` 2);
   - `ndmreset`.
@@ -265,28 +314,35 @@ LC_ALL=C ./gdbserver.py --exclude-tests $WALLY/testbench/debug/riscv-tests/exclu
 
 - `LC_ALL=C`: the suite parses GDB's messages in English.
 - `exclude.yaml` lists the tests skipped, each with its reason:
-  - the trigger tests that the suite runs whatever the target declares (Wally has no triggers
-    yet);
-  - two that use OpenOCD commands 0.12 lacks;
+  - four that use OpenOCD commands 0.12 lacks (`RepeatReadTest`, and `EtriggerTest`, `IcountTest`
+    and `ItriggerTest`, whose trigger types `debug_tb` checks itself);
   - two that need a faster simulation (`DownloadTest`, `InterruptTest`);
   - `Sv32Test` on rv32imc, where GDB reads back a `satp` it failed to write.
 
-  The targets also declare no `mcontrol6` and no memory sampling.
+  The targets also declare no memory sampling (`memory_sample` is not in OpenOCD 0.12).
 - With OpenOCD 0.12 use riscv-tests before commit 6ca449c (for example 88ed3a9). From that
   commit on, the suite starts OpenOCD with the `gdb port` syntax of newer versions, which 0.12
   rejects.
-- The targets declare no hardware triggers (`support_mcontrol`, `instruction_hardware_breakpoint_count`
-  0), so trigger tests report `not_applicable`.
+- The targets declare 4 hardware breakpoints (`instruction_hardware_breakpoint_count`), as
+  `DEBUG_TRIGGERS` in both configurations.
 
 ## Roadmap
 
 1. **Halt and resume** (done): Debug Mode, Access Register, the program buffer, GDB.
 2. **Step and resets** (done): `dcsr.cause` 5 for `resethaltreq` and the priority of causes,
    `wfi` as a `nop` when stepped over.
-3. **Triggers (Sdtrig):** `tselect`/`tdata1`-`tdata3`, address and data matches (`mcontrol6`),
-   instruction count.
+3. **Triggers (Sdtrig)** (done): `mcontrol`, `mcontrol6` (address matches), `icount`,
+   `itrigger`, `etrigger`.
 4. **Multiple harts:** `hartsel`, `hasel`, `haltsum`, one `FLAGS` byte per hart.
 5. **Trace:** a trace buffer peripheral read through System Bus Access, then the RISC-V
    Efficient Trace (E-Trace) encoder.
 
 The DTM, the DMI and System Bus Access stay as they are.
+
+### To do
+
+- **Run the whole official test suite with a newer OpenOCD.** OpenOCD 0.12 lacks `riscv
+  etrigger/icount/itrigger set`, `repeat_read` and `memory_sample`, so `exclude.yaml` skips
+  `EtriggerTest`, `IcountTest`, `ItriggerTest` and `RepeatReadTest`, and the targets declare no
+  memory sampling. With a current OpenOCD (and the current riscv-tests, whose `gdb port`
+  syntax 0.12 rejects) these tests could run; `debug_tb` covers the trigger types meanwhile.

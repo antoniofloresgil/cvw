@@ -166,6 +166,7 @@ localparam logic [63:0] EXT_IO_RANGE     = 64'h00000000;
 
 // JTAG debug: DTM and Debug Module with System Bus Access (src/debug)
 localparam logic DEBUG_SUPPORTED = 0;
+localparam DEBUG_TRIGGERS = 32'd0;  // Sdtrig triggers, with DEBUG_SUPPORTED
 localparam logic CLINT_SUPPORTED = 0;
 localparam logic [63:0] CLINT_BASE       = 64'h02000000;
 localparam logic [63:0] CLINT_RANGE      = 64'h0000FFFF;

@@ -20,7 +20,7 @@ class debug_rv64gc_hart(targets.Hart):
     bad_address = ram - 8
     reset_vectors: ClassVar[list[int]] = [0x80000000]
     link_script_path = "wally64.lds"
-    instruction_hardware_breakpoint_count = 0
+    instruction_hardware_breakpoint_count = 4   # DEBUG_TRIGGERS
 
 
 class debug_rv64gc(targets.Target):
@@ -28,10 +28,7 @@ class debug_rv64gc(targets.Target):
     openocd_config_path = "wally.cfg"
     timeout_sec = 600                    # the simulation is slow
     server_timeout_sec = 300
-    support_mcontrol = False
-    support_mcontrol6 = False
     support_memory_sampling = False     # OpenOCD 0.12 has no memory_sample
-    support_manual_hwbp = False
     support_hasel = False
 
     def create(self):

@@ -132,6 +132,7 @@ typedef struct packed {
   logic [63:0]  EXT_IO_BASE;
   logic [63:0]  EXT_IO_RANGE;
   logic         DEBUG_SUPPORTED;    // JTAG DTM and Debug Module with System Bus Access (src/debug)
+  int           DEBUG_TRIGGERS;     // number of Sdtrig triggers (src/debug/triggers.sv), with DEBUG_SUPPORTED
   logic         CLINT_SUPPORTED;
   logic [63:0]  CLINT_BASE;
   logic [63:0]  CLINT_RANGE;

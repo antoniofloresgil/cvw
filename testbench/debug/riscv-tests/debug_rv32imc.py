@@ -20,7 +20,7 @@ class debug_rv32imc_hart(targets.Hart):
     bad_address = ram - 8
     reset_vectors: ClassVar[list[int]] = [0x80000000]
     link_script_path = "wally32.lds"
-    instruction_hardware_breakpoint_count = 0
+    instruction_hardware_breakpoint_count = 4   # DEBUG_TRIGGERS
 
 
 class debug_rv32imc(targets.Target):
@@ -29,10 +29,7 @@ class debug_rv32imc(targets.Target):
     timeout_sec = 600                    # the simulation is slow
     server_timeout_sec = 300
     implements_page_virtual_memory = False
-    support_mcontrol = False
-    support_mcontrol6 = False
     support_memory_sampling = False     # OpenOCD 0.12 has no memory_sample
-    support_manual_hwbp = False
     support_hasel = False
 
     def create(self):

@@ -11,9 +11,12 @@ OPENOCD_CONFIG ?= debug_rv32imc
 RBB_PORT ?= 9823
 OPENOCD ?= openocd
 WORK    ?= $(WALLY)/sim/verilator/wkdir/debug
+# Parallel C++ compilations: the largest files of a SoC take 3 GB or more each, so all the cores
+# (verilator -j 0) or even 8 jobs exhaust the memory of a 32 GB desktop
+JOBS    ?= 3
 
 SOURCES  = $(WALLY)/src/cvw.sv $(shell find $(WALLY)/src -name '*.sv' ! -name cvw.sv)
-VFLAGS   = --binary --timing -j 0 -Wno-fatal -Wno-lint -Wno-style -Wno-TIMESCALEMOD -I$(WALLY)/config/shared
+VFLAGS   = --binary --timing -j $(JOBS) -Wno-fatal -Wno-lint -Wno-style -Wno-TIMESCALEMOD -I$(WALLY)/config/shared
 
 .PHONY: all openocd $(CONFIGS)
 all: $(CONFIGS)

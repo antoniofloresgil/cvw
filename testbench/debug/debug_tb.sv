@@ -18,6 +18,9 @@
 //            resume, and cmderr 2 and 4;
 //          - single step (also over a wfi, which is then a nop), ebreak with dcsr.ebreakm, and
 //            setresethaltreq, with dcsr.cause 4, 1 and 5;
+//          - triggers (DEBUG_TRIGGERS): tselect and tinfo, execute and store address matches,
+//            icount, etrigger (dcsr.cause 2), a native trigger raising a breakpoint exception,
+//            and WARL values of tdata1;
 //          - ndmreset: the SoC resets (GPIOs back to 0) and the Debug Module stays active.
 //          It prints "SUCCESS! All tests ran without failures." or the number of failures.
 //
@@ -97,37 +100,34 @@ module debug_tb;
   // JTAG
   ///////////////////////////////////////////////////////////////
 
-  // One TCK cycle: TMS and TDI set up before the rising edge, TDO sampled at it
-  task automatic tck(input logic tms, input logic tdi, output logic tdo);
-    TMS = tms; TDI = tdi;
-    #23; tdo = TDO; TCK = 1'b1;
-    #23; TCK = 1'b0;
+  // The bits go through jtagdrv, a module that does the TCK cycles on request: a task that
+  // loops over the bits would be expanded at every call, and a testbench this long would
+  // become a function that takes gigabytes to compile
+  logic        JReq = 1'b0, JAck = 1'b0, JKind, JIr;
+  int          JN;
+  logic [63:0] JDin, JDout;
+  jtagdrv jtag(.TCK, .TMS, .TDI, .TDO, .Req(JReq), .Ack(JAck), .Kind(JKind), .Ir(JIr), .N(JN),
+               .Din(JDin), .Dout(JDout));
+
+  task automatic jtagrequest(input logic kind, input logic ir, input int n, input logic [63:0] din);
+    JKind = kind; JIr = ir; JN = n; JDin = din;
+    JReq = ~JReq;
+    wait (JAck == JReq);
   endtask
 
-  task automatic tck0(input logic tms);
-    logic unused;
-    tck(tms, 1'b0, unused);
+  // n TCK cycles with TMS taken from bits (LSB first) and TDI 0
+  task automatic tmsseq(input int n, input logic [63:0] bits);
+    jtagrequest(1'b1, 1'b0, n, bits);
   endtask
 
   task automatic tapreset();
-    repeat (6) tck0(1'b1);
-    tck0(1'b0);                                       // Run-Test/Idle
+    tmsseq(7, 64'h3F);                                // six cycles of TMS 1, then Run-Test/Idle
   endtask
 
   // From Run-Test/Idle, shift n bits (LSB first) through IR or DR and return to Run-Test/Idle
   task automatic shift(input logic ir, input int n, input logic [63:0] din, output logic [63:0] dout);
-    logic b;
-    tck0(1'b1);                                       // Select-DR
-    if (ir) tck0(1'b1);                               // Select-IR
-    tck0(1'b0);                                       // Capture
-    tck0(1'b0);                                       // Shift
-    dout = '0;
-    for (int i = 0; i < n; i++) begin
-      tck(i == n-1, din[i], b);                       // the last bit moves to Exit1
-      dout[i] = b;
-    end
-    tck0(1'b1);                                       // Update
-    tck0(1'b0);                                       // Run-Test/Idle
+    jtagrequest(1'b0, ir, n, din);
+    dout = JDout;
   endtask
 
   task automatic setir(input logic [4:0] ir);
@@ -143,7 +143,7 @@ module debug_tb;
     for (int attempt = 0; attempt < 10; attempt++) begin
       setir(5'h11);
       shift(1'b0, ABITS+34, {23'b0, addr, data, op}, unused);
-      repeat (4) tck0(1'b0);
+      tmsseq(4, 64'h0);
       shift(1'b0, ABITS+34, '0, dout);
       if (dout[1:0] != 2'd3) begin
         rdata = dout[33:2];
@@ -250,6 +250,27 @@ module debug_tb;
     waithalted();
   endtask
 
+  // tdata1, given in the RV32 layout: on RV64, type and dmode (bits 31:27) move to bits 63:59
+  task automatic writetdata1(input logic [31:0] v);
+    logic [2:0] err;
+    dmiwrite(DATA0, P.XLEN == 64 ? {5'b0, v[26:0]} : v);
+    if (P.XLEN == 64) dmiwrite(DATA1, {v[31:27], 27'b0});
+    command(ARX | ARWRITE | 32'h07A1, err);
+    if (err != 0) begin
+      $display("FAIL: writing tdata1: cmderr %0d", err);
+      Errors++;
+    end
+  endtask
+
+  task automatic readtdata1(output logic [31:0] v);
+    logic [31:0] hi;
+    readreg(16'h07A1, v);
+    if (P.XLEN == 64) begin
+      dmiread(DATA1, hi);
+      v = {hi[31:27], v[26:0]};
+    end
+  endtask
+
   // dcsr.cause and dpc after the hart halts
   task automatic checkhalt(input string what, input logic [2:0] cause, input logic [31:0] pc);
     logic [31:0] d;
@@ -265,10 +286,9 @@ module debug_tb;
 
   initial begin
     logic [63:0] dout;
-    logic [31:0] d, dcsr;
+    logic [31:0] d, dcsr, mtvec, mstatus;
     logic [2:0]  err;
     Errors = 0;
-    TCK = 1'b0; TMS = 1'b1; TDI = 1'b0;
     reset_ext = 1'b1;
     #100 reset_ext = 1'b0;
     #100;
@@ -438,6 +458,71 @@ module debug_tb;
     resumeat(RAM + 32'h28);
     checkhalt("ebreak with ebreakm", 3'd1, RAM + 32'h28);
     writereg(16'h07B0, dcsr);
+
+    // Triggers (Sdtrig): tselect counts DEBUG_TRIGGERS, tinfo lists the types
+    writereg(16'h07A0, P.DEBUG_TRIGGERS - 1);
+    readreg(16'h07A0, d);
+    check("tselect: the last trigger", d, P.DEBUG_TRIGGERS - 1);
+    writereg(16'h07A0, P.DEBUG_TRIGGERS);
+    readreg(16'h07A0, d);
+    check("tselect: a trigger that does not exist is not selected", d, P.DEBUG_TRIGGERS - 1);
+    writereg(16'h07A0, 32'h0);
+    readreg(16'h07A4, d);
+    check("tinfo: version 1, types 2 to 6 and 15", d, 32'h0100_807C);
+    // An execute address trigger (mcontrol6, dmode, action 1, m) halts before the instruction
+    writereg(16'h07A2, RAM + 32'h10);                  // tdata2: sw t1, 12(t0)
+    writetdata1(32'h6800_1044);
+    resumeat(RAM);
+    checkhalt("execute trigger", 3'd2, RAM + 32'h10);
+    readtdata1(d);
+    check("mcontrol6 hit1:hit0 = 1: fired before the instruction", d & 32'h0240_0000, 32'h0040_0000);
+    // A store address trigger halts before the store reaches the GPIO
+    sbwrite(3'd2, GPIO + 32'hC, 32'h0);
+    writereg(16'h07A2, GPIO + 32'hC);
+    writetdata1(32'h6800_1042);
+    resumeat(RAM);
+    checkhalt("store address trigger", 3'd2, RAM + 32'h10);
+    check("GPIOs: the store did not happen", GPIOOUT, 32'h0);
+    // icount (count 2, m, action 1) halts after two instructions
+    writetdata1(32'h3800_0A01);
+    resumeat(RAM);
+    checkhalt("icount 2", 3'd2, RAM + 8);
+    // etrigger on breakpoint exceptions halts before the first instruction of the handler
+    readreg(16'h0305, mtvec);
+    writereg(16'h0305, RAM + 32'h30);                  // mtvec: j .
+    writereg(16'h07A2, 32'h8);                         // cause 3
+    writetdata1(32'h5800_0201);
+    resumeat(RAM + 32'h28);                            // ebreak, with dcsr.ebreakm 0
+    checkhalt("etrigger", 3'd2, RAM + 32'h30);
+    readreg(16'h0342, d);
+    check("mcause of the exception that fired etrigger", d, 32'd3);
+    // A native trigger (dmode 0, action 0) raises a breakpoint exception, in M-mode only with
+    // mstatus.MIE set
+    writereg(16'h07A2, RAM + 32'h10);
+    writetdata1(32'h6000_0044);
+    readreg(16'h0300, mstatus);
+    writereg(16'h0300, mstatus | 32'h8);
+    writereg(16'h07B1, RAM);
+    dmiwrite(DMCONTROL, 32'h4000_0001);                // resume; the handler loops at RAM + 0x30
+    repeat (100) @(posedge clk);
+    dmiwrite(DMCONTROL, 32'h8000_0001);
+    waithalted();
+    dmiwrite(DMCONTROL, 32'h0000_0001);
+    checkhalt("halt in the handler of a native trigger", 3'd3, RAM + 32'h30);
+    readreg(16'h0342, d);
+    check("native trigger: mcause breakpoint", d, 32'd3);
+    readreg(16'h0341, d);
+    check("native trigger: mepc", d, RAM + 32'h10);
+    // tdata1 is WARL: without dmode, action 1 is not legal
+    writetdata1(32'h6000_1001);
+    readtdata1(d);
+    check("tdata1 WARL: action 0 without dmode", d, 32'h6000_0001);
+    writetdata1(32'h0);
+    readtdata1(d);
+    check("tdata1: type 0 written reads a free trigger (mcontrol6, all 0)", d, 32'h6000_0000);
+    writereg(16'h0300, mstatus);
+    writereg(16'h0305, mtvec);
+    sbwrite(3'd2, GPIO + 32'hC, 32'd42);
     // Restore the registers the program uses, and resume in its loop
     writereg(16'h1008, 32'h0);
     writereg(16'h07B1, RAM + 32'h24);
@@ -479,5 +564,57 @@ module debug_tb;
     #20ms;
     $display("FAIL: timeout");
     $finish;
+  end
+endmodule
+
+///////////////////////////////////////////////////////////////
+// jtagdrv: the TCK cycles of debug_tb's JTAG scans.  The testbench sets Kind, Ir, N and Din and
+// toggles Req; the module does the work and sets Ack equal to Req.
+//   Kind 0: from Run-Test/Idle, shift N bits (LSB first) of Din through IR or DR, return to
+//           Run-Test/Idle, and leave the bits that came out in Dout
+//   Kind 1: N TCK cycles with TMS taken from the bits of Din and TDI 0
+///////////////////////////////////////////////////////////////
+
+module jtagdrv (
+  output logic        TCK = 1'b0, TMS = 1'b1, TDI = 1'b0,
+  input  logic        TDO,
+  input  logic        Req,
+  output logic        Ack = 1'b0,
+  input  logic        Kind, Ir,
+  input  int          N,
+  input  logic [63:0] Din,
+  output logic [63:0] Dout
+);
+
+  // One TCK cycle: TMS and TDI set up before the rising edge, TDO sampled at it
+  task automatic tck(input logic tms, input logic tdi, output logic tdo);
+    TMS = tms; TDI = tdi;
+    #23; tdo = TDO; TCK = 1'b1;
+    #23; TCK = 1'b0;
+  endtask
+
+  task automatic tck0(input logic tms);
+    logic unused;
+    tck(tms, 1'b0, unused);
+  endtask
+
+  always @(Req) begin
+    logic b;
+    if (Kind) begin
+      for (int i = 0; i < N; i++) tck0(Din[i]);
+    end else begin
+      tck0(1'b1);                                     // Select-DR
+      if (Ir) tck0(1'b1);                             // Select-IR
+      tck0(1'b0);                                     // Capture
+      tck0(1'b0);                                     // Shift
+      Dout = '0;
+      for (int i = 0; i < N; i++) begin
+        tck(i == N-1, Din[i], b);                     // the last bit moves to Exit1
+        Dout[i] = b;
+      end
+      tck0(1'b1);                                     // Update
+      tck0(1'b0);                                     // Run-Test/Idle
+    end
+    Ack = Req;
   end
 endmodule

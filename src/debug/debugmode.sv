@@ -6,10 +6,11 @@
 //          dscratch0, dscratch1), entering Debug Mode, dret and single-stepping.
 //
 //          The hart enters Debug Mode before the instruction in the Memory stage (dpc = its PC),
-//          as for an interrupt, on a halt request of the Debug Module, after a single step, or on
-//          an ebreak that dcsr.ebreakm/s/u sends to the debugger.  It then executes the Debug
-//          Module's ROM at HALT_ADDR in M-mode, with interrupts masked; an ebreak there goes back
-//          to HALT_ADDR, any other exception to EXCEPTION_ADDR, without changing any other CSR.
+//          as for an interrupt, on a halt request of the Debug Module, after a single step, when a
+//          trigger fires (triggers.sv), or on an ebreak that dcsr.ebreakm/s/u sends to the
+//          debugger.  It then executes the Debug Module's ROM at HALT_ADDR in M-mode, with
+//          interrupts masked; an ebreak there goes back to HALT_ADDR, any other exception to
+//          EXCEPTION_ADDR, without changing any other CSR.
 //          dret returns to dpc in the privilege mode of dcsr.prv.
 //
 //          privileged.sv steers the existing trap and return paths with the outputs of this
@@ -30,6 +31,7 @@ module debugmode import cvw::*; #(parameter cvw_t P,
   input  logic              StallW, FlushW,
   input  logic              DebugHaltReq,                // halt request from the Debug Module
   input  logic              DebugResetHaltReq,           // the halt request is resethaltreq's
+  input  logic              TrigDebugM,                  // a trigger fires with action 1 (triggers.sv)
   // The instruction in the Memory stage
   input  logic [31:0]       InstrM,
   input  logic              PrivilegedM, InstrValidM,
@@ -60,7 +62,7 @@ module debugmode import cvw::*; #(parameter cvw_t P,
 
   localparam logic [11:0] DCSR = 12'h7B0, DPCADR = 12'h7B1, DSCRATCH0 = 12'h7B2, DSCRATCH1 = 12'h7B3;
   // dcsr.cause
-  localparam logic [2:0] CAUSE_EBREAK = 3'd1, CAUSE_HALTREQ = 3'd3, CAUSE_STEP = 3'd4, CAUSE_RESETHALTREQ = 3'd5;
+  localparam logic [2:0] CAUSE_EBREAK = 3'd1, CAUSE_TRIGGER = 3'd2, CAUSE_HALTREQ = 3'd3, CAUSE_STEP = 3'd4, CAUSE_RESETHALTREQ = 3'd5;
 
   logic             EBreakM, EBreakS, EBreakU, StepIE, Step;
   logic [2:0]       Cause, NextCause;
@@ -85,9 +87,10 @@ module debugmode import cvw::*; #(parameter cvw_t P,
   // boundaries as an interrupt
   assign Interruptible = InstrValidM & ~CommittedM & ~CommittedF & ~WaitedM;
   assign HaltM = ~DebugMode & (DebugHaltReq | StepHalt) & Interruptible;
-  assign DebugEnterM = EBreakToDebugM | HaltM;
-  // Priority of dcsr.cause (the dcsr table of the Debug Specification): ebreak, resethaltreq, haltreq, step
-  assign NextCause = EBreakToDebugM ? CAUSE_EBREAK :
+  assign DebugEnterM = EBreakToDebugM | HaltM | TrigDebugM;
+  // Priority of dcsr.cause (the dcsr table of the Debug Specification): trigger, ebreak,
+  // resethaltreq, haltreq, step
+  assign NextCause = TrigDebugM ? CAUSE_TRIGGER : EBreakToDebugM ? CAUSE_EBREAK :
                      DebugHaltReq ? (DebugResetHaltReq ? CAUSE_RESETHALTREQ : CAUSE_HALTREQ) : CAUSE_STEP;
 
   assign dretM = DebugMode & PrivilegedM & InstrM[31:20] == 12'h7B2 & InstrM[19:7] == '0 & InstrValidM;
