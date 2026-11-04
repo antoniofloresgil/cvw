@@ -34,14 +34,15 @@ when the port is unused. The TAP has no TRST pin: it resets with `reset_ext` and
 | DMI address | Register | Implemented |
 |---|---|---|
 | 0x04, 0x05 | `data0`, `data1` | abstract data; the hart sees them in memory at 0x380 |
-| 0x10 | `dmcontrol` | `dmactive`, `ndmreset`, `hartreset`, `haltreq`, `resumereq`, `ackhavereset`, `setresethaltreq`/`clrresethaltreq`; `hartsel` reads 0 (one hart) |
-| 0x11 | `dmstatus` | version 3 (1.0), `authenticated`, `hasresethaltreq`, `impebreak`, `allhalted`/`allrunning`/`allunavail`, `allresumeack`, `allhavereset`, `ndmresetpending` (the `any` bits equal the `all` bits) |
+| 0x10 | `dmcontrol` | `dmactive`, `ndmreset`, `hartsel` (up to 1024 harts), and, for the selected hart, `hartreset`, `haltreq`, `resumereq`, `ackhavereset`, `setresethaltreq`/`clrresethaltreq`; no `hasel` |
+| 0x11 | `dmstatus` | version 3 (1.0), `authenticated`, `hasresethaltreq`, `impebreak`, and for the selected hart `halted`/`running`/`unavail`/`nonexistent`, `resumeack`, `havereset` (the `any` bits equal the `all` bits); `ndmresetpending` |
 | 0x12 | `hartinfo` | `nscratch` 1, `dataaccess` 1, `datasize` 2, `dataaddr` 0x380 |
 | 0x16 | `abstractcs` | `progbufsize` 8, `datacount` 2, `busy`, `cmderr` |
 | 0x17 | `command` | Access Register (cmdtype 0) for GPRs, FPRs and CSRs, 32 or 64 bits, with `transfer`, `write`, `postexec`, `aarpostincrement`; other commands set `cmderr` 2 |
 | 0x18 | `abstractauto` | `autoexecdata` (2 bits) and `autoexecprogbuf` (8 bits) |
 | 0x20–0x27 | `progbuf0`–`progbuf7` | the program buffer; an `ebreak` follows it (`impebreak`) |
-| 0x40 | `haltsum0` | bit 0: the hart is halted |
+| 0x40 | `haltsum0` | bit *i*: hart 32·`hartsel[19:5]`+*i* is halted |
+| 0x13 | `haltsum1` | bit *j*: some hart of the group of 32 *j* (in the 1024 around the selected hart) is halted; `haltsum2` and `haltsum3` are not needed with up to 1024 harts |
 | 0x38 | `sbcs` | `sbversion` 1, `sbasize` = `PA_BITS`, 8/16/32-bit accesses (and 64 with a 64-bit bus), `sbautoincrement`, `sbreadonaddr`, `sbreadondata`, `sbbusy`, `sbbusyerror`, `sberror` (2 bus error, or an address that no region on the bus decodes, as the PMA checker sees it: the uncore itself completes those without an error; 3 misaligned; 4 size not supported) |
 | 0x39, 0x3A | `sbaddress0`, `sbaddress1` | the physical address |
 | 0x3C, 0x3D | `sbdata0`, `sbdata1` | the data |
@@ -93,6 +94,24 @@ requires.
   handler) and enters Debug Mode again. Interrupts stay masked during the step unless
   `dcsr.stepie` is set. A `wfi` that is stepped over does not wait: it is a `nop`.
 - A halt request also ends a `wfi`: the `wfi` completes and the hart halts after it.
+
+### Several harts
+
+`wallypipelinedsoc` has one hart per `NCORES` (the multicore subsystem, `config/multicore`); the DM
+serves all of them (`NHARTS` = `NCORES`, 1 to 1024), and every hart has its own Debug Mode and
+triggers inside its `privileged` unit.
+
+- **The DM keeps the state of each hart** (halted, `haltreq`, resume, go, reset, `havereset`,
+  `resumeack`). `dmcontrol.hartsel` picks the hart that the `dmcontrol` bits and the abstract
+  commands concern; `dmstatus` reports that hart (or `nonexistent`). `hasel` (halting several
+  harts with one write) is not implemented.
+- **Each hart has its own reset** (`hartreset`), and the bus requests of a hart that is held are
+  silenced at its output in `wallypipelinedsoc`, so that the DM can use the bus while it loads a
+  program. The other harts keep running.
+- **One abstract command at a time**, on the selected hart. The data registers and the program
+  buffer are shared, and the DM uses the hart's `mhartid` to give each hart its own `FLAGS` byte.
+- A SoC with several harts needs a configuration without caches (the multicore subsystem's rule,
+  `config/shared/multicore-config.vh`): `debug_rv32imc` qualifies, `debug_rv64gc` does not.
 
 ### Triggers (Sdtrig)
 
@@ -167,8 +186,10 @@ executes code from the DM's **debug memory**, an AHB slave at 0x0–0xFFF:
 | 0x400 | `FLAGS`: one byte per hart, bit 0 go, bit 1 resume |
 | 0x800 | the ROM: halt entry 0x800, resume 0x804, exception entry 0x808 |
 
-- **The ROM** (25 words; its source is in `dm.sv`) saves `s0` in `dscratch1`, then loops: it
-  writes `HALTED` and reads the hart's `FLAGS` byte.
+- **The ROM** (27 words; its source is in `dm.sv`) saves `s0` in `dscratch1`, then loops: it
+  writes `HALTED` and reads the hart's `FLAGS` byte. Every report it writes (`HALTED`, `GOING`,
+  `RESUMING`, `EXCEPTION`) carries the hart's `mhartid`, which is how the DM tells the harts
+  apart.
   - On *go* it restores `s0`, writes `GOING` and jumps to `WHERETO`. The command or the program
     buffer ends with an `ebreak`, which brings the hart back to the ROM.
   - On *resume* it writes `RESUMING`, restores `s0` and executes `dret`.
@@ -259,6 +280,8 @@ cd testbench/debug
 make                                        # debug_tb on debug_rv32imc and debug_rv64gc (Verilator)
 make openocd                                # OpenOCD on openocd_tb (debug_rv32imc) through remote_bitbang
 make openocd OPENOCD_CONFIG=debug_rv64gc    # the same on debug_rv64gc
+make CONFIGS=debug_rv32imc NHARTS=2         # debug_tb on a SoC with two harts
+make openocd NHARTS=2                       # and OpenOCD on it
 ```
 
 - `debug_tb.sv` acts as the debugger itself, with TCK asynchronous to the clock. It checks:
@@ -280,6 +303,8 @@ make openocd OPENOCD_CONFIG=debug_rv64gc    # the same on debug_rv64gc
     WARL values of `tdata1`;
   - resuming (`resumeack`), a command while the hart runs (`cmderr` 4), an unsupported command
     (`cmderr` 2);
+  - with `NHARTS` > 1: a hart that does not exist, halting, resuming and resetting one hart while
+    the other runs, `haltsum0`, and the registers of each hart;
   - `ndmreset`.
 - `make openocd` builds `openocd_tb.sv` with `jtag_rbb.cpp`, a remote_bitbang server over DPI
   (`+RBB_PORT=0` picks a free port and prints it). It runs OpenOCD with `openocd.cfg` and
@@ -317,12 +342,18 @@ LC_ALL=C ./gdbserver.py --exclude-tests $WALLY/testbench/debug/riscv-tests/exclu
   - four that use OpenOCD commands 0.12 lacks (`RepeatReadTest`, and `EtriggerTest`, `IcountTest`
     and `ItriggerTest`, whose trigger types `debug_tb` checks itself);
   - two that need a faster simulation (`DownloadTest`, `InterruptTest`);
-  - `Sv32Test` on rv32imc, where GDB reads back a `satp` it failed to write.
+  - `Sv32Test` on the rv32imc targets, where GDB reads back a `satp` it failed to write;
+  - `MulticoreRunAllHaltOne` on the two-hart target, for the reason of `InterruptTest`: both
+    harts spend their time in the timer handler, which outlasts the 256 ticks it rearms.
 
   The targets also declare no memory sampling (`memory_sample` is not in OpenOCD 0.12).
 - With OpenOCD 0.12 use riscv-tests before commit 6ca449c (for example 88ed3a9). From that
   commit on, the suite starts OpenOCD with the `gdb port` syntax of newer versions, which 0.12
   rejects.
+- `debug_rv32imc_2harts.py` is the target with two harts (`wally-2.cfg`, like the suite's
+  `spike-2.cfg`); build its simulation with
+  `make -C $WALLY/testbench/debug openocd OPENOCD_CONFIG=debug_rv32imc NHARTS=2`. It runs the
+  suite's multicore tests as well.
 - The targets declare 4 hardware breakpoints (`instruction_hardware_breakpoint_count`), as
   `DEBUG_TRIGGERS` in both configurations.
 
@@ -333,7 +364,8 @@ LC_ALL=C ./gdbserver.py --exclude-tests $WALLY/testbench/debug/riscv-tests/exclu
    `wfi` as a `nop` when stepped over.
 3. **Triggers (Sdtrig)** (done): `mcontrol`, `mcontrol6` (address matches), `icount`,
    `itrigger`, `etrigger`.
-4. **Multiple harts:** `hartsel`, `hasel`, `haltsum`, one `FLAGS` byte per hart.
+4. **Multiple harts** (done, without `hasel`): `hartsel`, `haltsum0`/`haltsum1`, state per hart,
+   one `FLAGS` byte per hart.
 5. **Trace:** a trace buffer peripheral read through System Bus Access, then the RISC-V
    Efficient Trace (E-Trace) encoder.
 

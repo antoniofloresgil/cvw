@@ -24,7 +24,11 @@ init
 catch {wally.cpu arp_examine}
 
 check "dmstatus.version" [expr {[dmr 0x11] & 0xF}] 3
+# make NHARTS=n passes the number of harts: hold them all, hart 0 last (it stays selected)
+set nharts 1
+if {[info exists ::env(NHARTS)]} { set nharts $::env(NHARTS) }
 dmw 0x10 0x1
+for {set h 1} {$h < $nharts} {incr h} { dmw 0x10 [expr {0x20000001 | ($h << 16)}] }
 dmw 0x10 0x20000001                       ;# hartreset
 check "dmstatus.allunavail" [expr {([dmr 0x11] >> 13) & 1}] 1
 
@@ -48,6 +52,7 @@ foreach word $program {
 sbwait
 check "sberror" [expr {([dmr 0x38] >> 12) & 7}] 0
 
+for {set h 1} {$h < $nharts} {incr h} { dmw 0x10 [expr {0x10000001 | ($h << 16)}] }
 dmw 0x10 0x10000001                       ;# release the hart, acknowledge havereset
 check "dmstatus.allrunning" [expr {([dmr 0x11] >> 11) & 1}] 1
 dmw 0x38 [expr {(1 << 20) | (2 << 17)}]

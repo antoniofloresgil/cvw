@@ -14,9 +14,10 @@
 //          right after its read (HMASTLOCK), so a grant never splits a locked sequence or a
 //          burst.  DM accesses are single transfers.
 //
-//          A core held in reset (CoreHold, the DM's hartreset) still presents its first fetch
-//          (busfsm sits in its address phase with the request up): the arbiter ignores the core's
-//          requests while it is held, so that the DM can load the program it is to fetch.
+//          A core held in reset by the DM's hartreset still presents its first fetch (busfsm sits
+//          in its address phase with the request up), which would keep the DM from the bus:
+//          wallypipelinedsoc silences the held core's HTRANS, so that the DM can load the program
+//          it is to fetch.
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
@@ -26,7 +27,6 @@
 
 module ahbdebugarb import cvw::*; #(parameter cvw_t P) (
   input  logic                  HCLK, HRESETn,
-  input  logic                  CoreHold,       // the core is held in reset: ignore its requests
   // Core
   input  logic [P.PA_BITS-1:0]  CoreHADDR,
   input  logic [P.AHBW-1:0]     CoreHWDATA,
@@ -67,7 +67,7 @@ module ahbdebugarb import cvw::*; #(parameter cvw_t P) (
   logic CoreLocked;    // inside a locked (atomic) sequence of the core
   logic [1:0] CoreTrans;
   logic       DMData;          // the data phase on the bus is the core's, from the Debug Module memory
-  assign CoreTrans = CoreHold ? 2'b00 : CoreHTRANS;
+  assign CoreTrans = CoreHTRANS;
   assign DMHSEL = ~DbgGrant & CoreTrans[1] & CoreHADDR < P.PA_BITS'(12'hFFF) + 1;
 
   // Grant at an edge where the bus is free: the previous data phase completes (HREADY), the

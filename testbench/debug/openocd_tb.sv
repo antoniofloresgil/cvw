@@ -14,7 +14,7 @@
 
 `timescale 1ns/1ps
 
-module openocd_tb;
+module openocd_tb #(parameter int unsigned NHARTS = 1);
   import cvw::*;
   `include "config.vh"
   `include "parameter-defs.vh"
@@ -36,7 +36,7 @@ module openocd_tb;
   logic        UARTSout, SPIOut, SPICLK, SDCCmd, SDCCLK;
   int          Port, Cycle;
 
-  wallypipelinedsoc #(P) dut(.clk, .reset_ext, .reset, .ExternalStall(1'b0),
+  wallypipelinedsoc #(.P(P), .NCORES(NHARTS)) dut(.clk, .reset_ext, .reset, .ExternalStall(1'b0),
     .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT,
     .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
     .HTRANS, .HMASTLOCK, .HREADY, .TIMECLK(1'b0), .GPIOIN('0), .GPIOOUT, .GPIOEN,

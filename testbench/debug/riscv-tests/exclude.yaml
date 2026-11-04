@@ -21,3 +21,9 @@ debug_rv32imc:
   # rv32imc has no satp.  Writing it fails (cmderr 3, as debug_tb checks), but GDB with
   # OpenOCD 0.12 reads back the value it wrote, so the test does not see that Sv32 is missing.
   - Sv32Test
+debug_rv32imc_2harts:
+  - Sv32Test
+  # Same cause as InterruptTest: both harts spend all their time in the timer handler (the
+  # program rearms the timer 256 ticks ahead, and the handler of a cacheless hart sharing one bus
+  # takes longer), so main never fills the buffer that the test reads.
+  - MulticoreRunAllHaltOne

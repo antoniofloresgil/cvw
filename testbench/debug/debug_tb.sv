@@ -21,6 +21,8 @@
 //          - triggers (DEBUG_TRIGGERS): tselect and tinfo, execute and store address matches,
 //            icount, etrigger (dcsr.cause 2), a native trigger raising a breakpoint exception,
 //            and WARL values of tdata1;
+//          - with NHARTS > 1: hartsel, a hart that does not exist, halting, resuming and resetting
+//            one hart while the other runs, haltsum0, and the registers of each hart;
 //          - ndmreset: the SoC resets (GPIOs back to 0) and the Debug Module stays active.
 //          It prints "SUCCESS! All tests ran without failures." or the number of failures.
 //
@@ -32,7 +34,7 @@
 
 `timescale 1ns/1ps
 
-module debug_tb;
+module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHARTS=2
   import cvw::*;
   `include "config.vh"
   `include "parameter-defs.vh"
@@ -40,7 +42,7 @@ module debug_tb;
   // DMI registers
   localparam logic [6:0] DMCONTROL = 7'h10, DMSTATUS = 7'h11, ABSTRACTCS = 7'h16, COMMAND = 7'h17,
                          SBCS = 7'h38, SBADDRESS0 = 7'h39, SBDATA0 = 7'h3C, DATA0 = 7'h04, DATA1 = 7'h05,
-                         PROGBUF0 = 7'h20, HARTINFO = 7'h12;
+                         PROGBUF0 = 7'h20, HARTINFO = 7'h12, HALTSUM0 = 7'h40;
   // Access Register: aarsize 2 (32 bits) or XLEN, transfer, write
   localparam logic [31:0] AR32 = 32'h0022_0000, ARX = P.XLEN == 64 ? 32'h0032_0000 : 32'h0022_0000,
                           ARWRITE = 32'h0001_0000, POSTEXEC = 32'h0004_0000;
@@ -84,7 +86,7 @@ module debug_tb;
   assign SPIIn = 1'b0;
   assign SDCIn = 1'b1;
 
-  wallypipelinedsoc #(P) dut(.clk, .reset_ext, .reset, .ExternalStall(1'b0),
+  wallypipelinedsoc #(.P(P), .NCORES(NHARTS)) dut(.clk, .reset_ext, .reset, .ExternalStall(1'b0),
     .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT,
     .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
     .HTRANS, .HMASTLOCK, .HREADY, .TIMECLK(1'b0), .GPIOIN, .GPIOOUT, .GPIOEN,
@@ -308,6 +310,7 @@ module debug_tb;
     dmiwrite(DMCONTROL, 32'h1);
     dmiread(DMCONTROL, d);
     check("dmcontrol.dmactive", d, 32'h1);
+    for (int h = 1; h < NHARTS; h++) dmiwrite(DMCONTROL, 32'h2000_0001 | 32'(h << 16));   // the other harts
     dmiwrite(DMCONTROL, 32'h2000_0001);                // hartreset
     dmiread(DMSTATUS, d);
     check("dmstatus: version 3, authenticated, all unavailable, havereset",
@@ -369,6 +372,7 @@ module debug_tb;
 
     // Release the hart: it runs the program, fetching over the bus that System Bus Access shares
     check("GPIOs while the hart is held in reset", GPIOOUT, 32'h0);
+    for (int h = 1; h < NHARTS; h++) dmiwrite(DMCONTROL, 32'h1000_0001 | 32'(h << 16));
     dmiwrite(DMCONTROL, 32'h1000_0001);                // ackhavereset, hartreset 0
     dmiread(DMSTATUS, d);
     check("dmstatus: all running, havereset acknowledged", d & 32'h000F_3F00, 32'h0000_0C00);
@@ -545,12 +549,71 @@ module debug_tb;
     repeat (200) @(posedge clk);
     check("GPIOs after resuming from the reset halt", GPIOOUT, 32'd42);
 
-    // ndmreset resets the SoC but not the Debug Module
+    if (NHARTS > 1) begin
+      // hartsel reads back, and a hart that does not exist is reported as such
+      dmiwrite(DMCONTROL, 32'h1 | 32'(NHARTS << 16));
+      dmiread(DMCONTROL, d);
+      check("dmcontrol.hartsello reads back", 32'(d[25:16]), 32'(NHARTS));
+      dmiread(DMSTATUS, d);
+      check("dmstatus: a hart that does not exist", d & 32'h0000_CF00, 32'h0000_C000);
+      command(ARX | 32'h1005, err);
+      check("cmderr on a hart that does not exist", 32'(err), 32'd4);
+      // Halt hart 1 only: hart 0 keeps running
+      dmiwrite(DMCONTROL, 32'h8000_0001 | 32'(1 << 16));
+      waithalted();
+      dmiwrite(DMCONTROL, 32'h0000_0001 | 32'(1 << 16));
+      dmiread(HALTSUM0, d);
+      check("haltsum0: only hart 1 is halted", d, 32'h2);
+      readreg(16'h0F14, d);
+      check("mhartid of hart 1", d, 32'd1);
+      readreg(16'h07B1, d);
+      check("dpc of hart 1 is in the program", 32'(d >= RAM && d < RAM + 32'h30), 32'd1);
+      dmiwrite(DMCONTROL, 32'h1);
+      dmiread(DMSTATUS, d);
+      check("hart 0 keeps running", d & 32'h0F00, 32'h0C00);
+      command(ARX | 32'h1005, err);
+      check("cmderr: a command on a running hart", 32'(err), 32'd4);
+      // The registers are per hart
+      dmiwrite(DMCONTROL, 32'h1 | 32'(1 << 16));
+      writereg(16'h1007, 32'hCAFE_0001);
+      readreg(16'h1007, d);
+      check("t2 of hart 1", d, 32'hCAFE_0001);
+      dmiwrite(DMCONTROL, 32'h8000_0001);                // halt hart 0 as well
+      waithalted();
+      dmiwrite(DMCONTROL, 32'h0000_0001);
+      readreg(16'h1007, d);
+      check("t2 of hart 0 is its own", 32'(d != 32'hCAFE_0001), 32'd1);
+      readreg(16'h0F14, d);
+      check("mhartid of hart 0", d, 32'd0);
+      dmiread(HALTSUM0, d);
+      check("haltsum0: harts 0 and 1 are halted", d, 32'h3);
+      // Resume hart 1 only
+      dmiwrite(DMCONTROL, 32'h4000_0001 | 32'(1 << 16));
+      dmiread(DMSTATUS, d);
+      check("hart 1: running, resumeack", d & 32'h0003_0F00, 32'h0003_0C00);
+      dmiread(HALTSUM0, d);
+      check("haltsum0: only hart 0 is halted", d, 32'h1);
+      // Reset hart 1 only: hart 0 stays halted
+      dmiwrite(DMCONTROL, 32'h2000_0001 | 32'(1 << 16));
+      dmiread(DMSTATUS, d);
+      check("hart 1 in reset: unavailable, havereset", d & 32'h000C_3000, 32'h000C_3000);
+      dmiwrite(DMCONTROL, 32'h1000_0001 | 32'(1 << 16));
+      dmiwrite(DMCONTROL, 32'h1);
+      dmiread(DMSTATUS, d);
+      check("hart 0 is still halted", d & 32'h0300, 32'h0300);
+      dmiwrite(DMCONTROL, 32'h4000_0001);                // resume hart 0
+      dmiread(DMSTATUS, d);
+      check("hart 0: running, resumeack", d & 32'h0003_0F00, 32'h0003_0C00);
+    end
+
+    // ndmreset resets the SoC but not the Debug Module; the harts are held across it
+    for (int h = 1; h < NHARTS; h++) dmiwrite(DMCONTROL, 32'h2000_0001 | 32'(h << 16));
     dmiwrite(DMCONTROL, 32'h0000_0003);
     dmiwrite(DMCONTROL, 32'h2000_0001);                // hold the hart again
     check("GPIOs after ndmreset", GPIOOUT, 32'h0);
     dmiread(DMCONTROL, d);
     check("Debug Module active after ndmreset", d, 32'h2000_0001);
+    for (int h = 1; h < NHARTS; h++) dmiwrite(DMCONTROL, 32'h1000_0001 | 32'(h << 16));
     dmiwrite(DMCONTROL, 32'h1000_0001);
     repeat (200) @(posedge clk);
     check("GPIOs driven again after the restart", GPIOOUT, 32'd42);

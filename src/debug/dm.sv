@@ -29,7 +29,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module dm import cvw::*; #(parameter cvw_t P) (
+module dm import cvw::*; #(parameter cvw_t P, parameter int unsigned NHARTS = 1) (
   input  logic                  clk,
   input  logic                  reset,        // power-on reset only: ndmreset must not reset the DM
   // DMI from the DTM
@@ -41,9 +41,9 @@ module dm import cvw::*; #(parameter cvw_t P) (
   output logic                  DMIError,
   // The hart
   output logic                  NDMReset,     // the SoC, except the DTM and DM
-  output logic                  HartReset,    // the core
-  output logic                  DebugHaltReq, // halt request to the core's Debug Mode
-  output logic                  DebugResetHaltReq, // the halt request is resethaltreq's (dcsr.cause 5)
+  output logic [NHARTS-1:0]     HartReset,    // each core
+  output logic [NHARTS-1:0]     DebugHaltReq, // halt request to each core's Debug Mode
+  output logic [NHARTS-1:0]     DebugResetHaltReq, // the halt request is resethaltreq's (dcsr.cause 5)
   // Debug memory: AHB-Lite slave at 0x0-0xFFF, with no wait states
   input  logic                  DMHSEL,       // address phase of a transfer to the debug memory
   input  logic [11:0]           DMHADDR,
@@ -66,7 +66,7 @@ module dm import cvw::*; #(parameter cvw_t P) (
 
   // DMI registers
   localparam logic [6:0] DATA0 = 7'h04, DATA1 = 7'h05, DMCONTROL = 7'h10, DMSTATUS = 7'h11,
-                         HARTINFO = 7'h12, ABSTRACTCS = 7'h16, COMMAND = 7'h17, ABSTRACTAUTO = 7'h18,
+                         HARTINFO = 7'h12, HALTSUM1 = 7'h13, ABSTRACTCS = 7'h16, COMMAND = 7'h17, ABSTRACTAUTO = 7'h18,
                          PROGBUF0 = 7'h20, HALTSUM0 = 7'h40;
   localparam int unsigned DATACOUNT = 2, PROGBUFSIZE = 8;
   // Debug memory
@@ -75,11 +75,13 @@ module dm import cvw::*; #(parameter cvw_t P) (
                           DATA = 12'h380, FLAGS = 12'h400, ROM = 12'h800;
   localparam logic [31:0] NOP = 32'h00000013, EBREAK = 32'h00100073;
 
-  // The ROM (0x800), from this source, assembled for RV32 and RV64 alike (.option norvc):
+  // The ROM (0x800), from this source, assembled for RV32 and RV64 alike (.option norvc).  Every
+  // report to the Debug Module carries the hart's id, which tells the harts apart:
   //   entry:      j _entry               # 0x800: halt, and ebreak in Debug Mode
   //   resume:     j _resume              # 0x804
   //   exception:  j _exception           # 0x808: exception in Debug Mode
-  //   _exception: sw   zero, 0x10C(zero) # EXCEPTION
+  //   _exception: csrr s0, mhartid
+  //               sw   s0, 0x10C(zero)   # EXCEPTION
   //               csrr s0, dscratch1     # s0 as the command found it
   //               ebreak                 # back to entry
   //   _entry:     fence
@@ -94,25 +96,36 @@ module dm import cvw::*; #(parameter cvw_t P) (
   //               andi s0, s0, 2         # resume
   //               bnez s0, _resume
   //               j    entry_loop
-  //   _going:     csrr s0, dscratch1
-  //               sw   zero, 0x104(zero) # GOING
+  //   _going:     csrr s0, mhartid
+  //               sw   s0, 0x104(zero)   # GOING
+  //               csrr s0, dscratch1
   //               jalr zero, 0x300(zero) # WHERETO
   //   _resume:    csrr s0, mhartid
   //               sw   s0, 0x108(zero)   # RESUMING
   //               csrr s0, dscratch1
   //               dret
-  localparam int unsigned ROMWORDS = 25;
+  localparam int unsigned ROMWORDS = 27;
   localparam logic [31:0] ROMCODE [ROMWORDS] = '{
-    32'h0180006f, 32'h0500006f, 32'h0040006f, 32'h10002623, 32'h7b302473, 32'h00100073,
-    32'h0ff0000f, 32'h7b341073, 32'hf1402473, 32'h10802023, 32'h40044403, 32'h00147413,
-    32'h00041c63, 32'hf1402473, 32'h40044403, 32'h00247413, 32'h00041a63, 32'hfddff06f,
-    32'h7b302473, 32'h10002223, 32'h30000067, 32'hf1402473, 32'h10802423, 32'h7b302473,
-    32'h7b200073};
+    32'h01c0006f, 32'h0580006f, 32'h0040006f, 32'hf1402473, 32'h10802623, 32'h7b302473,
+    32'h00100073, 32'h0ff0000f, 32'h7b341073, 32'hf1402473, 32'h10802023, 32'h40044403,
+    32'h00147413, 32'h00041c63, 32'hf1402473, 32'h40044403, 32'h00247413, 32'h00041c63,
+    32'hfddff06f, 32'hf1402473, 32'h10802223, 32'h7b302473, 32'h30000067, 32'hf1402473,
+    32'h10802423, 32'h7b302473, 32'h7b200073};
+
+  // The FLAGS bytes (0x400-0x7FF) hold one byte per hart, so up to 1024 harts
+  if (NHARTS < 1 || NHARTS > 1024) begin : badharts
+    $error("dm: NHARTS must be between 1 and 1024");
+  end
+  localparam int unsigned HW = NHARTS > 1 ? $clog2(NHARTS) : 1;     // bits of a hart index
 
   logic        Write, Read;
-  logic        DMActive, HaveReset, Unavail;
-  logic        HaltReq, ResetHaltReq, ResetHaltPending;
-  logic        Halted, ResumeAck, GoFlag, ResumeFlag;
+  logic        DMActive;
+  logic [NHARTS-1:0] HaveReset, Unavail;
+  logic [NHARTS-1:0] HaltReq, ResetHaltReq, ResetHaltPending;
+  logic [NHARTS-1:0] Halted, ResumeAck, GoFlag, ResumeFlag;
+  logic [19:0] HartSel;                                // the selected hart (dmcontrol.hartsel)
+  logic [HW-1:0] SelIdx, CmdHart;                      // its index; the hart that runs the command
+  logic        SelExists;
   logic [2:0]  CmdErr;
   logic [31:0] Command;
   logic [31:0] Data [DATACOUNT];
@@ -128,10 +141,12 @@ module dm import cvw::*; #(parameter cvw_t P) (
   assign Write = DMIReq &  DMIWrite;
   assign Read  = DMIReq & ~DMIWrite;
   assign DMIError = 1'b0;
-  assign Unavail = NDMReset | HartReset;           // the hart is in reset
+  assign Unavail = {NHARTS{NDMReset}} | HartReset;   // the harts in reset
+  assign SelExists = HartSel < 20'(NHARTS);
+  assign SelIdx = HartSel[HW-1:0];
   assign Busy = CmdState != CMD_IDLE;
-  assign DebugHaltReq = DMActive & (HaltReq | ResetHaltPending) & ~Halted;
-  assign DebugResetHaltReq = DMActive & ResetHaltPending;
+  assign DebugHaltReq = {NHARTS{DMActive}} & (HaltReq | ResetHaltPending) & ~Halted;
+  assign DebugResetHaltReq = {NHARTS{DMActive}} & ResetHaltPending;
 
   ///////////////////////////////////////////
   // Abstract command: Access Register
@@ -217,7 +232,13 @@ module dm import cvw::*; #(parameter cvw_t P) (
     if (a >= PROGBUF && a < IMPEBREAK)               return ProgBuf[progbuf[4:2]];
     if (a == IMPEBREAK)                              return EBREAK;
     if (a >= DATA && a < DATA + 12'(4*DATACOUNT))    return Data[a[2]];
-    if (a == FLAGS)                                  return {30'b0, ResumeFlag, GoFlag};   // hart 0
+    if (a >= FLAGS && a < FLAGS + 12'(4*((NHARTS + 3)/4))) begin   // one byte per hart
+      logic [31:0] w;
+      w = '0;
+      for (int b = 0; b < 4; b++)
+        if (4*int'(a[9:2]) + b < NHARTS) w[8*b +: 2] = {ResumeFlag[HW'(4*int'(a[9:2]) + b)], GoFlag[HW'(4*int'(a[9:2]) + b)]};
+      return w;
+    end
     return 32'b0;
   endfunction
 
@@ -249,16 +270,17 @@ module dm import cvw::*; #(parameter cvw_t P) (
     assign WordWrite[w] = MemAccess & MemWrite & DMHREADY & |WordStrb[w];
   end
 
-  logic HartHalted, HartGoing, HartResuming, HartException;
+  // The ROM reports with the hart's id as data: events per hart
+  logic [NHARTS-1:0] HartHalted, HartGoing, HartResuming, HartException;
   always_comb begin
-    HartHalted = 1'b0; HartGoing = 1'b0; HartResuming = 1'b0; HartException = 1'b0;
+    HartHalted = '0; HartGoing = '0; HartResuming = '0; HartException = '0;
     for (int w = 0; w < WORDS; w++)
-      if (WordWrite[w])
+      if (WordWrite[w] && WordData[w] < 32'(NHARTS))
         case (WordAdr[w])
-          HALTED:    HartHalted = 1'b1;
-          GOING:     HartGoing = 1'b1;
-          RESUMING:  HartResuming = 1'b1;
-          EXCEPTION: HartException = 1'b1;
+          HALTED:    HartHalted[HW'(WordData[w])] = 1'b1;
+          GOING:     HartGoing[HW'(WordData[w])] = 1'b1;
+          RESUMING:  HartResuming[HW'(WordData[w])] = 1'b1;
+          EXCEPTION: HartException[HW'(WordData[w])] = 1'b1;
           default: ;
         endcase
   end
@@ -278,22 +300,39 @@ module dm import cvw::*; #(parameter cvw_t P) (
   assign DataIdx = DataOff[0];
   assign ProgBufIdx = ProgBufOff[2:0];
 
-  logic        AllHalted, AllRunning;
-  assign AllHalted  = Halted & ~Unavail;
-  assign AllRunning = ~Halted & ~Unavail;
+  // The selected hart's state (all the dmstatus "any" and "all" bits are the same: no hasel)
+  logic        SelHalted, SelRunning, SelUnavail, SelHaveReset, SelResumeAck;
+  assign SelHalted    = SelExists & Halted[SelIdx] & ~Unavail[SelIdx];
+  assign SelRunning   = SelExists & ~Halted[SelIdx] & ~Unavail[SelIdx];
+  assign SelUnavail   = SelExists & Unavail[SelIdx];
+  assign SelHaveReset = SelExists & HaveReset[SelIdx];
+  assign SelResumeAck = SelExists & ResumeAck[SelIdx];
+
+  // haltsum0: the harts of the 32 that contain the selected hart; haltsum1: groups of 32 of the
+  // 1024 that contain it
+  logic [31:0] HaltSum0, HaltSum1;
+  always_comb begin
+    HaltSum0 = '0; HaltSum1 = '0;
+    for (int h = 0; h < NHARTS; h++) begin
+      if (h / 32 == int'(HartSel[19:5]) && Halted[h] && !Unavail[h]) HaltSum0[h % 32] = 1'b1;
+      if (h / 1024 == int'(HartSel[19:10]) && Halted[h] && !Unavail[h]) HaltSum1[(h / 32) % 32] = 1'b1;
+    end
+  end
   always_comb
     case (DMIAddr)
-      // dmcontrol: hartreset, ndmreset, dmactive; hartsel reads 0 (one hart)
-      DMCONTROL:    DMIRData = {2'b0, HartReset, 27'b0, NDMReset, DMActive};
+      // dmcontrol: hartreset, hartsel, ndmreset, dmactive (no hasel)
+      DMCONTROL:    DMIRData = {2'b0, SelExists & HartReset[SelIdx], 3'b0, HartSel[9:0], HartSel[19:10],
+                                4'b0, NDMReset, DMActive};
       // dmstatus: ndmresetpending, impebreak, havereset, resumeack, unavail, running, halted,
       // authenticated, hasresethaltreq, version 3 (1.0)
-      DMSTATUS:     DMIRData = {7'b0, NDMReset, 1'b0, 1'b1, 2'b0, {2{HaveReset}}, {2{ResumeAck}}, 2'b0,
-                                {2{Unavail}}, {2{AllRunning}}, {2{AllHalted}}, 1'b1, 1'b0, 1'b1, 1'b0, 4'd3};
+      DMSTATUS:     DMIRData = {7'b0, NDMReset, 1'b0, 1'b1, 2'b0, {2{SelHaveReset}}, {2{SelResumeAck}}, {2{~SelExists}},
+                                {2{SelUnavail}}, {2{SelRunning}}, {2{SelHalted}}, 1'b1, 1'b0, 1'b1, 1'b0, 4'd3};
       // hartinfo: nscratch 1 (dscratch0; the ROM uses dscratch1), data registers in memory at 0x380
       HARTINFO:     DMIRData = {8'b0, 4'd1, 3'b0, 1'b1, 4'(DATACOUNT), DATA};
       ABSTRACTCS:   DMIRData = {3'b0, 5'(PROGBUFSIZE), 11'b0, Busy, 1'b0, CmdErr, 4'b0, 4'(DATACOUNT)};
       ABSTRACTAUTO: DMIRData = {AutoExecProgBuf, 4'b0, AutoExecData};
-      HALTSUM0:     DMIRData = {31'b0, AllHalted};
+      HALTSUM0:     DMIRData = HaltSum0;
+      HALTSUM1:     DMIRData = HaltSum1;
       DATA0:        DMIRData = Data[0];
       DATA1:        DMIRData = Data[1];
       default:
@@ -317,49 +356,65 @@ module dm import cvw::*; #(parameter cvw_t P) (
   assign IssueCmd = NewCommand ? DMIWData : Command;
   assign Issue = DMActive & (NewCommand | AutoExec) & ~Busy & CmdErr == 3'd0;
 
+  // The hart that a dmcontrol write addresses
+  logic [19:0]  NewSel;
+  logic [HW-1:0] NewIdx;
+  logic         NewExists;
+  assign NewSel = {DMIWData[15:6], DMIWData[25:16]};
+  assign NewIdx = NewSel[HW-1:0];
+  assign NewExists = NewSel < 20'(NHARTS);
+
   always_ff @(posedge clk)
     if (DMReset) begin
-      DMActive <= 1'b0; NDMReset <= 1'b0; HartReset <= 1'b0; HaltReq <= 1'b0; ResetHaltReq <= 1'b0;
-      ResetHaltPending <= 1'b0; Halted <= 1'b0; ResumeAck <= 1'b0; GoFlag <= 1'b0; ResumeFlag <= 1'b0;
-      CmdErr <= '0; Command <= '0; CmdState <= CMD_IDLE; AutoExecData <= '0; AutoExecProgBuf <= '0;
+      DMActive <= 1'b0; NDMReset <= 1'b0; HartReset <= '0; HaltReq <= '0; ResetHaltReq <= '0;
+      ResetHaltPending <= '0; Halted <= '0; ResumeAck <= '0; GoFlag <= '0; ResumeFlag <= '0; HartSel <= '0;
+      CmdErr <= '0; Command <= '0; CmdState <= CMD_IDLE; CmdHart <= '0; AutoExecData <= '0; AutoExecProgBuf <= '0;
       Data <= '{default: '0}; ProgBuf <= '{default: NOP};
-      if (reset) HaveReset <= 1'b1;
+      if (reset) HaveReset <= '1;
     end else begin
-      // The hart in reset: it restarts running, and halts as it leaves reset with resethaltreq.
+      // A hart in reset: it restarts running, and halts as it leaves reset with resethaltreq.
       // (Before dmcontrol, so that ackhavereset as the reset ends wins.)
-      if (Unavail) begin
-        HaveReset <= 1'b1; Halted <= 1'b0; GoFlag <= 1'b0; ResumeFlag <= 1'b0; CmdState <= CMD_IDLE;
-        ResetHaltPending <= ResetHaltReq;
-      end
-      // Registers of dmcontrol
+      for (int h = 0; h < NHARTS; h++)
+        if (Unavail[h]) begin
+          HaveReset[h] <= 1'b1; Halted[h] <= 1'b0; GoFlag[h] <= 1'b0; ResumeFlag[h] <= 1'b0;
+          ResetHaltPending[h] <= ResetHaltReq[h];
+        end
+      if (Unavail[CmdHart]) CmdState <= CMD_IDLE;
+      // Registers of dmcontrol: the bits that concern harts go to the selected one (no hasel)
       if (Write & DMIAddr == DMCONTROL) begin
         DMActive  <= 1'b1;
-        HaltReq   <= DMIWData[31];
-        HartReset <= DMIWData[29];
+        HartSel   <= NewSel;
         NDMReset  <= DMIWData[1];
-        if (DMIWData[28]) HaveReset <= 1'b0;                     // ackhavereset
-        if (DMIWData[3]) ResetHaltReq <= 1'b1;                   // setresethaltreq
-        else if (DMIWData[2]) ResetHaltReq <= 1'b0;              // clrresethaltreq
-        // resumereq, unless haltreq is also set: the ROM resumes on the resume flag
-        if (DMIWData[30] & ~DMIWData[31] & Halted) begin
-          ResumeFlag <= 1'b1; ResumeAck <= 1'b0;
+        if (NewExists) begin
+          HaltReq[NewIdx]   <= DMIWData[31];
+          HartReset[NewIdx] <= DMIWData[29];
+          if (DMIWData[28]) HaveReset[NewIdx] <= 1'b0;           // ackhavereset
+          if (DMIWData[3]) ResetHaltReq[NewIdx] <= 1'b1;         // setresethaltreq
+          else if (DMIWData[2]) ResetHaltReq[NewIdx] <= 1'b0;    // clrresethaltreq
+          // resumereq, unless haltreq is also set: the ROM resumes on the resume flag
+          if (DMIWData[30] & ~DMIWData[31] & Halted[NewIdx]) begin
+            ResumeFlag[NewIdx] <= 1'b1; ResumeAck[NewIdx] <= 1'b0;
+          end
         end
       end
-      // The ROM reports the hart's state
-      if (HartHalted) begin
-        Halted <= 1'b1; ResetHaltPending <= 1'b0;
-        if (CmdState == CMD_RUN) begin                           // the command completed
-          CmdState <= CMD_IDLE;
-          if (Command[19] & CmdErr == 3'd0) Command[15:0] <= Command[15:0] + 16'd1;  // aarpostincrement
+      // The ROM reports the harts' state
+      for (int h = 0; h < NHARTS; h++) begin
+        if (HartHalted[h]) begin
+          Halted[h] <= 1'b1; ResetHaltPending[h] <= 1'b0;
+        end
+        if (HartGoing[h]) GoFlag[h] <= 1'b0;
+        if (HartResuming[h]) begin
+          Halted[h] <= 1'b0; ResumeFlag[h] <= 1'b0; ResumeAck[h] <= 1'b1;
         end
       end
-      if (HartGoing) begin
-        GoFlag <= 1'b0; CmdState <= CMD_RUN;
+      // The command runs on one hart: it starts when that hart takes the go flag, and completes when
+      // it halts again
+      if (HartGoing[CmdHart]) CmdState <= CMD_RUN;
+      if (HartHalted[CmdHart] && CmdState == CMD_RUN) begin
+        CmdState <= CMD_IDLE;
+        if (Command[19] & CmdErr == 3'd0) Command[15:0] <= Command[15:0] + 16'd1;  // aarpostincrement
       end
-      if (HartResuming) begin
-        Halted <= 1'b0; ResumeFlag <= 1'b0; ResumeAck <= 1'b1;
-      end
-      if (HartException & CmdErr == 3'd0) CmdErr <= 3'd3;       // exception
+      if (HartException[CmdHart] & CmdErr == 3'd0) CmdErr <= 3'd3;   // exception
       // Abstract commands
       if (Write & DMIAddr == ABSTRACTCS) CmdErr <= CmdErr & ~DMIWData[10:8];
       if (Write & DMIAddr == ABSTRACTAUTO)
@@ -368,10 +423,11 @@ module dm import cvw::*; #(parameter cvw_t P) (
       if ((NewCommand | DataAccess | ProgBufAccess) & Busy & CmdErr == 3'd0) CmdErr <= 3'd1;   // busy
       if (Issue) begin
         Command <= IssueCmd;
+        if (SelExists) CmdHart <= SelIdx;
         if (!supported(IssueCmd))       CmdErr <= 3'd2;          // not supported
-        else if (!Halted | Unavail)     CmdErr <= 3'd4;          // the hart is not halted
+        else if (!SelHalted)            CmdErr <= 3'd4;          // the hart is not halted (or does not exist)
         else if (IssueCmd[17] | IssueCmd[18]) begin               // transfer or postexec
-          GoFlag <= 1'b1; CmdState <= CMD_GO;
+          GoFlag[SelIdx] <= 1'b1; CmdState <= CMD_GO;
         end
       end
       // Data and program buffer, written by the debugger (not while a command runs) or the hart

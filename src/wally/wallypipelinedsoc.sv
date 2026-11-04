@@ -71,11 +71,12 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
 
   // synchronize reset to SOC clock domain
   logic                       PowerOnReset;     // resets everything, the Debug Module too
-  logic                       CoreReset;        // the harts: reset, or held by the Debug Module
-  logic                       NDMReset, HartReset;
+  logic [NCORES-1:0]          CoreReset;        // each hart: reset, or held by the Debug Module
+  logic                       NDMReset;
+  logic [NCORES-1:0]          HartReset;
   synchronizer resetsync(.clk, .d(reset_ext), .q(PowerOnReset));
   assign reset = PowerOnReset | NDMReset;
-  assign CoreReset = reset | HartReset;
+  assign CoreReset = {NCORES{reset}} | HartReset;
 
   // AHB between the memory system and the uncore, and the Debug Module's System Bus Access
   logic [P.PA_BITS-1:0]       MemHADDR, DbgHADDR;
@@ -86,7 +87,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic [3:0]                 MemHPROT;
   logic [1:0]                 MemHTRANS, DbgHTRANS;
   logic [P.AHBW-1:0]          MemHRDATA;
-  logic                       DebugHaltReq, DebugResetHaltReq;
+  logic [NCORES-1:0]          DebugHaltReq, DebugResetHaltReq;   // to each hart
 
   if (P.DEBUG_SUPPORTED) begin : debug
     logic       DMIReq, DMIWrite, DMIError;
@@ -96,13 +97,13 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
       .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError);
     logic              DMHSEL;
     logic [P.AHBW-1:0] DMHRDATA;
-    dm #(.P(P)) dm(.clk, .reset(PowerOnReset), .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError,
+    dm #(.P(P), .NHARTS(NCORES)) dm(.clk, .reset(PowerOnReset), .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError,
       .NDMReset, .HartReset, .DebugHaltReq, .DebugResetHaltReq,
       .DMHSEL, .DMHADDR(MemHADDR[11:0]), .DMHWRITE(MemHWRITE), .DMHREADY(HREADY), .DMHWDATA(MemHWDATA),
       .DMHWSTRB(MemHWSTRB), .DMHRDATA, .SBHADDR(DbgHADDR), .SBHWDATA(DbgHWDATA), .SBHWSTRB(DbgHWSTRB),
       .SBHWRITE(DbgHWRITE), .SBHSIZE(DbgHSIZE), .SBHTRANS(DbgHTRANS), .SBHREADY(DbgHREADY),
       .SBHRDATA(HRDATA), .SBHRESP(HRESP));
-    ahbdebugarb #(.P(P)) arb(.HCLK, .HRESETn, .CoreHold(HartReset),
+    ahbdebugarb #(.P(P)) arb(.HCLK, .HRESETn,
       .CoreHADDR(MemHADDR), .CoreHWDATA(MemHWDATA), .CoreHWSTRB(MemHWSTRB), .CoreHWRITE(MemHWRITE),
       .CoreHSIZE(MemHSIZE), .CoreHBURST(MemHBURST), .CoreHPROT(MemHPROT), .CoreHTRANS(MemHTRANS),
       .CoreHMASTLOCK(MemHMASTLOCK), .CoreHREADY(MemHREADY), .CoreHRDATA(MemHRDATA),
@@ -124,30 +125,36 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic [NCORES-1:0] CoreHWRITE, CoreHMASTLOCK, CoreHREADY, CoreHRESP, CoreSCFail;
   logic [NCORES-1:0][2:0] CoreHSIZE, CoreHBURST;
   logic [NCORES-1:0][3:0] CoreHPROT;
-  logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC;
+  logic [NCORES-1:0][1:0] CoreHTRANS, CoreHTRANSOut, CoreHATOMIC;
   logic [NCORES-1:0][3:0] CoreCacheEvents;
 
   // Preserve the upstream no-bus outputs; bus-enabled harts share clock/reset.
   assign HCLK = P.BUS_SUPPORTED ? clk : 1'b0;
   assign HRESETn = P.BUS_SUPPORTED ? ~reset : 1'b0;
-  wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset(CoreReset),
+  wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset(CoreReset[0]),
     .SCFail(CoreSCFail[0]), .HATOMIC(CoreHATOMIC[0]),
     .MTimerInt(MTimerInt[0]), .MExtInt(MExtInt[0]), .SExtInt(SExtInt[0]), .MSwInt(MSwInt[0]), .MTIME_CLINT,
-    .ExtCacheEvents(CoreCacheEvents[0]), .DebugHaltReq, .DebugResetHaltReq,
+    .ExtCacheEvents(CoreCacheEvents[0]), .DebugHaltReq(DebugHaltReq[0]), .DebugResetHaltReq(DebugResetHaltReq[0]),
     .HRDATA(CoreHRDATA[0]), .HREADY(CoreHREADY[0]), .HRESP(CoreHRESP[0]), .HCLK(), .HRESETn(),
     .HADDR(CoreHADDR[0]), .HWDATA(CoreHWDATA[0]), .HWSTRB(CoreHWSTRB[0]),
     .HWRITE(CoreHWRITE[0]), .HSIZE(CoreHSIZE[0]), .HBURST(CoreHBURST[0]), .HPROT(CoreHPROT[0]),
-    .HTRANS(CoreHTRANS[0]), .HMASTLOCK(CoreHMASTLOCK[0]), .ExternalStall);
+    .HTRANS(CoreHTRANSOut[0]), .HMASTLOCK(CoreHMASTLOCK[0]), .ExternalStall);
 
   for (genvar h = 1; h < NCORES; h++) begin : harts
-    wallypipelinedcore #(.P(P), .HART_ID(h), .SHARED_ATOMICS(1)) core(.clk, .reset(CoreReset),
+    wallypipelinedcore #(.P(P), .HART_ID(h), .SHARED_ATOMICS(1)) core(.clk, .reset(CoreReset[h]),
       .SCFail(CoreSCFail[h]), .HATOMIC(CoreHATOMIC[h]),
       .MTimerInt(MTimerInt[h]), .MExtInt(MExtInt[h]), .SExtInt(SExtInt[h]), .MSwInt(MSwInt[h]), .MTIME_CLINT,
-      .ExtCacheEvents(CoreCacheEvents[h]),
+      .ExtCacheEvents(CoreCacheEvents[h]), .DebugHaltReq(DebugHaltReq[h]), .DebugResetHaltReq(DebugResetHaltReq[h]),
       .HRDATA(CoreHRDATA[h]), .HREADY(CoreHREADY[h]), .HRESP(CoreHRESP[h]), .HCLK(), .HRESETn(),
       .HADDR(CoreHADDR[h]), .HWDATA(CoreHWDATA[h]), .HWSTRB(CoreHWSTRB[h]),
       .HWRITE(CoreHWRITE[h]), .HSIZE(CoreHSIZE[h]), .HBURST(CoreHBURST[h]), .HPROT(CoreHPROT[h]),
-      .HTRANS(CoreHTRANS[h]), .HMASTLOCK(CoreHMASTLOCK[h]), .ExternalStall);
+      .HTRANS(CoreHTRANSOut[h]), .HMASTLOCK(CoreHMASTLOCK[h]), .ExternalStall);
+  end
+
+  // A hart held in reset by the Debug Module still presents its first fetch: silence it, so
+  // that the Debug Module can use the bus (HartReset is 0 without DEBUG_SUPPORTED)
+  for (genvar h = 0; h < NCORES; h++) begin : holdharts
+    assign CoreHTRANS[h] = HartReset[h] ? 2'b00 : CoreHTRANSOut[h];
   end
 
   // Memory topology and capability checks are owned by the optional subsystem.
