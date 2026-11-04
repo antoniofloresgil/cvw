@@ -656,20 +656,13 @@ module testbench;
     end
   end
 
-  // The E-Trace encoder on hart 0, traced while a test runs, and its input and packets for the
-  // reference flow (+EtraceCsv=, +EtracePackets=, +EtraceResyncMax=; docs/trace.md)
+  // The instruction trace of hart 0 that the encoder takes, and the trace that the program reads
+  // back from the RAM sink, for the E-Trace reference flow (+EtraceCsv=, +EtracePackets=;
+  // docs/trace.md)
   if (P.TRACE_SUPPORTED) begin : etrace
-    localparam int NBYTES = 1 + (2*P.XLEN + 13 + 7) / 8;
-    logic                TraceOn, PacketValid;
-    logic [3:0]          ResyncMax;
-    logic [4:0]          PacketLen;
-    logic [8*NBYTES-1:0] Packet;
-    initial if (!$value$plusargs("EtraceResyncMax=%d", ResyncMax)) ResyncMax = 4'd0;
-    assign TraceOn = CurrState == STATE_RUN_TEST;
-    etraceencoder #(P) etraceencoder(.clk, .reset, .TraceOn, .ResyncMax, .ITrace(dut.core.ITrace),
-      .PacketValid, .PacketLen, .Packet);
-    etracedump #(P, NBYTES) etracedump(.clk, .reset, .TraceOn, .ITrace(dut.core.ITrace),
-      .PacketValid, .PacketLen, .Packet);
+    etracedump #(P) etracedump(.clk, .reset, .ITrace(dut.core.ITrace),
+      .LineTaken(dut.etracegen.etrace.hart[0].LineTaken),
+      .DataRead(dut.etracegen.etrace.hart[0].DataRead), .RamDout(dut.etracegen.etrace.hart[0].RamDout));
   end
 
   // The EXT_IO window is not executable: no instruction fetch may reach it on the bus,

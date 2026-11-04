@@ -38,7 +38,9 @@ module etraceencoder import cvw::*; #(parameter cvw_t P,
   input  logic [2*P.XLEN+13:0]  ITrace,             // one line of the instruction trace interface
   output logic                  PacketValid,
   output logic [4:0]            PacketLen,          // bytes of Packet, header included
-  output logic [8*NBYTES-1:0]   Packet
+  output logic [8*NBYTES-1:0]   Packet,
+  output logic                  LineTaken,          // the line of ITrace enters the trace
+  output logic                  Idle                // no flush in progress (trTeEmpty)
 );
 
   localparam int AW = P.XLEN - 1;                   // address field: iaddress_width_p - iaddress_lsb_p
@@ -90,7 +92,9 @@ module etraceencoder import cvw::*; #(parameter cvw_t P,
 
   logic   Encode, Flush;                            // a line arrives / the pipeline is flushed
   inst_t  IPrev, ICurr, INext;
-  assign Encode = State == S_ON & TraceOn & LValid & Started;
+  assign LineTaken = State == S_ON & TraceOn & LValid;
+  assign Encode = LineTaken & Started;
+  assign Idle   = State == S_OFF | State == S_ON;
   assign Flush  = State == S_ON & ~TraceOn;
   assign IPrev  = Curr;                             // the pipeline after the shift
   assign ICurr  = Next;
@@ -280,10 +284,10 @@ module etraceencoder import cvw::*; #(parameter cvw_t P,
         ResyncCount <= 16'd1;                       // the support packet counts
       end else begin
         // The pipeline: a line arrives, or the flush repeats the last instruction
-        if (State == S_ON & ((TraceOn & LValid) | Flush)) begin
+        if (LineTaken | Flush) begin
           Prev <= Curr; Curr <= Next; Next <= INext;
         end
-        if (State == S_ON & TraceOn & LValid) Started <= 1'b1;
+        if (LineTaken) Started <= 1'b1;
 
         // The branch map and the flags of the algorithm, when an instruction is encoded
         if ((Encode | Flush) & ICurr.q) begin

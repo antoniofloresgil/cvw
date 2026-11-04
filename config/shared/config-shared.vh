@@ -127,3 +127,8 @@ localparam FMALEN = 3*NF + 6;
 localparam NORMSHIFTSZ = `max(`max((CVTLEN+NF+1), (DIVb + 1 + NF + 1)), (FMALEN + 2));
 
 localparam LOGNORMSHIFTSZ = ($clog2(NORMSHIFTSZ));                  // log_2(NORMSHIFTSZ)
+
+// Trace control registers (TRACE_SUPPORTED, docs/trace.md): the trace encoder and RAM sink of hart h
+// at TRACE_BASE + h*0x2000 and + h*0x2000 + 0x1000, in a window that no other region decodes
+localparam logic [63:0] TRACE_BASE  = 64'h04000000;
+localparam logic [63:0] TRACE_RANGE = 64'h0000FFFF;  // up to 8 harts

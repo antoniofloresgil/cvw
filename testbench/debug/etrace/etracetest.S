@@ -5,7 +5,8 @@
 // instruction, a load access fault, a trip to U-mode and back, and a timer interrupt.  The trap
 // handler skips the instruction that traps and returns with mret.  Then it exercises the packets
 // of the encoder that depend on counts: branch maps of 16 to 31 branches, full maps of 31 branches
-// sent without an address, and the periodic resynchronization.
+// sent without an address, and the periodic resynchronization.  It programs the trace itself,
+// through the trace control registers, and reads it back from the RAM sink at the end.
 //
 // The code section holds instructions only: the reference decoder of the E-Trace specification
 // reads the program with objdump and cannot parse data in it.  It ends by writing 1 to tohost.
@@ -24,6 +25,16 @@
 #define MTIMECMP 0x02004000
 #define UNMAPPED 0x70000000             // no region decodes it: a load access fault
 
+// Trace control (docs/trace.md): hart 0's trace encoder and RAM sink
+#define TRACE_TE  0x04000000
+#define TRACE_RAM 0x04001000
+#ifndef RESYNC_MAX
+#define RESYNC_MAX 0                    // a sync packet at least every 2^(RESYNC_MAX+4) packets
+#endif
+// trTeControl: trTeActive, trTeInstMode 3 (baseline), trTeInstSyncMode 1 (packets), trTeInstSyncMax
+#define TE_IDLE   (1 | (3 << 4) | (1 << 16) | (RESYNC_MAX << 20))
+#define TE_TRACE  (TE_IDLE | 2 | 4)     // and trTeEnable, trTeInstTracing
+
     .section .text.init
     .global rvtest_entry_point
 rvtest_entry_point:
@@ -35,6 +46,19 @@ rvtest_entry_point:
     csrw    pmpaddr0, t0
     li      t0, 0x0F                    // TOR, RWX
     csrw    pmpcfg0, t0
+
+    // Trace on, as the Trace Control Interface orders it: the RAM sink, then the encoder
+    li      s0, TRACE_RAM
+    li      t0, 1
+    sw      t0, 0(s0)                   // trRamControl: trRamActive
+    sw      zero, 0x20(s0)              // trRamWPLow: the trace from word 0
+    li      t0, 3
+    sw      t0, 0(s0)                   // trRamControl: trRamEnable
+    li      s1, TRACE_TE
+    li      t0, 1
+    sw      t0, 0(s1)                   // trTeControl: trTeActive
+    li      t0, TE_TRACE
+    sw      t0, 0(s1)                   // trTeControl: trace from here
 
     // Branches: a loop (taken, then not taken), and both outcomes of beq and bne
     li      t1, 5
@@ -134,11 +158,49 @@ after_user:
     addi    t1, t1, -1
     bnez    t1, 14b
 
+    // Trace off: the encoder (which flushes), then the sink, each until it is empty
+    li      t0, TE_IDLE
+    sw      t0, 0(s1)
+15: lw      t0, 0(s1)
+    andi    t0, t0, 8                   // trTeEmpty
+    beqz    t0, 15b
+    li      t0, 1
+    sw      t0, 0(s0)                   // trRamControl: trRamEnable 0
+16: lw      t0, 0(s0)
+    andi    t0, t0, 8                   // trRamEmpty
+    beqz    t0, 16b
+
+    // Fail if a packet was dropped (trTeInstStallOrOverflow) or the buffer wrapped (trRamWrap)
+    li      a3, 3                       // exit code 1
+    lw      t0, 0(s1)
+    srli    t0, t0, 12
+    andi    t0, t0, 1
+    bnez    t0, fail
+    li      a3, 5                       // exit code 2
+    lw      t1, 0x20(s0)                // trRamWPLow
+    andi    t0, t1, 1
+    bnez    t0, fail
+
+    // Read the trace back (the testbench records it, +EtracePackets=): trRamRP from word 0, then
+    // trRamData up to trRamWP
+    andi    t1, t1, -4
+    sw      zero, 0x28(s0)              // trRamRPLow
+    li      t2, 0
+17: beq     t2, t1, 18f
+    lw      t0, 0x40(s0)                // trRamData
+    addi    t2, t2, 4
+    j       17b
+18:
+
     // Done
     li      t0, 1
     la      t1, tohost
     SREG    t0, 0(t1)
 9:  j       9b
+fail:
+    la      t1, tohost
+    SREG    a3, 0(t1)
+    j       9b
 
 leaf:
     addi    a1, a1, 1

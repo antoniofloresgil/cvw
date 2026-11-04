@@ -1,7 +1,7 @@
 # Instruction trace (E-Trace)
 
-Status: **the instruction trace interface and the encoder are done and verified** (steps 1 and 2
-below); the sink and the control registers are to do. This page records the decisions, so that the
+Status: **the instruction trace interface, the encoder, the RAM sink and their control registers
+are done and verified** (steps 1 to 3 below); multi-hart verification is to do. This page records the decisions, so that the
 implementation and its verification follow one plan. It is phase 5 of the debug work
 (`docs/debug.md`).
 
@@ -24,14 +24,11 @@ configuration is the one of the specification's reference flow (`itype3_basic`):
 core (privileged.sv)
 └── etraceingress    retired instruction → one line of the instruction trace interface (ITI)
         │            itype, iaddr, iretire, ilastsize, cause, tval, priv
-etrace (src/debug/trace)     per hart, outside the core
-├── etrace_encoder   the three-instruction pipeline and the packet algorithm of the specification
-└── sink             a RAM, read through System Bus Access, with the control registers
+wallypipelinedsoc
+└── etrace           (src/debug/etrace.sv) the control registers' bus window; for each hart:
+    ├── etraceencoder   the three-instruction pipeline and the packet algorithm of the specification
+    └── etracesink      a Trace RAM Sink: a packet queue and a RAM of TRACE_RAM_WORDS words
 ```
-
-Until the sink exists (step 3), `testbench.sv` instantiates the encoder on hart 0 and turns the
-trace on while a test runs (`STATE_RUN_TEST`); step 3 moves it into `wallypipelinedsoc` with the
-control registers.
 
 Only the ingress sits inside the core, as the debug unit does; it uses signals that `privileged`
 already receives (`InstrOrigM`, `PCM`, `IClassM`, `CauseM`, the privilege mode, the trap
@@ -85,6 +82,60 @@ to follow `encoder_model.py` step for step:
 - `ResyncMax`: a start packet at least every 2^(`ResyncMax`+4) packets (the reference's
   `resync-max`).
 
+## Control registers and the RAM sink
+
+The trace is controlled through the registers of the **RISC-V Trace Control Interface v1.0**
+(ratified), so that trace tools that follow it need no customization. Each hart has a trace encoder
+and a Trace RAM Sink in SRAM mode, at
+
+| Address | Component | Registers |
+|---|---|---|
+| `TRACE_BASE + h*0x2000` | trace encoder of hart h | `trTeControl` (0x000), `trTeImpl` (0x004) |
+| `TRACE_BASE + h*0x2000 + 0x1000` | RAM sink of hart h | `trRamControl` (0x000), `trRamImpl` (0x004), `trRamStartLow` (0x010, 0), `trRamLimitLow` (0x018), `trRamWPLow` (0x020), `trRamRPLow` (0x028), `trRamData` (0x040) |
+
+`TRACE_BASE` is 0x04000000 (`config/shared/config-shared.vh`), a window that no region of any
+configuration decodes. The registers are 32-bit and reached in two ways, as the specification
+recommends: by an external debugger through **System Bus Access** (`src/debug/dmsba.sv` accepts
+the window), and by the harts' loads and stores (the PMA, `src/mmu/pmachecker.sv`, allows 32-bit
+accesses there: not cacheable, not idempotent, not executable). The uncore does not decode the
+window, so it completes a transfer there as it completes any undecoded one (ready, OKAY, data 0);
+`etrace` watches the address phase after the debug arbiter and supplies the read data. The uncore
+is not changed.
+
+- **`trTeControl`**: `trTeActive` (0 resets the encoder), `trTeEnable`, `trTeInstTracing` (the
+  encoder traces while both are 1; clearing either flushes it), `trTeEmpty` (the flush is done),
+  `trTeInstMode` 3 (baseline), `trTeInstSyncMode` 1 (count packets), `trTeInstSyncMax`
+  (resynchronization every 2^(n+4) packets), `trTeInstStallOrOverflow` (a packet was dropped;
+  write 1 to clear), `trTeFormat` 0 (E-Trace). `trTeImpl` reads 0x00020101: version 1.0, encoder,
+  E-Trace 2.0.
+- **The sink** stores the packets byte after byte in a circular buffer of `TRACE_RAM_WORDS`
+  32-bit words (1024, 4 KiB: the shape of IHP's SRAM macro), first byte in the least significant
+  byte. A queue of 4 packets absorbs bursts, and the RAM takes up to 4 bytes per cycle. A packet
+  that finds the queue full is dropped and sets `trTeInstStallOrOverflow`; the hart is never
+  stalled. `trRamWPLow` holds the next word and `trRamWrap`; with `trRamStopOnWrap` the sink stops
+  when the buffer is full. Disabling the sink writes what is queued and fills the last word with
+  idle bytes 0 (never a header, whose `msg_type` is 2). `trRamRPLow` and `trRamData` read the
+  buffer back, while the sink is disabled and empty. `trRamImpl` reads 0x00001091: version 1.0,
+  RAM sink, SRAM mode.
+
+Using it, in the order of the specification (offsets from hart h's block):
+
+```
+sink + 0x000 = 1            trRamActive
+sink + 0x020 = 0            trRamWPLow: from word 0
+sink + 0x000 = 3            trRamEnable
+te   + 0x000 = 1            trTeActive
+te   + 0x000 = 0x00010037   trTeEnable, trTeInstTracing (| n << 20 for trTeInstSyncMax)
+   ... the hart runs ...
+te   + 0x000 = 0x00010031   trTeEnable 0: flush; wait for trTeEmpty (bit 3)
+sink + 0x000 = 1            trRamEnable 0; wait for trRamEmpty (bit 3)
+read sink + 0x020           trRamWPLow: bytes of trace (bit 0: wrapped)
+sink + 0x028 = 0, then read sink + 0x040 repeatedly
+```
+
+With OpenOCD the same writes and reads go through System Bus Access (`riscv set_mem_access
+sysbus`, then `mww`/`mdw`); a program can do them itself, as `etracetest.S` does.
+
 ## Verification
 
 The specification's repository has a **reference flow in Python** (BSD-2-Clause, standard
@@ -93,16 +144,16 @@ library only): `encoder_model.py` is the flowchart of the algorithm as executabl
 compares two packet streams. It is **not** copied into this repository: a clone is used from the
 path in an environment variable, and the checks are skipped when it is missing.
 
-1. The testbench writes the ITI lines of a run in the reference's CSV format
+1. The testbench writes the ITI lines that the encoder takes in the reference's CSV format
    (`itype_0, cause, tval, priv, iaddr_0, context, ctype, iretire_0, ilastsize_0`).
-2. The reference `encoder_model.py` turns them into packets; the RTL packets (dumped with
-   `+EtracePackets=`, one per line in hex bytes) must be **equal, byte for byte, packet by
-   packet**.
+2. The reference `encoder_model.py` turns them into packets; the packets that the program reads
+   back from the RAM sink (the testbench records the `trRamData` reads with `+EtracePackets=`)
+   must be **equal, byte for byte, packet by packet**.
 3. The reference `decoder_model.py` decodes the RTL packets, with the program's disassembly; the
    program counters it reconstructs must equal the ones the core retired.
 
-A decoder of our own in Python (no dependency) checks step 3 in the regression when the clone is
-not available.
+Without the clone the check is skipped; a decoder of our own in Python, for the regression, is to
+do.
 
 ## Running the check
 
@@ -114,14 +165,19 @@ make -C testbench/debug/etrace check ETRACE_SPEC=~/riscv-trace-spec RESYNC_MAX=1
 
 `make check` builds `etracetest.S` (`testbench/debug/etrace`) for RV32 and RV64, runs it on
 `trace_rv32gc` (the trace without the Debug Module) and `debug_rv64gc` with `+EtraceCsv=` and
-`+EtracePackets=`, and runs `etracecheck.py` on each trace. The program covers every case of the
-interface and every packet of the encoder: branch maps of 1 to 31 branches, full maps sent without
+`+EtracePackets=`, and runs `etracecheck.py` on each trace. The program turns the trace on and off
+through the control registers, fails if a packet was dropped or the buffer wrapped, and reads the
+trace back through `trRamData`. It covers every case of the interface and every packet of the
+encoder: branch maps of 1 to 31 branches, full maps sent without
 address, `updiscon`, traps with `thaddr` 0 and 1, interrupts, privilege changes and periodic
 resynchronization.
 
-Result of step 2, with `RESYNC_MAX` 0, 1 and 3: the reference decoder reconstructs every retired
-program counter (890 in 32 bits, 902 in 64), and Wally's packets are equal to the reference's,
-byte for byte (with `RESYNC_MAX` 0: 123 packets, 419 bytes in 32 bits and 439 in 64).
+Result of step 3, with `RESYNC_MAX` 0, 1 and 3: the reference decoder reconstructs every retired
+program counter (891 in 32 bits, 895 in 64), and the packets read back from the RAM sink are equal
+to the reference's, byte for byte (with `RESYNC_MAX` 0: 123 packets, 465 bytes in 32 bits and 484
+in 64, idle bytes included). `testbench/debug/debug_tb.sv` checks the System Bus Access path:
+each hart's `trTeImpl`, `trRamImpl`, reset values and `trRamLimitLow`, then it traces hart 0
+while the program runs, from enabling to reading back, as an external debugger does.
 The program has no data in its code section, which the reference decoder cannot parse; that is
 also why the ACT programs (which have some) are not used here.
 
@@ -129,5 +185,5 @@ also why the ACT programs (which have some) are not used here.
 
 1. The ingress and the CSV dump, checked with the reference encoder and decoder (done).
 2. The encoder, compared with the reference packet by packet (done).
-3. The sink and its control registers, read through System Bus Access (or through the DM).
-4. Several harts, and `denable`/`ienable` control from the debugger.
+3. The sink and its control registers, read through System Bus Access or by the harts (done).
+4. Several harts traced at once (the blocks exist per hart; the trace of each is to verify).

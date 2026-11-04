@@ -166,15 +166,29 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     .HBURST(MemHBURST), .HPROT(MemHPROT), .HTRANS(MemHTRANS), .HMASTLOCK(MemHMASTLOCK),
     .HRDATA(MemHRDATA), .HREADY(MemHREADY), .HRESP);
 
+  // Instruction trace (TRACE_SUPPORTED, docs/trace.md): an encoder and a RAM sink per hart, whose
+  // control registers sit in a window that the uncore does not decode; they supply the read data
+  // of a transfer there
+  logic [P.AHBW-1:0] UncoreHRDATA;
+  if (P.TRACE_SUPPORTED & P.BUS_SUPPORTED) begin : etracegen
+    logic              TraceHSEL;
+    logic [P.AHBW-1:0] TraceHRDATA;
+    etrace #(.P(P), .NHARTS(NCORES)) etrace(.clk, .reset(PowerOnReset), .ITrace(CoreITrace), .HADDR, .HTRANS, .HWRITE,
+      .HREADY, .HWDATA, .TraceHSEL, .TraceHRDATA);
+    assign HRDATA = TraceHSEL ? TraceHRDATA : UncoreHRDATA;
+  end else begin : noetrace
+    assign HRDATA = UncoreHRDATA;
+  end
+
   // instantiate uncore if a bus interface exists
   if (P.BUS_SUPPORTED) begin : uncoregen
     uncore #(.P(P), .NCORES(NCORES)) uncore(.HCLK, .HRESETn,
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HRDATAEXT,
-      .HREADYEXT, .HRESPEXT, .HRDATA, .HREADY, .HRESP, .HSELEXT,
+      .HREADYEXT, .HRESPEXT, .HRDATA(UncoreHRDATA), .HREADY, .HRESP, .HSELEXT,
       .MTimerInt, .MSwInt, .MExtInt, .SExtInt, .GPIOIN, .GPIOOUT, .GPIOEN, .UARTSin,
       .UARTSout, .MTIME_CLINT, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO);
   end else begin
-    assign {HRDATA, HREADY, HRESP, HSELEXT, MTimerInt, MSwInt, MExtInt, SExtInt,
+    assign {UncoreHRDATA, HREADY, HRESP, HSELEXT, MTimerInt, MSwInt, MExtInt, SExtInt,
             MTIME_CLINT, GPIOOUT, GPIOEN, UARTSout, SPIOut, SPICS, SPICLK, SDCCmd, SDCCS, SDCCLK, PWMGPIO} = '0;
   end
 

@@ -82,7 +82,11 @@ module dmsba import cvw::*; #(parameter cvw_t P) (
   // checker faults it first), so decode the address as the PMA checker does: a region on the bus
   // (not the core's DTIM or IROM) that supports the access and its size, else sberror 2
   adrdecs #(P) adrdecs(NewAddress[P.PA_BITS-1:0], 1'b1, ~SBRequestWrite, 1'b1, SBAccess[1:0], SelRegions);
-  assign SBAddressOK = |SelRegions[12:3] && (P.PA_BITS == 64 || NewAddress >> P.PA_BITS == 64'b0);
+  // and the trace control registers (TRACE_SUPPORTED, src/debug/etrace.sv), 32-bit accesses only
+  logic SelTrace;
+  adrdec #(P.PA_BITS) tracedec(NewAddress[P.PA_BITS-1:0], P.TRACE_BASE[P.PA_BITS-1:0],
+    P.TRACE_RANGE[P.PA_BITS-1:0], P.TRACE_SUPPORTED, 1'b1, SBAccess[1:0], 4'b0100, SelTrace);
+  assign SBAddressOK = (|SelRegions[12:3] || SelTrace) && (P.PA_BITS == 64 || NewAddress >> P.PA_BITS == 64'b0);
   assign SBStart = SBRequest && SBSizeOK && SBAligned && SBAddressOK;
   assign SBStartWrite = SBRequestWrite;
 

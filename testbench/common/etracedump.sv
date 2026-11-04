@@ -4,12 +4,13 @@
 // Purpose: Dumps the instruction trace of hart 0 for the E-Trace reference flow
 //          (riscv-trace-spec/referenceFlow); docs/trace.md explains the check.
 //          +EtraceCsv=<file>:     the lines of the instruction trace interface
-//                                 (src/debug/etraceingress.sv) as the reference encoder's input
+//                                 (src/debug/etraceingress.sv) that the encoder takes
+//                                 (src/debug/etraceencoder.sv), as the reference encoder's input
 //                                 CSV: itype_0, cause, tval (hex), priv, iaddr_0 (hex), context,
 //                                 ctype, iretire_0, ilastsize_0
-//          +EtracePackets=<file>: the packets of Wally's encoder (src/debug/etraceencoder.sv), one
-//                                 per line in hex bytes, header first
-//          Both cover the same lines: those while TraceOn is 1.
+//          +EtracePackets=<file>: the words that the program reads from the RAM sink's trRamData
+//                                 (src/debug/etracesink.sv), one per line in hex bytes, first
+//                                 byte first: the packets of the encoder as the sink stored them
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
@@ -17,13 +18,12 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module etracedump import cvw::*; #(parameter cvw_t P, parameter int NBYTES = 1) (
+module etracedump import cvw::*; #(parameter cvw_t P) (
   input logic                  clk, reset,
-  input logic                  TraceOn,
   input logic [2*P.XLEN+13:0]  ITrace,
-  input logic                  PacketValid,
-  input logic [4:0]            PacketLen,
-  input logic [8*NBYTES-1:0]   Packet
+  input logic                  LineTaken,
+  input logic                  DataRead,
+  input logic [31:0]           RamDout
 );
 
   logic              Valid, Halted, IRetire, ILastSize;
@@ -49,13 +49,10 @@ module etracedump import cvw::*; #(parameter cvw_t P, parameter int NBYTES = 1) 
   end
 
   always @(posedge clk) begin
-    if (fd != 0 & ~reset & TraceOn & Valid)
+    if (fd != 0 & ~reset & LineTaken)
       $fwrite(fd, "%0d,%0d,%h,%0d,%h,0,0,%0d,%0d\n", IType, Cause, Tval, Priv, IAddr, IRetire, ILastSize);
-    if (pfd != 0 & ~reset & PacketValid) begin
-      for (int i = 0; i < NBYTES; i++)
-        if (i < int'(PacketLen)) $fwrite(pfd, "%h", Packet[8*i +: 8]);
-      $fwrite(pfd, "\n");
-    end
+    if (pfd != 0 & ~reset & DataRead)
+      $fwrite(pfd, "%h%h%h%h\n", RamDout[7:0], RamDout[15:8], RamDout[23:16], RamDout[31:24]);
   end
 
   final begin

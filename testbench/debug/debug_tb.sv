@@ -46,7 +46,8 @@ module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHAR
   // Access Register: aarsize 2 (32 bits) or XLEN, transfer, write
   localparam logic [31:0] AR32 = 32'h0022_0000, ARX = P.XLEN == 64 ? 32'h0032_0000 : 32'h0022_0000,
                           ARWRITE = 32'h0001_0000, POSTEXEC = 32'h0004_0000;
-  localparam logic [31:0] RAM = 32'h8000_0000, SIGNATURE = 32'h8000_1000, GPIO = 32'h1006_0000;
+  localparam logic [31:0] RAM = 32'h8000_0000, SIGNATURE = 32'h8000_1000, GPIO = 32'h1006_0000,
+                          TRACE = 32'h0400_0000;   // hart 0's trace encoder; its RAM sink at +0x1000
   localparam int unsigned ABITS = 7;
 
   // The program that System Bus Access loads (position independent, for RV32 and RV64):
@@ -372,6 +373,24 @@ module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHAR
     check("sberror on an unmapped address", 32'(d[14:12]), 32'd2);
     dmiwrite(SBCS, 32'h7000);
 
+    // Trace control registers (TRACE_SUPPORTED, src/debug/etrace.sv) through System Bus Access:
+    // each hart's trace encoder and RAM sink identify themselves, and come out of reset
+    if (P.TRACE_SUPPORTED)
+      for (int h = 0; h < NHARTS; h++) begin
+        sbread(3'd2, TRACE + 32'(h) * 32'h2000 + 32'h4, d);
+        check($sformatf("hart %0d trTeImpl: E-Trace 2.0, encoder, version 1.0", h), d, 32'h0002_0101);
+        sbread(3'd2, TRACE + 32'(h) * 32'h2000 + 32'h1004, d);
+        check($sformatf("hart %0d trRamImpl: SRAM mode, RAM sink, version 1.0", h), d, 32'h0000_1091);
+        sbwrite(3'd2, TRACE + 32'(h) * 32'h2000, 32'h1);
+        sbread(3'd2, TRACE + 32'(h) * 32'h2000, d);
+        check("trTeControl: active, empty, baseline mode, sync by packets", d, 32'h0001_0039);
+        sbwrite(3'd2, TRACE + 32'(h) * 32'h2000 + 32'h1000, 32'h1);
+        sbread(3'd2, TRACE + 32'(h) * 32'h2000 + 32'h1000, d);
+        check("trRamControl: active, empty", d, 32'h9);
+        sbread(3'd2, TRACE + 32'(h) * 32'h2000 + 32'h1018, d);
+        check("trRamLimitLow: the last word", d, 32'(4 * (P.TRACE_RAM_WORDS - 1)));
+      end
+
     // Release the hart: it runs the program, fetching over the bus that System Bus Access shares
     check("GPIOs while the hart is held in reset", GPIOOUT, 32'h0);
     for (int h = 1; h < NHARTS; h++) dmiwrite(DMCONTROL, 32'h1000_0001 | 32'(h << 16));
@@ -380,6 +399,30 @@ module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHAR
     check("dmstatus: all running, havereset acknowledged", d & 32'h000F_3F00, 32'h0000_0C00);
     repeat (200) @(posedge clk);
     check("GPIOs driven by the program", GPIOOUT, 32'd42);
+    // Trace hart 0 for a while through System Bus Access, as an external debugger does: the
+    // sink, then the encoder; off in the reverse order, waiting for each to be empty; the trace
+    // starts with the support packet that turning the encoder on sends (header 0x41, payload 0x1F)
+    if (P.TRACE_SUPPORTED) begin
+      sbwrite(3'd2, TRACE + 32'h1020, 32'h0);           // trRamWPLow
+      sbwrite(3'd2, TRACE + 32'h1000, 32'h3);           // trRamEnable
+      sbwrite(3'd2, TRACE, 32'h0001_0037);              // trTeEnable, trTeInstTracing
+      repeat (100) @(posedge clk);
+      sbwrite(3'd2, TRACE, 32'h0001_0031);              // trTeEnable 0: flush
+      do sbread(3'd2, TRACE, d); while (!d[3]);         // trTeEmpty
+      sbwrite(3'd2, TRACE + 32'h1000, 32'h1);           // trRamEnable 0
+      do sbread(3'd2, TRACE + 32'h1000, d); while (!d[3]);
+      sbread(3'd2, TRACE + 32'h1020, d);
+      if (d == 0 || d[0]) begin
+        $display("FAIL: trRamWPLow 0x%08h after tracing: no trace, or wrapped", d); Errors++;
+      end else $display("ok   trace of %0d bytes", d);
+      sbwrite(3'd2, TRACE + 32'h1028, 32'h0);           // trRamRPLow
+      sbread(3'd2, TRACE + 32'h1040, d);                // trRamData
+      check("trace: the support packet first", d & 32'hFFFF, 32'h1F41);
+      sbread(3'd2, TRACE + 32'h1028, d);
+      check("trRamRPLow advanced by trRamData", d, 32'h4);
+      sbread(3'd2, TRACE, d);
+      check("trTeControl: no packet dropped", 32'(d[12]), 32'h0);
+    end
     // System Bus Access reads memory, not the hart's caches (the specification leaves coherence
     // to the debugger): with a write-back D-cache the signature is still in the cache
     if (P.DCACHE_SUPPORTED)
