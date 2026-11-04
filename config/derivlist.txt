@@ -1823,3 +1823,16 @@ UNCORE_RAM_RANGE     64'h000FFFFF
 deriv debug_rv64gc rv64gc
 DEBUG_SUPPORTED    1
 DEBUG_TRIGGERS     32'd4
+
+# debug_rv64gc_nocache: rv64gc without caches or bursts, because the multicore subsystem needs a
+# cacheless memory system for a SoC with several harts (NCORES > 1): it tests the Debug Module's
+# harts in 64 bits (make NHARTS=2 in testbench/debug)
+deriv debug_rv64gc_nocache rv64gc
+DEBUG_SUPPORTED    1
+DEBUG_TRIGGERS     32'd4
+ICACHE_SUPPORTED   0
+DCACHE_SUPPORTED   0
+BURST_EN           0
+ZICBOM_SUPPORTED   0
+ZICBOZ_SUPPORTED   0
+ZICBOP_SUPPORTED   0

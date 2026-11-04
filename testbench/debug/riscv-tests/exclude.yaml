@@ -27,3 +27,8 @@ debug_rv32imc_2harts:
   # program rearms the timer 256 ticks ahead, and the handler of a cacheless hart sharing one bus
   # takes longer), so main never fills the buffer that the test reads.
   - MulticoreRunAllHaltOne
+debug_rv64gc_nocache_2harts:
+  # The test lets the harts run for 1 s of wall-clock time; two cacheless RV64 harts in Verilator
+  # are still in the startup code then (hart 0 has just cleared .bss), so the buffer it reads is
+  # still empty.
+  - MulticoreRunAllHaltOne

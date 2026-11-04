@@ -111,7 +111,8 @@ triggers inside its `privileged` unit.
 - **One abstract command at a time**, on the selected hart. The data registers and the program
   buffer are shared, and the DM uses the hart's `mhartid` to give each hart its own `FLAGS` byte.
 - A SoC with several harts needs a configuration without caches (the multicore subsystem's rule,
-  `config/shared/multicore-config.vh`): `debug_rv32imc` qualifies, `debug_rv64gc` does not.
+  `config/shared/multicore-config.vh`): `debug_rv32imc` and `debug_rv64gc_nocache` qualify,
+  `debug_rv64gc` does not.
 
 ### Triggers (Sdtrig)
 
@@ -343,17 +344,19 @@ LC_ALL=C ./gdbserver.py --exclude-tests $WALLY/testbench/debug/riscv-tests/exclu
     and `ItriggerTest`, whose trigger types `debug_tb` checks itself);
   - two that need a faster simulation (`DownloadTest`, `InterruptTest`);
   - `Sv32Test` on the rv32imc targets, where GDB reads back a `satp` it failed to write;
-  - `MulticoreRunAllHaltOne` on the two-hart target, for the reason of `InterruptTest`: both
-    harts spend their time in the timer handler, which outlasts the 256 ticks it rearms.
+  - `MulticoreRunAllHaltOne` on the two-hart targets: it gives the harts 1 s of wall-clock time.
+    On rv32 both spend it in the timer handler, which outlasts the 256 ticks it rearms (the reason
+    of `InterruptTest`); on rv64, two cacheless harts are still in the startup code.
 
   The targets also declare no memory sampling (`memory_sample` is not in OpenOCD 0.12).
 - With OpenOCD 0.12 use riscv-tests before commit 6ca449c (for example 88ed3a9). From that
   commit on, the suite starts OpenOCD with the `gdb port` syntax of newer versions, which 0.12
   rejects.
-- `debug_rv32imc_2harts.py` is the target with two harts (`wally-2.cfg`, like the suite's
-  `spike-2.cfg`); build its simulation with
-  `make -C $WALLY/testbench/debug openocd OPENOCD_CONFIG=debug_rv32imc NHARTS=2`. It runs the
-  suite's multicore tests as well.
+- `debug_rv32imc_2harts.py` and `debug_rv64gc_nocache_2harts.py` are the targets with two harts
+  (`wally-2.cfg`, like the suite's `spike-2.cfg`); build their simulations with
+  `make -C $WALLY/testbench/debug openocd OPENOCD_CONFIG=<configuration> NHARTS=2`. They run
+  the suite's multicore tests as well. `debug_rv64gc_nocache` is `rv64gc` without caches, since
+  a SoC with several harts needs a cacheless memory system.
 - The targets declare 4 hardware breakpoints (`instruction_hardware_breakpoint_count`), as
   `DEBUG_TRIGGERS` in both configurations.
 
