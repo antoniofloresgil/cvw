@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 // Compares the ram1p1rwbe adapter, simulated with the IHP macro's behavioral model, with Wally's
 // generic RAM under the same random stimulus.  Every word is written first, because the macro's
-// model starts with X; after that dout must match on every cycle.
+// model starts with X; after that dout must match on every cycle.  DEPTH (-GDEPTH=) is 1024, one
+// macro, or 2048 times a power of two, banks of the 2048 x 32 macro.
 
-module ram1p1rwbe_tb;
-  localparam DEPTH = 1024, WIDTH = 32, CYCLES = 200000;
+module ram1p1rwbe_tb #(parameter DEPTH = 1024);
+  localparam WIDTH = 32, CYCLES = 200000;
 
   logic                     clk = 0;
   logic                     ce, we;
@@ -18,8 +19,14 @@ module ram1p1rwbe_tb;
 
   always #5 clk = ~clk;
 
+  // These fail to elaborate if the adapter does not use the macros
+  if (DEPTH == 1024) begin : one
+    initial $display("dut uses one macro: %0d-bit address", $bits(dut.ihp.sram.A_ADDR));
+  end else begin : banks
+    initial $display("dut uses %0d banks: %0d-bit address", DEPTH / 2048, $bits(dut.banked.bank[0].sram.A_ADDR));
+  end
+
   initial begin
-    $display("dut uses the macro: %0d-bit bit mask", $bits(dut.ihp.BitWriteMask));  // fails to elaborate otherwise
     for (int i = 0; i < DEPTH; i++) begin
       ce = 1; we = 1; bwe = '1; addr = i; din = $urandom;
       @(posedge clk); #1;
@@ -33,7 +40,7 @@ module ram1p1rwbe_tb;
         errors++;
       end
     end
-    if (errors == 0) $display("PASS: %0d cycles, dout matches the generic RAM", checks);
+    if (errors == 0) $display("PASS: %0d x %0d, %0d cycles, dout matches the generic RAM", DEPTH, WIDTH, checks);
     else             $display("FAIL: %0d of %0d cycles differ", errors, checks);
     $finish;
   end

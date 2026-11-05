@@ -139,10 +139,12 @@ deriv syn_rv64gc rv64gc syn_rv32e
 deriv asic_rv32imc rv32imc syn_rv32e
 DTIM_RANGE              64'hFFF
 
-# A chip: a bootloader in the BOOTROM loads programs over the UART into 4 KiB of RAM on the bus
-# (an IHP SRAM macro), from where they run; asic/librelane/chip has the pad ring and the bootloader.
-# The JTAG debug port, with 4 triggers, and the instruction trace, whose 4 KiB buffer is a second
-# SRAM macro (docs/debug.md, docs/trace.md).
+# A chip: a bootloader in the BOOTROM copies a program from an SPI flash, or loads it over the UART,
+# into 32 KiB of RAM on the bus (four IHP SRAM macros), from where it runs; asic/librelane/chip has
+# the pad ring and the bootloader.
+# The JTAG debug port, with 4 triggers, and the instruction trace, whose buffer is a second
+# SRAM macro (docs/debug.md, docs/trace.md).  Its 8 KiB buffer is the same 2048 x 32 macro as the RAM's
+# banks: Magic's DRC fails on a design with two kinds of IHP SRAM macro.
 deriv asic_soc_rv32imc rv32imc syn_rv32e
 IROM_SUPPORTED          0
 DTIM_SUPPORTED          0
@@ -153,13 +155,14 @@ BOOTROM_RANGE           64'h1FF
 BOOTROM_PRELOAD         1'b1
 UNCORE_RAM_SUPPORTED    1
 UNCORE_RAM_BASE         64'h80000000
-UNCORE_RAM_RANGE        64'hFFF
+UNCORE_RAM_RANGE        64'h7FFF
 GPIO_LOOPBACK_TEST      0
 SPI_LOOPBACK_TEST       0
 UART_PRESCALE           32'd0
 DEBUG_SUPPORTED         1
 DEBUG_TRIGGERS          32'd4
 TRACE_SUPPORTED         1
+TRACE_RAM_WORDS         32'd2048
 
 # The syn_sram configurations use SRAM macros
 deriv   syn_sram_rv32e   rv32e

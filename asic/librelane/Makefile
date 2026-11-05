@@ -6,7 +6,8 @@
 #   make check CONFIG=sramtest           DRC check of the newest run of a design with SRAM macros
 #   make sramsim                         sram/ram1p1rwbe.sv with the macro's model against Wally's RAM
 #   make CONFIG=asic_soc_rv32imc         a chip: Wally's SoC in a pad ring (chip/), Chip flow
-#   make chipsim                         cocotb test of that chip: boots a program over the UART
+#   make chipsim                         cocotb test of that chip: boots a program from SPI flash,
+#                                        over the UART and through JTAG
 #   make PDK=ihp-sg13cmos5l CONFIG=...   the same in SG13CMOS5L (CMOS, 5 metals), in work/<CONFIG>-sg13cmos5l
 #
 # CONFIG is a Wally configuration, whose inputs gen_config.py writes, or a directory here with
@@ -23,8 +24,14 @@ CONFIG       ?= syn_rv32imc
 PDK          ?= ihp-sg13g2
 # With LibreLane 3.1 (Yosys 0.69, SYNTH_STRATEGY AREA 0) asic_rv32imc misses 30 ns by 6.8 ns in the
 # slow corner, and the chips have a path from the PLIC through the trap logic to the 64-bit
-# counters as long; 40 ns for every design until those paths are optimized
+# counters as long; 40 ns for every design until those paths are optimized.  The chips (asic_soc_*)
+# add the debug triggers and the 32 KiB RAM, which put a path from the trigger comparators through
+# the trap logic to the counters at -0.25 ns in the slow corner at 40 ns: 45 ns for them
+ifneq (,$(findstring asic_soc_,$(CONFIG)))
+CLOCK_PERIOD ?= 45
+else
 CLOCK_PERIOD ?= 40
+endif
 LIBRELANE    ?= github:librelane/librelane/3.1.0.dev4
 # Runs in SG13CMOS5L go to their own work directories
 SUFFIX       := $(if $(filter ihp-sg13g2,$(PDK)),,-$(PDK:ihp-%=%))
@@ -59,15 +66,20 @@ pdk: $(IHP_PDK)
 $(IHP_PDK):
 	$(NIX) ciel fetch --pdk-family ihp-sg13 $(PDK_VERSION)
 
+# The adapter's shapes: one 1024 x 32 macro, and the 32 KiB RAM of the chip in four 2048 x 32 banks
+SRAM_DEPTHS ?= 1024 2048 8192
 sramsim: $(IHP_PDK)
 	mkdir -p work/sramsim
 	sed 's/^module ram1p1rwbe /module ram1p1rwbe_generic /' $(WALLY)/src/generic/mem/ram1p1rwbe.sv > work/sramsim/ram1p1rwbe_generic.sv
-	cd work/sramsim && $(NIX) verilator --binary -j 8 --top-module ram1p1rwbe_tb -Wno-fatal -Wno-lint -Wno-style \
-	  -I$(WALLY)/config/shared -I$(WALLY)/config/rv32imc $(WALLY)/src/cvw.sv $(WALLY)/src/generic/flop/flopen.sv \
-	  ram1p1rwbe_generic.sv $(CURDIR)/sram/ram1p1rwbe.sv $(SRAM_MODELS)/RM_IHPSG13_1P_core_behavioral_bm_bist.v \
-	  $(SRAM_MODELS)/RM_IHPSG13_1P_1024x32_c2_bm_bist.v $(CURDIR)/sram/ram1p1rwbe_tb.sv $(CURDIR)/sram/getenvval.c
-	work/sramsim/obj_dir/Vram1p1rwbe_tb | tee work/sramsim/sim.log
-	grep -q PASS work/sramsim/sim.log
+	for d in $(SRAM_DEPTHS); do \
+	  (cd work/sramsim && $(NIX) verilator --binary -j 8 --top-module ram1p1rwbe_tb -GDEPTH=$$d -Mdir obj_dir_$$d \
+	    -Wno-fatal -Wno-lint -Wno-style -I$(WALLY)/config/shared -I$(WALLY)/config/rv32imc $(WALLY)/src/cvw.sv \
+	    $(WALLY)/src/generic/flop/flopen.sv ram1p1rwbe_generic.sv $(CURDIR)/sram/ram1p1rwbe.sv \
+	    $(SRAM_MODELS)/RM_IHPSG13_1P_core_behavioral_bm_bist.v $(SRAM_MODELS)/RM_IHPSG13_1P_1024x32_c2_bm_bist.v \
+	    $(SRAM_MODELS)/RM_IHPSG13_1P_2048x32_c2_bm_bist.v $(CURDIR)/sram/ram1p1rwbe_tb.sv $(CURDIR)/sram/getenvval.c) || exit 1; \
+	  work/sramsim/obj_dir_$$d/Vram1p1rwbe_tb | tee work/sramsim/sim_$$d.log; \
+	  grep -q PASS work/sramsim/sim_$$d.log || exit 1; \
+	done
 
 inputs:
 ifneq ($(filter asic_soc_%,$(CONFIG)),)

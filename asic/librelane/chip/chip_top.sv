@@ -4,7 +4,8 @@
 // are those of SG13G2, or of SG13CMOS5L with SG13CMOS5L defined.
 // 20 signal pads (clock, reset, UART, SPI, 8 GPIOs, JTAG) and 8 power pads, two of each on opposite
 // sides (gen_config.py places them), so that no single bond wire powers the core or the IOs.  The bootloader in the
-// BOOTROM (chip/boot.S) loads programs over the UART; GPIO[7:0] at reset set its baud divisor.
+// BOOTROM (chip/boot.S) copies a program from an SPI flash on the SPI pads, or loads it over the UART,
+// as straps on the GPIOs at reset choose.
 // The JTAG port reaches the Debug Module and the instruction trace (docs/debug.md, docs/trace.md).
 
 import cvw::*;

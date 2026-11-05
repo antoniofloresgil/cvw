@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 """cocotb test of the asic_soc_rv32imc chip (RTL, with the IHP pad and SRAM models).
 
-boot_over_uart loads hello.S through the bootloader over the UART and checks what it prints and
-drives.  debug_over_jtag does it through the JTAG port instead, as a debugger does: it halts the
-hart, loads the program with System Bus Access, turns the instruction trace on, resumes the hart at
-the program, then halts it again and reads the trace back, which etracedecode.py
+boot_from_flash has the bootloader (../boot.S) copy hello.S from an SPI flash, which spi_flash
+plays, and checks what the program prints and drives.  boot_over_uart loads it over the UART, with
+GPIO[7] strapped to skip the flash, which holds a valid image.  debug_over_jtag, with an erased
+flash, which the bootloader rejects, loads it through the JTAG port instead, as a debugger does: it
+halts the hart, loads the program with System Bus Access, turns the instruction trace on, resumes
+the hart at the program, then halts it again and reads the trace back, which etracedecode.py
 ($WALLY/testbench/debug/etrace) decodes into the program's path.
 Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imc inputs` (whose
 work/asic_soc_rv32imc/config.json lists the sources):  tabbypy3 test_chip.py
@@ -19,9 +21,10 @@ from pathlib import Path
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge, Timer
+from cocotb.triggers import ClockCycles, FallingEdge, First, RisingEdge, Timer
 
-DIVISOR = 1                       # baud divisor strapped on GPIO[7:0]: one bit every 16 clocks
+DIVISOR = 1                       # baud divisor strapped on GPIO[6:0]: one bit every 16 clocks
+UART_BOOT = 0x80                  # GPIO[7]: skip the flash
 BIT = 16 * DIVISOR
 HERE = Path(__file__).resolve().parent
 WALLY = Path(os.environ.get("WALLY", HERE.parents[3]))
@@ -50,17 +53,49 @@ async def uart_recv(dut, timeout=200000):
     return byte
 
 
-async def reset_chip(dut):
-    """Clock, reset with the baud divisor strapped on the GPIOs, and wait for the bootloader."""
+async def spi_flash(dut, data):
+    """An SPI flash (mode 0, MSB first) that answers the Read command (0x03) with data, and 0xFF past it."""
+    dut.spi_miso.value = 1
+    sck_rise, cs_rise = RisingEdge(dut.spi_sck), RisingEdge(dut.spi_cs)
+    while True:
+        await FallingEdge(dut.spi_cs)
+        command, nbits = 0, 0
+        while True:
+            if await First(sck_rise, cs_rise) is cs_rise:
+                break
+            if nbits < 32:                          # command and 3 address bytes, sampled on the rising edge
+                command = (command << 1) | int(dut.spi_mosi.value)
+            nbits += 1
+            if nbits == 32:
+                assert command >> 24 == 0x03, f"flash command 0x{command >> 24:02x}, not Read"
+            await FallingEdge(dut.spi_sck)
+            if nbits >= 32:                         # the next bit out, before the next rising edge
+                k = nbits - 32
+                i = (command & 0xFFFFFF) + k // 8
+                dut.spi_miso.value = ((data[i] if i < len(data) else 0xFF) >> (7 - k % 8)) & 1
+        dut.spi_miso.value = 1
+
+
+def flash_image(program):
+    """What the bootloader expects in the flash: magic, size and the program."""
+    return b"WALY" + len(program).to_bytes(4, "little") + program
+
+
+async def reset_chip(dut, straps=DIVISOR, flash=b"", ready="W"):
+    """Clock, reset with the straps on the GPIOs and an SPI flash holding flash (erased if empty), and
+    wait for the bootloader's first character."""
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
     dut.uart_rx.value = 1
-    dut.gpio_in.value = DIVISOR
+    dut.gpio_in.value = straps
     dut.gpio_drive.value = 1
     dut.tck.value, dut.tms.value, dut.tdi.value = 0, 1, 0
+    dut.spi_miso.value = 1
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 20)
+    cocotb.start_soon(spi_flash(dut, flash))
     dut.rst_n.value = 1
-    assert await uart_recv(dut) == ord("W"), "bootloader not ready"
+    char = await uart_recv(dut, timeout=1000000)
+    assert char == ord(ready), f"the bootloader sent {chr(char)!r}, not {ready!r}"
     dut.gpio_drive.value = 0                       # the straps have been read; the program drives the pads
 
 
@@ -77,9 +112,16 @@ async def check_program_output(dut):
 
 
 @cocotb.test()
+async def boot_from_flash(dut):
+    program = (HERE / "build/hello.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    await check_program_output(dut)
+
+
+@cocotb.test()
 async def boot_over_uart(dut):
     program = (HERE / "build/hello.bin").read_bytes()
-    await reset_chip(dut)
+    await reset_chip(dut, straps=UART_BOOT | DIVISOR, flash=flash_image(b"\x6f\x00\x00\x00"))   # j .
     for byte in len(program).to_bytes(4, "little") + program:
         await uart_send(dut, byte)
     assert await uart_recv(dut) == sum(program) & 0xFF, "wrong checksum"
@@ -235,7 +277,7 @@ async def debug_over_jtag(dut):
     te = (await jtag.sb_read(TRACE_TE))[0]
     assert not te & (1 << 12), "trTeInstStallOrOverflow: a packet was dropped"
     wp = (await jtag.sb_read(TRACE_RAM + 0x20))[0]
-    assert not wp & 1 and 0 < wp <= 0x1000, f"trRamWPLow 0x{wp:x}"
+    assert not wp & 1 and 0 < wp <= 0x2000, f"trRamWPLow 0x{wp:x}"
     await jtag.sb_write(TRACE_RAM + 0x28, [0])                            # trRamRPLow
     await jtag.write(SBCS, (1 << 20) | (2 << 17) | (1 << 15))             # read on address and data, no increment
     await jtag.write(SBADDRESS0, TRACE_RAM + 0x40)                        # trRamData
@@ -269,6 +311,7 @@ def main():
         pdk / f"libs.ref/{lib}_io/verilog/{lib}_io.v",
         sram / "RM_IHPSG13_1P_core_behavioral_bm_bist.v",
         sram / "RM_IHPSG13_1P_1024x32_c2_bm_bist.v",
+        sram / "RM_IHPSG13_1P_2048x32_c2_bm_bist.v",
         HERE / "chip_tb.sv",
     ]
     runner = get_runner("verilator")

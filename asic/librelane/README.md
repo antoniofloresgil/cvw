@@ -34,31 +34,44 @@ Configurations:
 - `syn_*`: the core alone, memories in flops.
 - `asic_*` (`config/derivlist.txt`): RAMs of a shape that an IHP SRAM macro implements go in the
   macro (`sram/ram1p1rwbe.sv`); `gen_config.py` copies Wally's `ram1p1rwbe` as `ram1p1rwbe_generic`
-  for the other shapes. `make sramsim` checks the adapter, with the macro's behavioral model, against
-  Wally's RAM under random stimulus.
+  for the other shapes: 1024 x 32 is one macro, and 2048 x 32 times a power of two is banks of the
+  2048 x 32 macro (the 8192 x 32 one has no write mask, which byte stores need). `make sramsim`
+  checks the adapter for both, with the macros' behavioral models, against Wally's RAM under random
+  stimulus.
 - `asic_soc_*`: chips. `chip/chip_top.sv` puts `wallypipelinedsoc` inside a ring of IHP pads (clock,
   reset, UART, SPI, 8 GPIOs, JTAG and 8 power pads), after IHP's
   [LibreLane template](https://github.com/IHP-GmbH/ihp-sg13-librelane-template); the bondpad comes
   from the template (`chip/ip/`), since the PDKs have none. The BOOTROM holds `chip/boot.S`
-  (built into `chip/boot.mem`): it reads a baud divisor from GPIO[7:0], sends `W` on the UART,
-  receives a 4-byte length and the program into the 4 KiB RAM at 0x80000000 (an SRAM macro), sends
-  its 8-bit sum and jumps to it. `chip/test/test_chip.py` loads `hello.S` that way
+  (built into `chip/boot.mem`), which loads a program into the 32 KiB RAM at 0x80000000 (four SRAM
+  macros) and runs it. It reads straps from the GPIOs at reset: the UART's baud divisor from
+  GPIO[6:0], and with GPIO[7] high it skips the flash. Otherwise it reads an SPI flash on the SPI
+  pads (Read command 0x03 from address 0: `WALY`, a 4-byte length and the program); without that
+  header (no flash, or an erased one) it falls back to the UART: it sends `W`, receives a 4-byte
+  length and the program, and sends back its 8-bit sum. `chip/test/test_chip.py` plays the flash
+  and loads `hello.S` from it (`boot_from_flash`), over the UART with GPIO[7] strapped
   (`boot_over_uart`), and through the JTAG port as a debugger does (`debug_over_jtag`): it halts
   the hart, loads the program with System Bus Access, turns the instruction trace on, resumes the
   hart at the program, halts it again and decodes the trace it reads back
   (`$WALLY/testbench/debug/etrace/etracedecode.py`).
 - `asic_soc_rv32imc` has the JTAG debug port with 4 triggers and the instruction trace
   (`DEBUG_SUPPORTED`, `DEBUG_TRIGGERS`, `TRACE_SUPPORTED`; `docs/debug.md`, `docs/trace.md`): the
-  trace buffer (1024 x 32) is a second SRAM macro, in the top right corner of the core, as the
-  RAM is in the top left one. Measured with Yosys and the SG13G2 library (memories as macros),
+  trace buffer (2048 x 32, 8 KiB) is an SRAM macro of its own, of the same kind as the RAM's. Measured with Yosys and the SG13G2 library (memories as macros),
   the debug port adds 5,064 cells to the SoC's 34,216, the triggers 3,617 and the trace 4,646;
-  the die grew from 2.0 to 2.4 mm for them. In SG13G2 the chip then has 70,185 cells (6,537
-  flip-flops), 0.97 mm² of cells, 45 % of the core; setup slack +2.17 ns in the slow corner, hold
-  +0.08 ns; 0 KLayout DRC, LVS and antenna errors; 22 mW.
+  the die grew from 2.0 to 2.4 mm for them (70,185 cells, setup +2.17 ns at 40 ns).
+- The 32 KiB RAM grew the die to 2.6 mm: its four macros (417 x 627 um) fit in a row along the top
+  of the core, their pins facing the standard cells below, and the trace buffer sits in the bottom
+  left corner, turned to face them too (`gen_config.py` places the macros from `config.vh`).
+  Result at 45 ns in SG13G2: 70,323 cells, 0.97 mm² of cells, 45 % of the core's area (65 % of
+  the core with the macros); setup +2.88 ns in the slow corner, hold +0.09 ns; 0 route DRC, KLayout
+  DRC, LVS and antenna errors; 20 mW. Magic's only findings are the waived ones (see below).
+  Two kinds of IHP SRAM macro in one design make Magic report some 380,000 false M2.d errors (the
+  GDS files share 84 of 141 subcell names; KLayout finds 0), which is why the trace buffer is
+  2048 words and not 1024.
 
 Notes:
 
-- The clock is 40 ns for every design. With LibreLane 3.1 (Yosys 0.69) `asic_rv32imc` misses 30 ns
+- The clock is 40 ns for every design but the chips (`asic_soc_*`, 45 ns: at 40 ns a path from the
+  trigger comparators through the trap logic to the counters fails by 0.25 ns in the slow corner). With LibreLane 3.1 (Yosys 0.69) `asic_rv32imc` misses 30 ns
   by 6.8 ns in the slow corner, and the chip has a path from the PLIC through the trap logic to
   the counters as long. Synthesis uses `SYNTH_STRATEGY` `AREA 0` with `SYNTH_ARITH_TREE` and
   `SYNTH_MUL_BOOTH` off: 3.1's defaults (`DELAY 4`, both on) close 30 ns, but with 50 % more area
@@ -89,8 +102,8 @@ Notes:
   diodes next to them. The SG13G2 chip meets the rule; the SG13CMOS5L one not yet (its vertical
   straps are on Metal4).
 - The chip has two pads of each supply on opposite sides, 28 pads in all; `OpenROAD.PadRing` needs
-  whole microns between the pads, so a side of the 2.4 mm die takes 7 or 9 pads (of the 2.0 mm
-  die, 5 or 7).
+  whole microns between the pads, so a side of the 2.6 mm die takes 7 pads (of the 2.4 mm die, 7
+  or 9; of the 2.0 mm die, 5 or 7).
 - `chip/chip_top.sdc` makes the reset, UART receive and GPIO inputs false paths: they are
   asynchronous, and the SoC synchronizes them. TCK is a second clock (100 ns), asynchronous to the
   system clock: the DTM hands DMI requests to the Debug Module with a synchronized toggle.
