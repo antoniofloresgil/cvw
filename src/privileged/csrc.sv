@@ -124,8 +124,6 @@ module csrc import cvw::*; #(parameter cvw_t P) (
     assign WriteHPMCOUNTERM[i] = (CSRMWriteM & (CSRAdrM == MHPMCOUNTERBASE + i)) |
                                  (WriteSIREGM & SelectedCounterM == i); // coverage tag: MTIME traps
     assign NextHPMCOUNTERM[i][P.XLEN-1:0] = WriteHPMCOUNTERM[i] ? CSRWriteValM : HPMCOUNTERPlusM[i][P.XLEN-1:0]; // exclusion-tag: next-hpmcounter
-    if (i < 3) assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i]; // MCYCLE, CYCLE, and MINSTRET are always incremented if not inhibited
-    else       assign CounterInc[i] = CounterEvent[i] & ~MCOUNTINHIBIT_REGW[i] & (MHPMEVENT_REGW[i] != 0); // user-defined counters are incremented only if the event is enabled
     always_ff @(posedge clk)
       if (reset) HPMCOUNTER_REGW[i][P.XLEN-1:0] <= '0;
       else       HPMCOUNTER_REGW[i][P.XLEN-1:0] <= NextHPMCOUNTERM[i];
