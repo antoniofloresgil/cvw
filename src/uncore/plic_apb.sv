@@ -34,6 +34,7 @@ module plic_apb import cvw::*; #(parameter cvw_t P) (
   output logic                PREADY,
   input  logic                UARTIntr, GPIOIntr, SPIIntr, SDCIntr,
   input  logic [3:0]          PWMIntr,                        // one source per PWM comparator
+  input  logic [3:0]          MCUIntr,                        // timer, watchdog, I2C, RTC
   output logic                MExtInt, SExtInt
 );
 
@@ -172,6 +173,9 @@ module plic_apb import cvw::*; #(parameter cvw_t P) (
     // the four PWM comparators occupy a contiguous block starting at PLIC_PWM_ID
     if (P.PLIC_PWM_ID != 0)
       for (int i = 0; i < 4; i++) requests[P.PLIC_PWM_ID+i] = PWMIntr[i];
+    // the MCU peripherals' four sources, likewise
+    if (P.PLIC_MCU_ID != 0)
+      for (int i = 0; i < 4; i++) requests[P.PLIC_MCU_ID+i] = MCUIntr[i];
   end
 
   // pending interrupt request

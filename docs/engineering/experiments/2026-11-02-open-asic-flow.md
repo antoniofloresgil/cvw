@@ -243,6 +243,17 @@ bootloader at a baud divisor of 1 and checks that it prints `OK` and drives 42 o
   `Slt.c` (3582, slots in Metal5, a layer the process lacks), `CntB.h1` (156) and `Seal.a` (58);
   `check_drc.py` reports them as warnings, as the pad ring overlaps.
 
+### Step 4: the MCU peripherals (2026-11-05)
+
+`asic_soc_rv32imc` with the timer, watchdog, I2C and RTC of
+[ADR 0022](../decisions/0022-asic-microcontroller.md), same 2.6 mm die and 45 ns clock as step 3:
+76,374 standard cells (70,323 before, +8.6 %), standard-cell utilization 48.7 %, 20 mW. Setup +5.08 ns
+in the slow corner, hold +0.056 ns (fast corner); no setup or hold violation in any corner. Route DRC,
+KLayout DRC, density, antenna, XOR and LVS are all 0; `check_drc.py` reports DRC OK, the Magic findings
+being the 907 waived inside the SRAM macros and the pad-ring warnings. Max slew violations went from 44
+to 88, max cap from 58 to 61 (fanout 543); none is fatal in this flow. Verification: `testbench/mcu`
+(unit), `make chipsim` 4 of 4 (`mcu_peripherals` runs the firmware on the whole chip), standard lint.
+
 ## IHP open-source shuttles and packaging
 
 As published by IHP on 2026-11-03 ([open-source request page](https://dk.ihp-microelectronics.com/OpenSourceRequest.php),

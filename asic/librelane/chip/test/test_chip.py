@@ -8,6 +8,9 @@ flash, which the bootloader rejects, loads it through the JTAG port instead, as 
 halts the hart, loads the program with System Bus Access, turns the instruction trace on, resumes
 the hart at the program, then halts it again and reads the trace back, which etracedecode.py
 ($WALLY/testbench/debug/etrace) decodes into the program's path.
+mcu_peripherals boots mcu.S the same way and checks the timer, I2C, RTC and watchdog through the
+pads: PWM duty cycles on GPIO0 and GPIO1, a capture of an edge the test puts on GPIO2, an I2C slave
+(i2c_slave) on GPIO4 and GPIO5, the RTC alarm, and the reset the unserviced watchdog causes.
 Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imc inputs` (whose
 work/asic_soc_rv32imc/config.json lists the sources):  tabbypy3 test_chip.py
 `make chipsim` sets IHP_PDK (the process: .../ihp-sg13g2 or .../ihp-sg13cmos5l) and WORK.
@@ -87,7 +90,7 @@ async def reset_chip(dut, straps=DIVISOR, flash=b"", ready="W"):
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
     dut.uart_rx.value = 1
     dut.gpio_in.value = straps
-    dut.gpio_drive.value = 1
+    dut.gpio_drive.value = 0xFF
     dut.tck.value, dut.tms.value, dut.tdi.value = 0, 1, 0
     dut.spi_miso.value = 1
     dut.rst_n.value = 0
@@ -126,6 +129,108 @@ async def boot_over_uart(dut):
         await uart_send(dut, byte)
     assert await uart_recv(dut) == sum(program) & 0xFF, "wrong checksum"
     await check_program_output(dut)
+
+
+###########################################################################################
+# MCU peripherals: mcu.S drives them through GPIO alternate function 1
+###########################################################################################
+
+I2C_ADDR, I2C_REPLY = 0x50, 0xC3  # the slave's address, and the byte it returns on a read
+SCL, SDA = 4, 5                   # GPIO pads of I2C
+
+
+def pad_drive(dut, pad, value):
+    """Drive pad (0 or 1), as an external device does; pad_release lets the pull-up have it."""
+    dut.gpio_in.value = (int(dut.gpio_in.value) & ~(1 << pad)) | (value << pad)
+    dut.gpio_drive.value = int(dut.gpio_drive.value) | (1 << pad)
+
+
+def pad_release(dut, pad):
+    dut.gpio_drive.value = int(dut.gpio_drive.value) & ~(1 << pad)
+
+
+async def i2c_slave(dut, received):
+    """A slave at I2C_ADDR on the pads of the chip's I2C master: it acknowledges its address and the
+    bytes written to it (appended to received) and answers reads with I2C_REPLY.  Everything is seen
+    on the pads: SDA is pulled low by the master or by the slave, and pulled up otherwise."""
+    pscl = psda = 1
+    phase, rise, sh, rw = "idle", 0, 0, 0
+    while True:
+        await FallingEdge(dut.clk)
+        pads = dut.gpio_out.value
+        if not pads.is_resolvable:
+            continue
+        scl, sda = (int(pads) >> SCL) & 1, (int(pads) >> SDA) & 1
+        if scl and psda and not sda:                  # START
+            phase, rise, sh = "addr", 0, 0
+            pad_release(dut, SDA)
+        elif scl and not psda and sda:                # STOP
+            phase = "idle"
+            pad_release(dut, SDA)
+        elif scl and not pscl:                        # SCL rises: sample
+            rise += 1
+            if phase in ("addr", "wdata") and rise <= 8:
+                sh = (sh << 1) | sda
+        elif not scl and pscl:                        # SCL falls: the slave's next move
+            if phase == "addr":
+                if rise == 8:
+                    if sh >> 1 == I2C_ADDR:
+                        rw = sh & 1
+                        pad_drive(dut, SDA, 0)        # acknowledge
+                    else:
+                        phase = "idle"
+                elif rise == 9:
+                    phase, rise, sh = ("rdata" if rw else "wdata"), 0, 0
+                    pad_release(dut, SDA)
+                    if rw:
+                        pad_drive(dut, SDA, (I2C_REPLY >> 7) & 1)
+            elif phase == "wdata":
+                if rise == 8:
+                    received.append(sh)
+                    pad_drive(dut, SDA, 0)            # acknowledge
+                elif rise == 9:
+                    rise, sh = 0, 0
+                    pad_release(dut, SDA)
+            elif phase == "rdata":
+                if 1 <= rise < 8:
+                    pad_drive(dut, SDA, (I2C_REPLY >> (7 - rise)) & 1)
+                elif rise == 8:
+                    pad_release(dut, SDA)             # the master's acknowledge
+        pscl, psda = scl, sda
+
+
+@cocotb.test()
+async def mcu_peripherals(dut):
+    program = (HERE / "build/mcu.bin").read_bytes()
+    image = flash_image(program)
+    await reset_chip(dut, flash=image, ready="F")
+    received = []
+    await RisingEdge(dut.clk)                         # reset_chip's release of the straps takes effect
+    pad_drive(dut, 2, 0)                              # channel 2 captures a rising edge on GPIO2: hold it low first
+    cocotb.start_soon(i2c_slave(dut, received))
+
+    assert await uart_recv(dut) == ord("T"), "the timer did not start"
+    highs = [0, 0]
+    for _ in range(1000):                             # PWM: 25 % and 75 % duty on GPIO0 and GPIO1
+        await FallingEdge(dut.clk)
+        pads = int(dut.gpio_out.value)
+        highs[0] += pads & 1
+        highs[1] += (pads >> 1) & 1
+    assert 200 <= highs[0] <= 300, f"GPIO0 was high {highs[0]} of 1000 clocks, not about 250"
+    assert 700 <= highs[1] <= 800, f"GPIO1 was high {highs[1]} of 1000 clocks, not about 750"
+    pad_drive(dut, 2, 1)
+    assert await uart_recv(dut) == ord("C"), "the edge on GPIO2 was not captured"
+    assert await uart_recv(dut, timeout=400000) == ord("I"), "the I2C slave did not acknowledge"
+    assert received == [0x5A], f"the I2C slave received {received}"
+    assert await uart_recv(dut, timeout=400000) == ord("R"), "the I2C read returned the wrong byte"
+    assert await uart_recv(dut, timeout=400000) == ord("A"), "the RTC alarm did not fire"
+    assert await uart_recv(dut) == ord("D")
+
+    # the watchdog is not kicked: its second timeout resets the chip, and the bootloader runs again
+    dut.gpio_in.value = DIVISOR
+    dut.gpio_drive.value = 0xFF
+    char = await uart_recv(dut, timeout=1000000)
+    assert char == ord("F"), f"after the watchdog's reset the bootloader sent {chr(char)!r}, not 'F'"
 
 
 ###########################################################################################
@@ -304,6 +409,9 @@ def main():
     subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imc_zicsr", "-mabi=ilp32", "-nostdlib",
                     "-Wl,-Ttext=0x80000000", "-o", build / "hello.elf", HERE / "hello.S"], check=True)
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "hello.elf", build / "hello.bin"], check=True)
+    subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imc_zicsr", "-mabi=ilp32", "-nostdlib",
+                    "-Wl,-Ttext=0x80000000", "-o", build / "mcu.elf", HERE / "mcu.S"], check=True)
+    subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "mcu.elf", build / "mcu.bin"], check=True)
 
     lib = pdk.name.removeprefix("ihp-")              # sg13g2 or sg13cmos5l
     sram = pdk / f"libs.ref/{lib}_sram/verilog"

@@ -22,7 +22,7 @@ module adrdecs import cvw::*; #(parameter cvw_t P) (
   input  logic [P.PA_BITS-1:0] PhysicalAddress,
   input  logic                 AccessRW, AccessRX, AccessRWXC,
   input  logic [1:0]           Size,
-  output logic [12:0]          SelRegions
+  output logic [13:0]          SelRegions
 );
 
   // SizeMask bit i permits 2^i-byte accesses
@@ -34,7 +34,7 @@ module adrdecs import cvw::*; #(parameter cvw_t P) (
   localparam logic [3:0]       SUPPORTED_SIZE     = (P.LLEN == 32 ? SIZE_BHW : SIZE_BHWD);
   localparam logic [3:0]       SUPPORTED_BUS_SIZE = SUPPORTED_SIZE & (P.AHBW >= 64 ? SIZE_BHWD : SIZE_BHW);
   // Determine which region of physical memory (if any) is being accessed
-  // GPIO, PLIC, SPI, and PWM are word-only; UART is byte-only
+  // GPIO, PLIC, SPI, PWM, and the MCU peripherals are word-only; UART is byte-only
   adrdec #(P.PA_BITS) dtimdec(PhysicalAddress, P.DTIM_BASE[P.PA_BITS-1:0], P.DTIM_RANGE[P.PA_BITS-1:0], P.DTIM_SUPPORTED, AccessRW, Size, SUPPORTED_SIZE, SelRegions[1]);
   adrdec #(P.PA_BITS) iromdec(PhysicalAddress, P.IROM_BASE[P.PA_BITS-1:0], P.IROM_RANGE[P.PA_BITS-1:0], P.IROM_SUPPORTED, AccessRX, Size, SUPPORTED_SIZE, SelRegions[2]);
   adrdec #(P.PA_BITS) ddr4dec(PhysicalAddress, P.EXT_MEM_BASE[P.PA_BITS-1:0], P.EXT_MEM_RANGE[P.PA_BITS-1:0], P.EXT_MEM_SUPPORTED, AccessRWXC, Size, SUPPORTED_SIZE, SelRegions[3]);
@@ -47,8 +47,9 @@ module adrdecs import cvw::*; #(parameter cvw_t P) (
   adrdec #(P.PA_BITS) sdcdec(PhysicalAddress, P.SDC_BASE[P.PA_BITS-1:0], P.SDC_RANGE[P.PA_BITS-1:0], P.SDC_SUPPORTED, AccessRW, Size, SUPPORTED_BUS_SIZE & SIZE_WD, SelRegions[10]);
   adrdec #(P.PA_BITS) spidec(PhysicalAddress, P.SPI_BASE[P.PA_BITS-1:0], P.SPI_RANGE[P.PA_BITS-1:0], P.SPI_SUPPORTED, AccessRW, Size, SIZE_W, SelRegions[11]);
   adrdec #(P.PA_BITS) pwmdec(PhysicalAddress, P.PWM_BASE[P.PA_BITS-1:0], P.PWM_RANGE[P.PA_BITS-1:0], P.PWM_SUPPORTED, AccessRW, Size, SIZE_W, SelRegions[12]);
+  adrdec #(P.PA_BITS) mcudec(PhysicalAddress, P.MCU_BASE[P.PA_BITS-1:0], P.MCU_RANGE[P.PA_BITS-1:0], P.MCU_SUPPORTED, AccessRW, Size, SIZE_W, SelRegions[13]);
 
-  assign SelRegions[0] = ~|(SelRegions[12:1]); // none of the regions are selected
+  assign SelRegions[0] = ~|(SelRegions[13:1]); // none of the regions are selected
 endmodule
 
   // verilator lint_on UNOPTFLAT

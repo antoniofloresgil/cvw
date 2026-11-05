@@ -1,6 +1,8 @@
 # ADR 0022: the open-ASIC chip as a microcontroller
 
-Status: **proposed** (2026-11-04); nothing implemented yet. Applies to the chip of the
+Status: **accepted**; steps 1-3 (SPI-flash boot, 32 KiB RAM, debug and trace) are implemented,
+step 4 (the MCU peripherals) is implemented and passes its tests, its silicon numbers are in the
+[experiment record](../experiments/2026-11-02-open-asic-flow.md). Applies to the chip of the
 [open ASIC flow](../experiments/2026-11-02-open-asic-flow.md) (`asic_soc_rv32imc`,
 `asic/librelane/chip/`), on branch `open-asic-flow`.
 
@@ -42,6 +44,37 @@ in this order:
 Keep the analog functions off chip for the first silicon: external oscillator on the
 clock pad, external reset (RC or supervisor), and two supplies (IOVDD 3.3 V and
 VDD 1.2 V). Low power is WFI plus clock gating.
+
+## Step 4: the MCU peripherals (decided 2026-11-05)
+
+Steps 1-3 are done (SPI-flash boot with UART fallback, 32 KiB RAM, JTAG debug and trace, in
+a 2.6 mm die at 45 ns). Step 4 adds timers with PWM and input capture, a watchdog, an I2C
+master and an RTC/wake-up timer, and a pin multiplexer, keeping the QFN32 package.
+
+Structure, following how the PWM peripheral is wired into Wally:
+
+- One new APB region, `MCU_SUPPORTED/BASE/RANGE` (default 0 in every configuration), at
+  `0x10080000`, 64 KiB. `src/uncore/mcu/mcu_apb.sv` decodes `PADDR[15:12]` into the four
+  peripherals: 0 timer, 1 watchdog, 2 I2C, 3 RTC. All registers are 32 bits, word accesses;
+  the register maps are in the header comment of each `*_apb.sv`.
+- Four consecutive PLIC sources from `PLIC_MCU_ID` (timer, watchdog, I2C, RTC), as the PWM
+  comparators occupy a block from `PLIC_PWM_ID`. The chip uses 15-18 (`PLIC_NUM_SRC` 18).
+- No new `wallypipelinedsoc` port: Verilator lint makes a missing port fatal, so a port would
+  have meant editing every instance (testbenches, FPGA tops, chip top). The peripherals
+  reach the pads through the GPIO's existing IOF1 (`iof_en`/`iof_sel`), and the GPIO gained
+  an `iof1oen` input so an alternate function can be an input or open drain: GPIO0-3 are the
+  timer channels (PWM output, or capture input), GPIO4 is I2C SCL and GPIO5 SDA (open drain,
+  external pull-ups); `IOF_EN` resets to 0, so the boot straps on GPIO keep working.
+- The watchdog is two-stage: the first timeout sets a flag and interrupts, a second one with
+  the flag still set requests a reset. The request stays inside `wallypipelinedsoc`: it is
+  stretched to 16 clocks and ORed with the power-on and debug resets, and only a power-on
+  reset clears it. The RTC counts a divided `HCLK` (no 32 kHz crystal in the first silicon).
+- There is no pin multiplexer register in the chip: the GPIO's IOF registers are the
+  multiplexer, which keeps `asic/` free of peripheral logic and the QFN32 pin budget.
+- Each peripheral has a unit testbench (`testbench/mcu`, Verilator, an I2C slave at 0x50),
+  and the chip's cocotb test `mcu_peripherals` runs `chip/test/mcu.S` from flash, measures
+  the PWM duty on the pads, feeds a capture edge, talks to a pad-level I2C slave, and
+  checks the watchdog reset by seeing the bootloader start again.
 
 ## Alternatives and consequences
 
