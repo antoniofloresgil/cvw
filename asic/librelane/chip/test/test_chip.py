@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 """cocotb test of the asic_soc_rv32imc chip (RTL, with the IHP pad and SRAM models).
 
-Loads hello.S through the bootloader over the UART and checks what it prints and drives.
+boot_over_uart loads hello.S through the bootloader over the UART and checks what it prints and
+drives.  debug_over_jtag does it through the JTAG port instead, as a debugger does: it halts the
+hart, loads the program with System Bus Access, turns the instruction trace on, resumes the hart at
+the program, then halts it again and reads the trace back, which etracedecode.py
+($WALLY/testbench/debug/etrace) decodes into the program's path.
 Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imc inputs` (whose
 work/asic_soc_rv32imc/config.json lists the sources):  tabbypy3 test_chip.py
 `make chipsim` sets IHP_PDK (the process: .../ihp-sg13g2 or .../ihp-sg13cmos5l) and WORK.
@@ -15,11 +19,13 @@ from pathlib import Path
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge
+from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge, Timer
 
 DIVISOR = 1                       # baud divisor strapped on GPIO[7:0]: one bit every 16 clocks
 BIT = 16 * DIVISOR
 HERE = Path(__file__).resolve().parent
+WALLY = Path(os.environ.get("WALLY", HERE.parents[3]))
+sys.path.insert(0, str(WALLY / "testbench/debug/etrace"))
 
 
 async def uart_send(dut, byte):
@@ -44,23 +50,22 @@ async def uart_recv(dut, timeout=200000):
     return byte
 
 
-@cocotb.test()
-async def boot_over_uart(dut):
-    program = (HERE / "build/hello.bin").read_bytes()
+async def reset_chip(dut):
+    """Clock, reset with the baud divisor strapped on the GPIOs, and wait for the bootloader."""
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
     dut.uart_rx.value = 1
     dut.gpio_in.value = DIVISOR
     dut.gpio_drive.value = 1
+    dut.tck.value, dut.tms.value, dut.tdi.value = 0, 1, 0
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 20)
     dut.rst_n.value = 1
-
     assert await uart_recv(dut) == ord("W"), "bootloader not ready"
     dut.gpio_drive.value = 0                       # the straps have been read; the program drives the pads
-    for byte in len(program).to_bytes(4, "little") + program:
-        await uart_send(dut, byte)
-    assert await uart_recv(dut) == sum(program) & 0xFF, "wrong checksum"
 
+
+async def check_program_output(dut):
+    """hello.S prints OK and drives 42 on the GPIOs."""
     text = bytes([await uart_recv(dut) for _ in range(3)])
     assert text == b"OK\n", f"program printed {text!r}"
     for _ in range(1000):
@@ -69,6 +74,179 @@ async def boot_over_uart(dut):
             break
     else:
         raise AssertionError(f"GPIO reads {dut.gpio_out.value}, not 42")
+
+
+@cocotb.test()
+async def boot_over_uart(dut):
+    program = (HERE / "build/hello.bin").read_bytes()
+    await reset_chip(dut)
+    for byte in len(program).to_bytes(4, "little") + program:
+        await uart_send(dut, byte)
+    assert await uart_recv(dut) == sum(program) & 0xFF, "wrong checksum"
+    await check_program_output(dut)
+
+
+###########################################################################################
+# JTAG and the Debug Module (RISC-V Debug Specification 1.0; docs/debug.md)
+###########################################################################################
+
+TCK_HALF = 50                     # ns: TCK at 10 MHz, asynchronous to the 100 MHz system clock
+DMCONTROL, DMSTATUS, ABSTRACTCS, COMMAND, DATA0 = 0x10, 0x11, 0x16, 0x17, 0x04
+SBCS, SBADDRESS0, SBDATA0 = 0x38, 0x39, 0x3C
+RAM = 0x80000000
+TRACE_TE, TRACE_RAM = 0x04000000, 0x04001000    # hart 0's trace encoder and RAM sink (docs/trace.md)
+
+
+class Jtag:
+    """A JTAG debugger on the chip's pads: TAP moves, IR and DR scans, DMI and System Bus Access."""
+
+    def __init__(self, dut):
+        self.dut = dut
+
+    async def clock(self, tms, tdi=0):
+        """One TCK cycle; returns TDO, which the TAP changes on the falling edge, before the rising edge."""
+        self.dut.tms.value, self.dut.tdi.value = tms, tdi
+        await Timer(TCK_HALF, unit="ns")
+        tdo = int(self.dut.tdo.value)
+        self.dut.tck.value = 1
+        await Timer(TCK_HALF, unit="ns")
+        self.dut.tck.value = 0
+        return tdo
+
+    async def reset(self):
+        for _ in range(6):                          # Test-Logic-Reset, then Run-Test/Idle
+            await self.clock(1)
+        await self.clock(0)
+
+    async def scan(self, ir, value, n):
+        """From Run-Test/Idle: an IR scan (ir True) or DR scan of n bits, back to Run-Test/Idle."""
+        for tms in ((1, 1, 0, 0) if ir else (1, 0, 0)):
+            await self.clock(tms)
+        out = 0
+        for i in range(n):
+            out |= await self.clock(1 if i == n - 1 else 0, (value >> i) & 1) << i
+        await self.clock(1)                         # Update
+        await self.clock(0)                         # Run-Test/Idle
+        return out
+
+    async def idle(self, n=8):
+        for _ in range(n):
+            await self.clock(0)
+
+    async def dmi(self, addr, data=0, write=False):
+        """A DMI access (abits 7): the request, then a nop scan that returns its result."""
+        await self.scan(True, 0x11, 5)
+        await self.scan(False, (addr << 34) | (data << 2) | (2 if write else 1), 41)
+        await self.idle()
+        result = await self.scan(False, 0, 41)
+        assert result & 3 == 0, f"DMI {'write' if write else 'read'} of 0x{addr:x} returned op {result & 3}"
+        return (result >> 2) & 0xFFFFFFFF
+
+    async def read(self, addr):
+        return await self.dmi(addr)
+
+    async def write(self, addr, data):
+        await self.dmi(addr, data, True)
+
+    async def sb_write(self, addr, words):
+        await self.write(SBCS, (2 << 17) | (1 << 16))                    # 32 bits, autoincrement
+        await self.write(SBADDRESS0, addr)
+        for w in words:
+            await self.write(SBDATA0, w)
+        assert (await self.read(SBCS) >> 12) & 7 == 0, "System Bus Access error"
+
+    async def sb_read(self, addr, n=1):
+        await self.write(SBCS, (1 << 20) | (2 << 17) | (1 << 16) | (1 << 15))   # read on address and data
+        await self.write(SBADDRESS0, addr)
+        words = [await self.read(SBDATA0) for _ in range(n)]
+        assert (await self.read(SBCS) >> 12) & 7 == 0, "System Bus Access error"
+        return words
+
+    async def halt(self):
+        await self.write(DMCONTROL, (1 << 31) | 1)
+        for _ in range(20):
+            if await self.read(DMSTATUS) & (1 << 9):                      # allhalted
+                await self.write(DMCONTROL, 1)
+                return
+        raise AssertionError("the hart did not halt")
+
+    async def write_csr(self, regno, value):
+        await self.write(DATA0, value)
+        await self.write(COMMAND, (2 << 20) | (1 << 17) | (1 << 16) | regno)   # 32 bits, transfer, write
+        cs = await self.read(ABSTRACTCS)
+        assert (cs >> 8) & 7 == 0 and not cs & (1 << 12), f"abstract command failed: abstractcs 0x{cs:x}"
+
+    async def resume(self):
+        await self.write(DMCONTROL, (1 << 30) | 1)
+        for _ in range(20):
+            if await self.read(DMSTATUS) & (1 << 17):                     # allresumeack
+                await self.write(DMCONTROL, 1)
+                return
+        raise AssertionError("the hart did not resume")
+
+
+@cocotb.test()
+async def debug_over_jtag(dut):
+    from etracedecode import decode, read_program
+
+    program = (HERE / "build/hello.bin").read_bytes()
+    await reset_chip(dut)
+    jtag = Jtag(dut)
+    await jtag.reset()
+    assert await jtag.scan(False, 0, 32) == 0x00000001, "IDCODE"
+    await jtag.scan(True, 0x10, 5)
+    dtmcs = await jtag.scan(False, 0, 32)
+    assert dtmcs & 0xF == 1 and (dtmcs >> 4) & 0x3F == 7, f"dtmcs 0x{dtmcs:x}: version 1, abits 7"
+
+    # Halt the bootloader, load the program with System Bus Access and read it back
+    await jtag.write(DMCONTROL, 1)                                        # dmactive
+    await jtag.halt()
+    words = [int.from_bytes(program[i:i + 4].ljust(4, b"\0"), "little") for i in range(0, len(program), 4)]
+    await jtag.sb_write(RAM, words)
+    assert await jtag.sb_read(RAM, len(words)) == words, "program read back"
+
+    # Trace on, as the Trace Control Interface orders it: the RAM sink, then the encoder
+    await jtag.sb_write(TRACE_RAM, [1])                                   # trRamActive
+    await jtag.sb_write(TRACE_RAM + 0x20, [0])                            # trRamWPLow
+    await jtag.sb_write(TRACE_RAM, [3])                                   # trRamEnable
+    await jtag.sb_write(TRACE_TE, [1])                                    # trTeActive
+    await jtag.sb_write(TRACE_TE, [0x00010037])                          # trace on: baseline, sync by packets
+
+    # Run the program from its start
+    await jtag.write_csr(0x7B1, RAM)                                      # dpc
+    output = cocotb.start_soon(check_program_output(dut))                 # it prints while resume polls
+    await jtag.resume()
+    await output
+
+    # Halt it in its last loop, turn the trace off and read it back
+    await jtag.halt()
+    await jtag.sb_write(TRACE_TE, [0x00010031])                          # trTeEnable 0: flush
+    for _ in range(20):
+        if (await jtag.sb_read(TRACE_TE))[0] & 8:                         # trTeEmpty
+            break
+    else:
+        raise AssertionError("the trace encoder did not empty")
+    await jtag.sb_write(TRACE_RAM, [1])                                   # trRamEnable 0
+    for _ in range(20):
+        if (await jtag.sb_read(TRACE_RAM))[0] & 8:                        # trRamEmpty
+            break
+    else:
+        raise AssertionError("the RAM sink did not empty")
+    te = (await jtag.sb_read(TRACE_TE))[0]
+    assert not te & (1 << 12), "trTeInstStallOrOverflow: a packet was dropped"
+    wp = (await jtag.sb_read(TRACE_RAM + 0x20))[0]
+    assert not wp & 1 and 0 < wp <= 0x1000, f"trRamWPLow 0x{wp:x}"
+    await jtag.sb_write(TRACE_RAM + 0x28, [0])                            # trRamRPLow
+    await jtag.write(SBCS, (1 << 20) | (2 << 17) | (1 << 15))             # read on address and data, no increment
+    await jtag.write(SBADDRESS0, TRACE_RAM + 0x40)                        # trRamData
+    trace = b"".join([(await jtag.read(SBDATA0)).to_bytes(4, "little") for _ in range(wp // 4)])
+    assert trace[:2] == b"\x41\x1f", f"the trace starts with {trace[:2].hex()}, not a support packet"
+    elf = read_program(HERE / "build/hello.elf", 32)
+    pcs = decode(trace, elf, 32)
+    dut._log.info(f"trace: {wp} bytes, {len(pcs)} instructions from 0x{pcs[0]:x} to 0x{pcs[-1]:x}")
+    assert pcs[0] == RAM, f"the trace starts at 0x{pcs[0]:x}, not at the program"
+    loop = [a for a, i in elf.items() if i.kind == "jal" and i.imm == 0]     # 1: j 1b
+    assert pcs[-1] in loop, f"the trace ends at 0x{pcs[-1]:x}, not in the last loop {[hex(a) for a in loop]}"
 
 
 def main():

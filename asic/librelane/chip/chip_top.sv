@@ -2,9 +2,10 @@
 // Chip top of asic_soc_rv32imc: Wally's SoC inside an IHP pad ring, after the layout of IHP's
 // LibreLane template (github.com/IHP-GmbH/ihp-sg13-librelane-template, src/chip_top.sv).  The pads
 // are those of SG13G2, or of SG13CMOS5L with SG13CMOS5L defined.
-// 16 signal pads (clock, reset, UART, SPI, 8 GPIOs) and 8 power pads, two of each on opposite
+// 20 signal pads (clock, reset, UART, SPI, 8 GPIOs, JTAG) and 8 power pads, two of each on opposite
 // sides (gen_config.py places them), so that no single bond wire powers the core or the IOs.  The bootloader in the
 // BOOTROM (chip/boot.S) loads programs over the UART; GPIO[7:0] at reset set its baud divisor.
+// The JTAG port reaches the Debug Module and the instruction trace (docs/debug.md, docs/trace.md).
 
 import cvw::*;
 `include "config.vh"
@@ -18,12 +19,14 @@ module chip_top (
   inout wire       rst_n_PAD,      // active low
   inout wire       uart_rx_PAD, uart_tx_PAD,
   inout wire       spi_sck_PAD, spi_mosi_PAD, spi_miso_PAD, spi_cs_PAD,
-  inout wire [7:0] gpio_PAD
+  inout wire [7:0] gpio_PAD,
+  inout wire       tck_PAD, tms_PAD, tdi_PAD, tdo_PAD
 );
 
   logic        clk, rst_n, UARTSin, UARTSout, SPIIn, SPIOut, SPICLK;
   logic [3:0]  SPICS;
   logic [31:0] GPIOIN, GPIOOUT, GPIOEN;
+  logic        TCK, TMS, TDI, TDO;
 
 `ifdef SG13CMOS5L
   `define PAD(cell) sg13cmos5l_``cell
@@ -56,16 +59,21 @@ module chip_top (
   `PAD(IOPadIn)      spi_miso_pad(`PAD_POWER .p2c(SPIIn), .pad(spi_miso_PAD));
   `PAD(IOPadOut30mA) spi_cs_pad(`PAD_POWER .c2p(SPICS[0]), .pad(spi_cs_PAD));
 
+  `PAD(IOPadIn)      tck_pad(`PAD_POWER .p2c(TCK), .pad(tck_PAD));
+  `PAD(IOPadIn)      tms_pad(`PAD_POWER .p2c(TMS), .pad(tms_PAD));
+  `PAD(IOPadIn)      tdi_pad(`PAD_POWER .p2c(TDI), .pad(tdi_PAD));
+  `PAD(IOPadOut30mA) tdo_pad(`PAD_POWER .c2p(TDO), .pad(tdo_PAD));
+
   for (genvar i = 0; i < 8; i++) begin : gpio
     `PAD(IOPadInOut30mA) gpio_pad(`PAD_POWER .c2p(GPIOOUT[i]), .c2p_en(GPIOEN[i]), .p2c(GPIOIN[i]), .pad(gpio_PAD[i]));
   end
   assign GPIOIN[31:8] = '0;
 
-  // No external memory, debug stall, SD card or JTAG port (its inputs default to 0)
+  // No external memory, debug stall or SD card
   wallypipelinedsoc #(.P(P)) soc(.clk, .reset_ext(~rst_n), .reset(),
     .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(), .ExternalStall(1'b0),
     .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(), .HBURST(), .HPROT(),
     .HTRANS(), .HMASTLOCK(), .HREADY(),
     .GPIOIN, .GPIOOUT, .GPIOEN, .UARTSin, .UARTSout, .SPIIn, .SPIOut, .SPICS, .SPICLK,
-    .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO());
+    .SDCIn(1'b0), .SDCCmd(), .SDCCS(), .SDCCLK(), .PWMGPIO(), .TCK, .TMS, .TDI, .TDO);
 endmodule

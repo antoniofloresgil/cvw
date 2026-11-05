@@ -141,6 +141,8 @@ DTIM_RANGE              64'hFFF
 
 # A chip: a bootloader in the BOOTROM loads programs over the UART into 4 KiB of RAM on the bus
 # (an IHP SRAM macro), from where they run; asic/librelane/chip has the pad ring and the bootloader.
+# The JTAG debug port, with 4 triggers, and the instruction trace, whose 4 KiB buffer is a second
+# SRAM macro (docs/debug.md, docs/trace.md).
 deriv asic_soc_rv32imc rv32imc syn_rv32e
 IROM_SUPPORTED          0
 DTIM_SUPPORTED          0
@@ -155,6 +157,9 @@ UNCORE_RAM_RANGE        64'hFFF
 GPIO_LOOPBACK_TEST      0
 SPI_LOOPBACK_TEST       0
 UART_PRESCALE           32'd0
+DEBUG_SUPPORTED         1
+DEBUG_TRIGGERS          32'd4
+TRACE_SUPPORTED         1
 
 # The syn_sram configurations use SRAM macros
 deriv   syn_sram_rv32e   rv32e

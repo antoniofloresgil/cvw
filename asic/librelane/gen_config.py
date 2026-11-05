@@ -90,10 +90,30 @@ config = {
     # Synthesis also reads the IO pad library, and ABC would map buffers to sg13g2_IOPadOut4mA
     "EXTRA_EXCLUDED_CELLS": [f"{lib}_IOPad*"],
 }
+# The chip's floorplan: the die, the core inside the pad ring (365 um), and the SRAM macros in the top
+# corners of the core
+DIE = 2400
+CORE = (365, DIE - 365)
+MACRO_W, MACRO_H = 416.64, 336.46          # RM_IHPSG13_1P_1024x32
+HALO = 10
+# A macro's halo reaches past the core edge, so that it leaves no strip narrower than the PDN pitch
+# (see chip/pdn_cfg.tcl): 5 um from the side and 4.54 um from the top of the core
+MACRO_Y = round(CORE[1] - 4.54 - MACRO_H, 2)
+LEFT_X, RIGHT_X = CORE[0] + 5, round(CORE[1] - 5 - MACRO_W, 2)
+# The instruction trace (TRACE_SUPPORTED) puts its 4 KiB buffer in a second macro
+vh = (configdir / "config.vh").read_text()
+trace = re.search(r"^localparam logic TRACE_SUPPORTED\s*=\s*1\b", vh, re.M) is not None
+
 if sram:
     macro = "RM_IHPSG13_1P_1024x32_c2_bm_bist"
-    # The 4 KiB RAM: the DTIM in the core, or the RAM on the bus in a chip
-    inst = "soc.uncoregen.uncore.ram.ram.memory.ihp.sram" if chip else "core.lsu.dtim.dtim.ram.ihp.sram"
+    # The 4 KiB RAM: the DTIM in the core, or the RAM on the bus in a chip; in a chip with the trace,
+    # also the trace buffer (src/debug/etracesink.sv)
+    if chip:
+        instances = {"soc.uncoregen.uncore.ram.ram.memory.ihp.sram": LEFT_X}
+        if trace:
+            instances["soc.etracegen.etrace.hart[0].sink.ram.ihp.sram"] = RIGHT_X
+    else:
+        instances = {"core.lsu.dtim.dtim.ram.ihp.sram": None}
     vdd, gnd = ("VDD", "VSS") if chip else ("VPWR", "VGND")
     # Both processes have the same SRAM macros, under libs.ref/<lib>_sram
     srams = f"pdk_dir::libs.ref/{lib}_sram"
@@ -105,11 +125,16 @@ if sram:
             "vh": [str(here / f"sram/{macro}_bb.v")],
             "lib": {"*typ*": [f"{timing}_typ_1p20V_25C.lib"], "*fast*": [f"{timing}_fast_1p32V_m55C.lib"],
                     "*slow*": [f"{timing}_slow_1p08V_125C.lib"]},
-            # In a chip, the top left corner of the core (its pins, on the bottom edge, face the core):
-            # its halo reaches past the core edge and leaves no narrow strip (see chip/pdn_cfg.tcl)
-            "instances": {inst: {"location": [370, 1294] if chip else [100, 100], "orientation": "N"}},
+            # In a chip, the top corners of the core (their pins, on the bottom edge, face the core)
+            "instances": {inst: {"location": [x, MACRO_Y] if chip else [100, 100], "orientation": "N"}
+                          for inst, x in instances.items()},
         }},
-        "PDN_MACRO_CONNECTIONS": [f"{inst} {vdd} {gnd} VDD! VSS!", f"{inst} {vdd} {gnd} VDDARRAY! VSS!"],
+        # A Tcl regular expression of the name as OpenROAD stores it (hart\[0\]; the backslashes do
+        # not survive LibreLane's parsing): ".*" for each bracket.  The placement above takes the name
+        # as it is and escapes it itself.
+        "PDN_MACRO_CONNECTIONS": [c for inst in instances
+                                  for c in (f"{inst.replace('[', '.*').replace(']', '.*')} {vdd} {gnd} VDD! VSS!",
+                                            f"{inst.replace('[', '.*').replace(']', '.*')} {vdd} {gnd} VDDARRAY! VSS!")],
         "PDN_CFG": str(here / ("chip/pdn_cfg.tcl" if chip else "sram/pdn_cfg.tcl")),
         # Subcells of the macros that Magic must flatten to read their GDS, from the PDK's
         # libs.tech/magic/read_sram_gds.tcl (IHP-Open-PDK PR #863)
@@ -117,6 +142,19 @@ if sram:
         # Magic still reports Cnt.c violations inside the macros; check_drc.py checks the rest
         "ERROR_ON_MAGIC_DRC": False,
     }
+
+
+# The left edges of the channels without cells under the Metal2 straps (see FP_OBSTRUCTIONS)
+CHANNELS = [x for x in (round(365.28 + 49.1 + 75.6 * k, 2) for k in range(100)) if x + 8.6 <= CORE[1]]
+
+
+def channel_top(x):
+    """The top of the strap channel at x: the core top, or the bottom of a macro's halo above it."""
+    xs = [LEFT_X] + ([RIGHT_X] if trace else [])
+    under = any(m - HALO < x + 8.6 and x < m + MACRO_W + HALO for m in xs)
+    return round(MACRO_Y - HALO, 2) if under else CORE[1]
+
+
 if chip:
     # After IHP's LibreLane template (ihp-sg13-librelane-template, librelane/config.yaml); the pads are the instances of chip_top.sv
     gpio = [f"gpio\\[{i}\\].gpio_pad" for i in range(8)]
@@ -133,16 +171,18 @@ if chip:
         "VDD_NETS": ["VDD"],
         "GND_NETS": ["VSS"],
         # Each power pad has its twin on the opposite side.  OpenROAD.PadRing needs whole microns
-        # between the pads (80 um wide, 1360 um per side): 5 or 7 pads on a side, not 6.
+        # between the pads (80 um wide, 1760 um per side of the 2.4 mm die): 7 pads on each side
+        # (150 um apart), or 9; the JTAG pads sit together at the corner of the east and west sides.
         "PAD_SOUTH": ["clk_pad", "rst_n_pad", "vdd_pad", "vss_pad", "uart_rx_pad", "uart_tx_pad", "iovdd2_pad"],
-        "PAD_EAST": ["spi_sck_pad", "spi_mosi_pad", "iovss2_pad", "spi_miso_pad", "spi_cs_pad"],
+        "PAD_EAST": ["spi_sck_pad", "spi_mosi_pad", "iovss2_pad", "spi_miso_pad", "spi_cs_pad", "tck_pad", "tms_pad"],
         "PAD_NORTH": gpio[:2] + ["vss2_pad", "vdd2_pad"] + gpio[2:4] + ["iovdd_pad"],
-        "PAD_WEST": gpio[4:] + ["iovss_pad"],
+        "PAD_WEST": ["tdi_pad", "tdo_pad"] + gpio[4:] + ["iovss_pad"],
         "FP_SIZING": "absolute",
-        # The template's 2.2 mm die left the core half empty (49 % standard cell utilization), and
-        # its metal too sparse for the density rules (Mx Fil.h, M2.j); 365 um for the pad ring
-        "DIE_AREA": [0, 0, 2000, 2000],
-        "CORE_AREA": [365, 365, 1635, 1635],
+        # The chip grows from 2.0 mm with the debug port and the trace (one more SRAM macro); 365 um
+        # for the pad ring.  (The template's 2.2 mm die left the core of the first chip half empty,
+        # 49 % standard cell utilization, and its metal too sparse for the density rules.)
+        "DIE_AREA": [0, 0, DIE, DIE],
+        "CORE_AREA": [CORE[0], CORE[0], CORE[1], CORE[1]],
         "PDN_CORE_RING": True,
         "PDN_CORE_RING_VWIDTH": 15,      # under 30 um, the widest metal without slotting
         "PDN_CORE_RING_HWIDTH": 15,
@@ -163,10 +203,14 @@ if chip:
         # Channels without cells under the Metal2 straps of chip/pdn_cfg.tcl (width 2.8, spacing 2,
         # first pair centred 51 and 55.8 um from the row start at 365.28, pitch 75.6), 0.5 um wider
         # than a pair on each side: with cells under them, the straps covered pins and the antenna
-        # diodes inserted after detailed routing shorted to them.  Above the SRAM macro's halo
-        # they stop at it.
-        "FP_OBSTRUCTIONS": [[x, 365, x + 8.6, 1284 if x < 786.64 + 10 else 1635]
-                            for x in (round(365.28 + 49.1 + 75.6 * k, 2) for k in range(17))],
+        # diodes inserted after detailed routing shorted to them.  Below an SRAM macro they stop at
+        # its halo.
+        "FP_OBSTRUCTIONS": [[x, CORE[0], round(x + 8.6, 2), channel_top(x)] for x in CHANNELS]
+        # The strip between the last channel and the core's right edge, narrower than the pitch, where
+        # pdngen puts a thin pair of Metal2 straps of its own (0.35 um, near the edge): an antenna diode
+        # placed under them in the 2.0 mm chip left its pin no access, and detailed routing shorted
+        # it to VDD (6 shorts, LVS failed).
+                           + [[round(CHANNELS[-1] + 8.6, 2), CORE[0], CORE[1], channel_top(CHANNELS[-1])]],
     }
     if lib == "sg13cmos5l":
         config["VERILOG_DEFINES"] = ["SG13CMOS5L"]   # chip_top.sv instantiates the pads of the process

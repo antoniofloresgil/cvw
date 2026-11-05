@@ -37,12 +37,24 @@ Configurations:
   for the other shapes. `make sramsim` checks the adapter, with the macro's behavioral model, against
   Wally's RAM under random stimulus.
 - `asic_soc_*`: chips. `chip/chip_top.sv` puts `wallypipelinedsoc` inside a ring of IHP pads (clock,
-  reset, UART, SPI, 8 GPIOs and 8 power pads), after IHP's
+  reset, UART, SPI, 8 GPIOs, JTAG and 8 power pads), after IHP's
   [LibreLane template](https://github.com/IHP-GmbH/ihp-sg13-librelane-template); the bondpad comes
   from the template (`chip/ip/`), since the PDKs have none. The BOOTROM holds `chip/boot.S`
   (built into `chip/boot.mem`): it reads a baud divisor from GPIO[7:0], sends `W` on the UART,
   receives a 4-byte length and the program into the 4 KiB RAM at 0x80000000 (an SRAM macro), sends
-  its 8-bit sum and jumps to it. `chip/test/test_chip.py` loads `hello.S` that way.
+  its 8-bit sum and jumps to it. `chip/test/test_chip.py` loads `hello.S` that way
+  (`boot_over_uart`), and through the JTAG port as a debugger does (`debug_over_jtag`): it halts
+  the hart, loads the program with System Bus Access, turns the instruction trace on, resumes the
+  hart at the program, halts it again and decodes the trace it reads back
+  (`$WALLY/testbench/debug/etrace/etracedecode.py`).
+- `asic_soc_rv32imc` has the JTAG debug port with 4 triggers and the instruction trace
+  (`DEBUG_SUPPORTED`, `DEBUG_TRIGGERS`, `TRACE_SUPPORTED`; `docs/debug.md`, `docs/trace.md`): the
+  trace buffer (1024 x 32) is a second SRAM macro, in the top right corner of the core, as the
+  RAM is in the top left one. Measured with Yosys and the SG13G2 library (memories as macros),
+  the debug port adds 5,064 cells to the SoC's 34,216, the triggers 3,617 and the trace 4,646;
+  the die grew from 2.0 to 2.4 mm for them. In SG13G2 the chip then has 70,185 cells (6,537
+  flip-flops), 0.97 mm² of cells, 45 % of the core; setup slack +2.17 ns in the slow corner, hold
+  +0.08 ns; 0 KLayout DRC, LVS and antenna errors; 22 mW.
 
 Notes:
 
@@ -76,10 +88,12 @@ Notes:
   offset and pitch): over cells they covered pins, and the antenna repair could not route its
   diodes next to them. The SG13G2 chip meets the rule; the SG13CMOS5L one not yet (its vertical
   straps are on Metal4).
-- The chip has two pads of each supply on opposite sides, 24 pads in all; `OpenROAD.PadRing` needs
-  whole microns between the pads, so a side of the 2.0 mm die takes 5 or 7 pads, not 6.
+- The chip has two pads of each supply on opposite sides, 28 pads in all; `OpenROAD.PadRing` needs
+  whole microns between the pads, so a side of the 2.4 mm die takes 7 or 9 pads (of the 2.0 mm
+  die, 5 or 7).
 - `chip/chip_top.sdc` makes the reset, UART receive and GPIO inputs false paths: they are
-  asynchronous, and the SoC synchronizes them.
+  asynchronous, and the SoC synchronizes them. TCK is a second clock (100 ns), asynchronous to the
+  system clock: the DTM hands DMI requests to the Debug Module with a synchronized toggle.
 - `chip/chip_top.sdc` defines the clock on the clock pad's output, as IHP's template does, and sets
   the clock activity of that pin for power: OpenSTA gives a clock on an internal pin none, and the
   chip's power read 1.2 mW instead of 21 mW.

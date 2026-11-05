@@ -50,6 +50,16 @@ if { [info exists ::env(MAX_CAPACITANCE_CONSTRAINT)] } {
 
 set clocks [get_clocks $clock_port]
 
+# The JTAG clock, on the TCK pad's output: 10 MHz at most, asynchronous to the system clock (the
+# DTM crosses to the Debug Module through a toggle handshake with synchronizers, src/debug/dtm.sv)
+create_clock [get_pins tck_pad/p2c] -name tck -period 100
+set_power_activity -pins [get_pins tck_pad/p2c] -activity 2 -duty 0.5
+set_clock_groups -asynchronous -group $clocks -group [get_clocks tck]
+# TMS and TDI are sampled on the rising edge of TCK, TDO changes on its falling edge; the debugger
+# samples TDO on the next rising edge.  A quarter of the period for the board.
+set_input_delay -clock tck 25 [get_ports {tms_PAD tdi_PAD}]
+set_output_delay -clock tck 25 [get_ports tdo_PAD]
+
 # Input-only pads
 set clk_core_input_ports [get_ports {
     rst_n_PAD
@@ -89,10 +99,10 @@ puts "\[INFO] Setting load to: $cap_load"
 set_load $cap_load [all_outputs]
 
 puts "\[INFO] Setting clock uncertainty to: $::env(CLOCK_UNCERTAINTY_CONSTRAINT)"
-set_clock_uncertainty $::env(CLOCK_UNCERTAINTY_CONSTRAINT) $clocks
+set_clock_uncertainty $::env(CLOCK_UNCERTAINTY_CONSTRAINT) [all_clocks]
 
 puts "\[INFO] Setting clock transition to: $::env(CLOCK_TRANSITION_CONSTRAINT)"
-set_clock_transition $::env(CLOCK_TRANSITION_CONSTRAINT) $clocks
+set_clock_transition $::env(CLOCK_TRANSITION_CONSTRAINT) [all_clocks]
 
 puts "\[INFO] Setting timing derate to: $::env(TIME_DERATING_CONSTRAINT)%"
 set_timing_derate -early [expr 1-[expr $::env(TIME_DERATING_CONSTRAINT) / 100]]
