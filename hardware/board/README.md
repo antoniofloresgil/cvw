@@ -40,11 +40,41 @@ Manufacturing files (`fab/`, git-ignored):
     python3 fab.py      # Gerbers + drill (zip), BOM and CPL in JLCPCB's columns, schematic and PCB PDFs
 
 U6 (the chip, in a hand-soldered QFN socket), the test points and the mounting holes are not
-assembled. The BOM leaves the LCSC column empty: JLCPCB's tool matches by value and footprint and
-prefers its basic parts.
+assembled. The BOM carries LCSC part numbers (the `LCSC` table in `fab.py`, checked against JLCPCB's
+catalogue on 2026-11-06): basic parts for the passives and the ferrite, extended parts for the rest;
+the through-hole headers and jumpers have none and are soldered by hand.
 
     python3 mcu_pcb.py                                         # the system Python, which has pcbnew
     kicad-cli pcb drc --refill-zones --schematic-parity mcu_board.kicad_pcb
 
 `chip_qfn32_socket.png` shows the chip's real layout (final GDS) in the QFN32 with the bonding the
 schematic assumes: each pad of the ring to the nearest package pin, one pin free per side.
+
+## Simulation
+
+`sim/` simulates the chip on the board's own netlist (`make boardsim` in `asic/librelane`, or
+`tabbypy3 test_board.py` there with `WORK` and `IHP_PDK` set as `make chipsim` sets them):
+
+- `gen_board.py` turns the schematic's netlist (`kicad-cli`) into `board.sv`: chip_top (the RTL) and
+  the models of `models.sv`, wired as the schematic wires them. Series parts and resistors between
+  signals join nets, a resistor to a rail is a pull-up or pull-down, and each contact of a switch drives
+  the level of its source side (a rail, else the stronger pull) when the test closes it; where a button
+  and a strap meet on one pin, the lower source impedance wins (1 k against 4.7 k). A part with no
+  model stops the script. It also checks every supply against its data sheet's range, J2 against the
+  Cortex Debug 10-pin pinout, and the potentiometer against the ADC.
+- `models.sv`: oscillator, MAX811, W25Q32 (Read, Fast Read, JEDEC ID), 24LC256, TMP102, ADS1115,
+  MCP4725, 74AHC541, LEDs and the FT2232's JTAG and UART pins.
+- `test_board.py` plays the person at the board (DIP switch, buttons, flash, the FT2232's pins) in seven
+  tests: power-up reset and boot from the board's flash with the power LEDs and GPIO LEDs, the reset
+  button, the UART's baud rate with the straps and the 18.432 MHz oscillator, UART boot, JTAG through
+  the FT2232 and its reset line, the four I2C devices at their addresses (`i2c.S`), and straps, buttons
+  and LEDs on their GPIO pins (`gpio.S`).
+
+What it does not cover: the analogue side (supplies, USB, the ADC inputs, the DAC output, LED
+currents), timing (the supervisor's 140 ms is scaled to 20 us and the EEPROM writes at once), and
+contention. Verilator resolves nets without strengths, so a test must not make the chip drive a pin
+that a closed strap or a pressed button also drives. The chip's pinout in the QFN32 comes from the
+schematic's symbol, not from the simulation.
+
+Findings: with every DIP switch open the bootloader's default divisor 18 gives 64000 baud at 18.432 MHz,
+not 115200; set GPIO1 and GPIO3 (divisor 10) for 115200.
