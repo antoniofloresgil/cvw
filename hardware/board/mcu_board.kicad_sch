@@ -1,0 +1,227 @@
+(kicad_sch
+	(version 20260101)
+	(generator "kicadgen")
+	(generator_version "10.0")
+	(uuid "4bba502d-d83c-5809-84dd-6122f807a0f6")
+	(paper "A4")
+	(title_block
+		(title "MCU test board (asic_soc_rv32imc)")
+	)
+	(lib_symbols)
+	(sheet
+		(at 30 40)
+		(size 45 20)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "7eaddb56-9602-5ccd-b105-4c5f0b3d194d")
+		(property "Sheetname" "power"
+			(at 30 39.3 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "power.kicad_sch"
+			(at 30 60.6 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 90 40)
+		(size 45 20)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "5c4bfc6a-cb9d-582e-a113-956d4d12b2bc")
+		(property "Sheetname" "debug"
+			(at 90 39.3 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "debug.kicad_sch"
+			(at 90 60.6 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 150 40)
+		(size 45 20)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "bd8581df-404e-5e04-b7ea-380772f870b2")
+		(property "Sheetname" "chip"
+			(at 150 39.3 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "chip.kicad_sch"
+			(at 150 60.6 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6"
+					(page "4")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 210 40)
+		(size 45 20)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "465cffaf-d599-507d-a73a-fca8ce3f545a")
+		(property "Sheetname" "peripherals"
+			(at 210 39.3 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "peripherals.kicad_sch"
+			(at 210 60.6 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6"
+					(page "5")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 30 80)
+		(size 45 20)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "e495594d-0be3-5ca3-99d5-35998a1d53d6")
+		(property "Sheetname" "fpga"
+			(at 30 79.3 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "fpga.kicad_sch"
+			(at 30 100.6 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6"
+					(page "6")
+				)
+			)
+		)
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)

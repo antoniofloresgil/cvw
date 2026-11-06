@@ -112,13 +112,13 @@ def custom_symbol(name, left, right, reference="U", footprint="", width=None):
     height = (rows + 1) * GRID
     width = width or 20.32
     top = height / 2
-    sym = [Q("symbol"), Q(name)] if False else ["symbol", Q(name), ["exclude_from_sim", "no"], ["in_bom", "yes"], ["on_board", "yes"]]
+    sym = ["symbol", Q(name), ["exclude_from_sim", "no"], ["in_bom", "yes"], ["on_board", "yes"]]
     for pname, val, y, hide in (("Reference", reference, top + 1.27, False), ("Value", name, -top - 1.27, False),
                                 ("Footprint", footprint, 0, True), ("Datasheet", "", 0, True)):
         prop = ["property", Q(pname), Q(val), ["at", "0", str(y), "0"],
                 ["effects", ["font", ["size", "1.27", "1.27"]]] + ([["hide", "yes"]] if hide else [])]
         sym.append(prop)
-    body = ["symbol", Q(f"{name}_1_1"),
+    body = ["symbol", Q(f"{name.split(':')[-1]}_1_1"),
             ["rectangle", ["start", str(-width / 2), str(top)], ["end", str(width / 2), str(-top)],
              ["stroke", ["width", "0.254"], ["type", "default"]], ["fill", ["type", "background"]]]]
     for side, pins, x, angle in (("l", left, -width / 2 - 5.08, 0), ("r", right, width / 2 + 5.08, 180)):
@@ -138,6 +138,8 @@ class Sheet:
         self.items = []
         self.refs = {}
         self.parts = []
+        self.width = {"A4": 297, "A3": 420, "A2": 594, "A1": 841}[paper]
+        self.cursor, self.row, self.bottom = [15, 20], 0, 0
 
     def _symbol(self, lib, name):
         key = f"{lib}:{name}"
@@ -145,11 +147,38 @@ class Sheet:
             self.libsyms[key] = custom_symbol_cache[key] if lib == "mcu_board" else flatten(lib, name)
         return self.libsyms[key]
 
-    def add(self, lib, name, ref, value, x, y, nets, footprint=None, unit=1, mirror=False):
+    def _place(self, pins, nets, unit):
+        """Shelf packing, left to right then down: the box of the part's pins plus the wires and labels
+        that leave them, with a gap of 5 mm."""
+        xs, ys = [0.0], [0.0]
+        for p in pins:
+            if p[0] not in (0, unit):
+                continue
+            net = nets.get(p[1], nets.get(p[2]))
+            dx, dy = {0: (-1, 0), 180: (1, 0), 90: (0, 1), 270: (0, -1)}[p[5]]
+            reach = 0 if net is None else 1 if net == "NC" else GRID + (3 if net in POWER else len(net) * 1.0 + 4)
+            for t in (0, reach):
+                xs.append(p[3] + dx * t)
+                ys.append(-p[4] + dy * t)
+        w = max(xs) - min(xs) + 5
+        h = max(ys) - min(ys) + 5
+        if self.cursor[0] + w > self.width - 15:
+            self.cursor = [15, self.cursor[1] + self.row]
+            self.row = 0
+        x = self.cursor[0] - min(xs)
+        y = self.cursor[1] - min(ys)
+        self.cursor[0] += w
+        self.row = max(self.row, h)
+        self.bottom = max(self.bottom, self.cursor[1] + h)
+        return x, y
+
+    def add(self, lib, name, ref, value, nets, footprint=None, unit=1, x=None, y=None):
         """Place a part; `nets` maps a pin number (or name) to a net, "NC" for a no-connect."""
         sym = self._symbol(lib, name)
-        pins = [p for p in pins_of(sym) if p[0] in (0, unit) or True]
+        pins = pins_of(sym)
         used = set()
+        if x is None:
+            x, y = self._place(pins, nets, unit)
         props = {"Reference": ref, "Value": value}
         if footprint:
             props["Footprint"] = footprint
@@ -223,10 +252,35 @@ class Sheet:
                 ["uuid", Q(self.sheet_uuid or self.root_uuid)], ["paper", Q(self.paper)],
                 ["title_block", ["title", Q(self.title or self.name)]],
                 ["lib_symbols"] + list(self.libsyms.values())] + self.items + list(sheets) + \
-               [["sheet_instances", ["path", Q("/"), ["page", Q("1")]]], ["embedded_fonts", "no"]]
+               ([["sheet_instances", ["path", Q("/"), ["page", Q("1")]]]] if not self.sheet_uuid else []) + [["embedded_fonts", "no"]]
         Path(path).write_text(dump(body) + "\n")
 
 
 POWER = {"GND": ("power", "GND"), "+3V3": ("power", "+3V3"), "+5V": ("power", "+5V"), "+1V2": ("power", "+1V2"),
          "VBUS": ("power", "VBUS")}
 custom_symbol_cache = {}
+
+
+def write_root(path, project, root_uuid, title, sheets):
+    """The root schematic: one sheet symbol per (name, file) in `sheets`."""
+    root = Sheet(project, "root", root_uuid, None, paper="A4", title=title)
+    blocks = []
+    for i, (name, file, sheet_uuid) in enumerate(sheets):
+        x, y = 30 + (i % 4) * 60, 40 + (i // 4) * 40
+        blocks.append(["sheet", ["at", str(x), str(y)], ["size", "45", "20"], ["exclude_from_sim", "no"], ["in_bom", "yes"],
+                       ["on_board", "yes"], ["dnp", "no"], ["fields_autoplaced", "yes"],
+                       ["stroke", ["width", "0.1524"], ["type", "solid"]], ["fill", ["color", "0", "0", "0", "0.0000"]],
+                       ["uuid", Q(sheet_uuid)],
+                       ["property", Q("Sheetname"), Q(name), ["at", str(x), f"{y - 0.7:g}", "0"],
+                        ["effects", ["font", ["size", "1.27", "1.27"]], ["justify", "left", "bottom"]]],
+                       ["property", Q("Sheetfile"), Q(file), ["at", str(x), f"{y + 20.6:g}", "0"],
+                        ["effects", ["font", ["size", "1.27", "1.27"]], ["justify", "left", "top"]]],
+                       ["instances", ["project", Q(project), ["path", Q(f"/{root_uuid}"), ["page", Q(str(i + 2))]]]]])
+    root.write(path, blocks)
+
+
+def write_symbol_lib(path, symbols):
+    """A symbol library of the symbols made here (named `lib:name`; the library holds `name`)."""
+    syms = [[s[0], Q(s[1].split(":")[-1])] + s[2:] for s in symbols]
+    Path(path).write_text(dump(["kicad_symbol_lib", ["version", "20251024"], ["generator", Q("kicadgen")],
+                                ["generator_version", Q("10.0")]] + syms) + "\n")
