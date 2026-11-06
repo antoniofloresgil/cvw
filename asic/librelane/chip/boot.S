@@ -3,10 +3,10 @@
 // flash, or loads it over the UART, into the RAM at 0x80000000 and runs it with sp at the top of
 // the RAM.
 //
-// Straps, read from GPIO[7:0] at reset:
-//   GPIO[6:0]  UART baud divisor: f_clk / (16 * divisor), or 18 if they read 0 (115200 baud with a
+// Straps, read from GPIO[5:0] at reset (GPIO 6 and 7 are I2C, whose pull-ups would read 1):
+//   GPIO[4:0]  UART baud divisor: f_clk / (16 * divisor), or 18 if they read 0 (115200 baud with a
 //              33.3 MHz clock, 0.5 % off)
-//   GPIO[7]    1: skip the flash and load over the UART
+//   GPIO[5]    1: skip the flash and load over the UART
 //
 // SPI flash, on chip select 0, read with the standard Read command (0x03, 3 address bytes) from
 // address 0, at f_clk / 8 (the SPI's reset divisor):
@@ -48,16 +48,16 @@ _start:
   li    s1, RAM
   li    s7, SPI
 
-  // Straps from GPIO[7:0]; the inputs go through three synchronizer flops
+  // Straps from GPIO[5:0]; the inputs go through three synchronizer flops
   li    t0, GPIO
-  li    t1, 0xFF
+  li    t1, 0x3F
   sw    t1, GPIO_INPUT_EN(t0)
   nop
   nop
   nop
   nop
   lw    s6, GPIO_INPUT_VAL(t0)
-  andi  t1, s6, 0x7F
+  andi  t1, s6, 0x1F
   bnez  t1, 1f
   li    t1, DIVISOR
 1:
@@ -68,7 +68,7 @@ _start:
   li    t0, 0x03
   sb    t0, UART_LCR(s0)
 
-  andi  s6, s6, 0x80
+  andi  s6, s6, 0x20
   bnez  s6, uart
 
   // The flash: Read from address 0, with the chip select held for the whole transfer

@@ -139,6 +139,7 @@ deriv syn_rv64gc rv64gc syn_rv32e
 # (1024 x 32) in an IHP SG13G2 SRAM macro.
 deriv asic_rv32imc rv32imc syn_rv32e
 DTIM_RANGE              64'hFFF
+LATCH_BASED_REGISTERFILE 0
 
 # A chip: a bootloader in the BOOTROM copies a program from an SPI flash, or loads it over the UART,
 # into 32 KiB of RAM on the bus (four IHP SRAM macros), from where it runs; asic/librelane/chip has
@@ -148,7 +149,11 @@ DTIM_RANGE              64'hFFF
 # banks: Magic's DRC fails on a design with two kinds of IHP SRAM macro.
 # The MCU peripherals (timer with PWM and capture, watchdog, I2C, RTC; src/uncore/mcu) take PLIC
 # sources 15 to 18, after the PWM's 11 to 14.
+# The asic configurations keep the flop register file: with rv32imc's latch-based one (upstream
+# 6c75547b3), OpenROAD's clock tree synthesis treats the 32 row clock gates as macro sinks and loses
+# one of them, which fails the disconnected-pins check.
 deriv asic_soc_rv32imc rv32imc syn_rv32e
+LATCH_BASED_REGISTERFILE 0
 IROM_SUPPORTED          0
 DTIM_SUPPORTED          0
 RESET_VECTOR            64'h00001000
