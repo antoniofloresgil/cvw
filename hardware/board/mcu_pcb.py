@@ -21,7 +21,7 @@ HERE = Path(__file__).resolve().parent
 FPDIR = Path("/usr/share/kicad/footprints")
 W, H = 110.0, 85.0                      # board, mm
 ORIGIN = (100.0, 60.0)                  # the board's top left corner on the page
-GAP = 0.8                               # between courtyards
+GAP = 1.6                               # between courtyards: room for the fanout vias
 
 # Placement by function.  FIXED parts sit at (x, y, rotation) on the board (mm from its top left
 # corner); each GROUP is packed, in the order given, into its rectangle (x0, y0, x1, y1) beside the
@@ -66,21 +66,23 @@ def refs(spec):
 
 
 GROUPS = [
-    ("U1 F1 R1 R2 U2 C1-C4 U3 C5 C6 JP1 JP2 R3 D1 R4 D2 TP1-TP7", (12, 9, 37, 34)),    # power
+    ("U1 F1 R1 R2 U2 C1-C4 U3 C5 C6 R3 D1 R4 D2 TP1-TP3 TP6 TP7", (12, 7, 38, 37)),    # power
+    ("JP1 JP2 TP4 TP5", (46.2, 15.5, 52, 40)),          # the chip's supplies: ammeter jumpers beside it
     ("Y1 C7 C8", (8, 38, 16.5, 52)),                                                 # FT2232HL crystal
-    ("R9-R15", (32, 38, 40, 54)),                                                    # FT2232HL to the chip
-    ("C9-C19 FB1 R5 R6 U5 R7 R8", (10, 55, 40, 68)),                                 # FT2232HL supply, EEPROM
-    ("C21-C23 C31-C33", (50, 21, 66, 29.5)),                                         # chip decoupling
-    ("C40 R16 U7", (52, 38, 66, 45)),                                                # clock and reset
-    ("TP10-TP15", (42, 46, 66, 51)),
-    ("C41 R17-R19", (66, 36, 80, 42)),                                               # flash
+    ("R9-R15", (31.5, 37, 42, 56)),                                                    # FT2232HL to the chip
+    ("C9-C19 FB1 R5 R6 U5 R7 R8", (8, 55, 42, 73)),                                 # FT2232HL supply, EEPROM
+    ("C21-C23 C31-C33", (52.4, 21, 67, 29.5)),                                         # chip decoupling
+    ("C40 R16 U7", (52, 37.5, 68, 46)),                                                # clock and reset
+    ("TP10-TP15", (42, 46.5, 72, 51.5)),
+    ("C41 R17-R19", (68, 35, 80, 46)),                                               # flash
     ("U9 C42", (42, 52, 58, 61)),                                                    # LED buffer
-    ("R20-R31", (74, 44, 87.5, 61)),                                                 # strap resistors
+    ("R20-R31", (73, 47, 88.2, 61.5)),                                                 # strap resistors
     ("U10 U11 U12 U13 RV1 C43-C46 R46 R47", (78, 12, 103, 40)),                      # I2C and analog
 ]
+POWER_NETS = ["GND", "VBUS", "+5V", "+3V3", "+1V2"]   # 0.3 mm tracks; the chip's and the FT2232HL's own supplies (tens of mA) take 0.2 mm, which fits between QFN pins
 RULES = {   # mm; the default net class and the board's minimums, written into mcu_board.kicad_pro
     "clearance": 0.15, "track_width": 0.2, "via_diameter": 0.6, "via_drill": 0.3,
-    "min_clearance": 0.15, "min_track_width": 0.15, "min_via_diameter": 0.5, "min_through_hole_diameter": 0.3,
+    "min_clearance": 0.15, "min_track_width": 0.1, "min_via_diameter": 0.5, "min_through_hole_diameter": 0.3,
     "min_copper_edge_clearance": 0.3,
 }
 
@@ -138,7 +140,9 @@ def project_rules(pro):
                "microvia_diameter": 0.3, "microvia_drill": 0.1, "wire_width": 6, "bus_width": 12, "line_style": 0,
                "pcb_color": "rgba(0, 0, 0, 0.000)", "schematic_color": "rgba(0, 0, 0, 0.000)"}
     default.update({k: v for k, v in RULES.items() if not k.startswith("min_")})
-    net["classes"] = [c for c in net.get("classes", []) if c.get("name") != "Default"] + [default]
+    power = dict(default, name="Power", priority=0, track_width=0.3)
+    net["classes"] = [c for c in net.get("classes", []) if c.get("name") not in ("Default", "Power")] + [default, power]
+    net["netclass_patterns"] = [{"netclass": "Power", "pattern": n} for n in POWER_NETS]
     pro.write_text(json.dumps(data, indent=2) + "\n")
 
 
@@ -146,6 +150,8 @@ def main():
     root = netlist()
     board = pcbnew.BOARD()
     board.SetCopperLayerCount(4)
+    board.SetLayerType(pcbnew.In1_Cu, pcbnew.LT_POWER)       # planes: the router keeps its tracks off them
+    board.SetLayerType(pcbnew.In2_Cu, pcbnew.LT_POWER)
     ds = board.GetDesignSettings()
     nc = ds.m_NetSettings.GetDefaultNetclass()
     nc.SetClearance(mm(0.15))

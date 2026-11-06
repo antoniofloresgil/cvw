@@ -678,6 +678,148 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "power:+3V3"
+			(power global)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "#PWR"
+				(at 0 -3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "+3V3"
+				(at 0 3.556 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"+3V3\""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "global power"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "+3V3_0_1"
+				(polyline
+					(pts
+						(xy -0.762 1.27)
+						(xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 2.54)
+						(xy 0.762 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 0)
+						(xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "+3V3_1_1"
+				(pin power_in line
+					(at 0 0 90)
+					(length 0)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "power:GND"
 			(power global)
 			(pin_numbers
@@ -1474,148 +1616,6 @@
 					)
 					(fill
 						(type background)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
-		(symbol "power:+3V3"
-			(power global)
-			(pin_numbers
-				(hide yes)
-			)
-			(pin_names
-				(offset 0)
-				(hide yes)
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(in_pos_files yes)
-			(duplicate_pin_numbers_are_jumpers no)
-			(property "Reference" "#PWR"
-				(at 0 -3.81 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Value" "+3V3"
-				(at 0 3.556 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Footprint" ""
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Datasheet" ""
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Description" "Power symbol creates a global label with name \"+3V3\""
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "ki_keywords" "global power"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(symbol "+3V3_0_1"
-				(polyline
-					(pts
-						(xy -0.762 1.27)
-						(xy 0 2.54)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 2.54)
-						(xy 0.762 1.27)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 0)
-						(xy 0 2.54)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-			)
-			(symbol "+3V3_1_1"
-				(pin power_in line
-					(at 0 0 90)
-					(length 0)
-					(name ""
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
 					)
 				)
 			)
@@ -4111,23 +4111,41 @@
 		)
 		(uuid "84eab04d-fccb-5ebf-9320-ff4e6863f384")
 	)
-	(global_label "VDD_IO"
-		(shape bidirectional)
-		(at 58.42 41.91 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "224dc922-a778-5013-9ed5-49ef290e7c43")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 58.42 41.91 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "0c3190e0-754c-5987-b5c0-7e5b9cc59702")
+		(property "Reference" "#PWR"
+			(at 58.42 41.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 58.42 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "1ff03673-1398-558a-aa7d-849fc1ebfa91")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/465cffaf-d599-507d-a73a-fca8ce3f545a"
+					(reference "#PWR122c20")
+					(unit 1)
+				)
 			)
 		)
 	)
@@ -4369,23 +4387,41 @@
 		)
 		(uuid "aeb8fda5-5370-5c8a-b906-90c0fc9c6ba7")
 	)
-	(global_label "VDD_IO"
-		(shape bidirectional)
-		(at 68.58 41.91 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "b2daa9a3-b6ef-511b-9daa-606033da434e")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 68.58 41.91 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "da72a8d7-1820-5fc7-9889-5c22033e5099")
+		(property "Reference" "#PWR"
+			(at 68.58 41.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 68.58 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "d316123f-a70e-5d88-a7e7-852b4c44e969")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/465cffaf-d599-507d-a73a-fca8ce3f545a"
+					(reference "#PWRcd68f1")
+					(unit 1)
+				)
 			)
 		)
 	)
@@ -4627,23 +4663,41 @@
 		)
 		(uuid "a361396f-54e9-59cd-a8e9-8c448f6d265f")
 	)
-	(global_label "VDD_IO"
-		(shape bidirectional)
-		(at 78.74 41.91 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "344f65c6-506c-58d9-94a0-f327179d579c")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 78.74 41.91 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "6c182df4-6265-5e94-8233-bc2fcba8da9b")
+		(property "Reference" "#PWR"
+			(at 78.74 41.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 78.74 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "1f4df462-de34-5eb3-a7db-7fea23b5c6cd")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/465cffaf-d599-507d-a73a-fca8ce3f545a"
+					(reference "#PWR47cbbe")
+					(unit 1)
+				)
 			)
 		)
 	)
@@ -4885,23 +4939,41 @@
 		)
 		(uuid "927f0919-861d-5700-a5bc-fd11597a00c4")
 	)
-	(global_label "VDD_IO"
-		(shape bidirectional)
-		(at 88.9 41.91 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "6f15b82e-a0f3-5da0-9a67-2c691812bea8")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 88.9 41.91 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "aeafaecf-77ea-5682-86dc-8fab4f5fe0bf")
+		(property "Reference" "#PWR"
+			(at 88.9 41.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 88.9 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "43875215-8e07-5e7e-9fba-61ac83247c97")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/465cffaf-d599-507d-a73a-fca8ce3f545a"
+					(reference "#PWR41fa9b")
+					(unit 1)
+				)
 			)
 		)
 	)
@@ -5143,23 +5215,41 @@
 		)
 		(uuid "5b65342a-ed5b-5dd3-aae8-094f96538e9d")
 	)
-	(global_label "VDD_IO"
-		(shape bidirectional)
-		(at 99.06 41.91 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "93f965f7-e3dc-5d1c-9f08-2c198d3810c6")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 99.06 41.91 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "e17a2830-2ed8-5117-af57-deecdd9bab64")
+		(property "Reference" "#PWR"
+			(at 99.06 41.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 99.06 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "88aa47a8-a9b4-56b8-a75d-49c99b174cc1")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/465cffaf-d599-507d-a73a-fca8ce3f545a"
+					(reference "#PWRc0f4fc")
+					(unit 1)
+				)
 			)
 		)
 	)
@@ -5401,23 +5491,41 @@
 		)
 		(uuid "1543c10d-8ed6-5c83-a354-3d53768b8e3b")
 	)
-	(global_label "VDD_IO"
-		(shape bidirectional)
-		(at 109.22 41.91 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "77c7cd2c-d2ae-57b1-b7ff-6b4d917c7d1f")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 109.22 41.91 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "f4a881a4-5249-586e-815b-b2fc0cd76eeb")
+		(property "Reference" "#PWR"
+			(at 109.22 41.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 109.22 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "e0e87acd-9a25-5f9a-8866-0b9ed6db983c")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/465cffaf-d599-507d-a73a-fca8ce3f545a"
+					(reference "#PWRb62f34")
+					(unit 1)
+				)
 			)
 		)
 	)
@@ -10879,8 +10987,57 @@
 	)
 	(wire
 		(pts
+			(xy 327.66 82.55)
+			(xy 327.66 80.01)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c9f58923-ee22-5ea3-a7a6-9b274cc28e08")
+	)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 327.66 80.01 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "5e95612e-a633-5b20-b368-06199eeb5b97")
+		(property "Reference" "#PWR"
+			(at 327.66 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 327.66 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "31504f2b-13e7-51cf-9a72-45e0cec46143")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/465cffaf-d599-507d-a73a-fca8ce3f545a"
+					(reference "#PWR3536ad")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
 			(xy 327.66 90.17)
-			(xy 327.66 87.63)
+			(xy 327.66 92.71)
 		)
 		(stroke
 			(width 0)
@@ -10888,9 +11045,9 @@
 		)
 		(uuid "8ec6a135-fece-580e-ba46-0164edb8d9f0")
 	)
-	(global_label "VDD_IO"
+	(global_label "GPIO6"
 		(shape bidirectional)
-		(at 327.66 87.63 90)
+		(at 327.66 92.71 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -10908,40 +11065,9 @@
 			)
 		)
 	)
-	(wire
-		(pts
-			(xy 327.66 97.79)
-			(xy 327.66 100.33)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "8226ed9c-e9ae-587c-9739-6803fe087dfe")
-	)
-	(global_label "GPIO6"
-		(shape bidirectional)
-		(at 327.66 100.33 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "26b75da3-279f-5d10-bb8b-5bdd2d734ffd")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
 	(symbol
 		(lib_id "Device:R")
-		(at 327.66 93.98 0)
+		(at 327.66 86.36 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -10949,7 +11075,7 @@
 		(dnp no)
 		(uuid "a52ca997-fc63-5eb8-b50d-5c8066a7c2e2")
 		(property "Reference" "R46"
-			(at 327.66 88.9 0)
+			(at 327.66 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10957,7 +11083,7 @@
 			)
 		)
 		(property "Value" "4.7k"
-			(at 327.66 99.06 0)
+			(at 327.66 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10965,7 +11091,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 327.66 99.06 0)
+			(at 327.66 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10974,7 +11100,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 327.66 99.06 0)
+			(at 327.66 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10999,8 +11125,57 @@
 	)
 	(wire
 		(pts
+			(xy 332.74 82.55)
+			(xy 332.74 80.01)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "15c91118-be45-5e38-bba0-672889fb4ce9")
+	)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 332.74 80.01 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "44e9753e-89e4-5115-88ff-8635115a914e")
+		(property "Reference" "#PWR"
+			(at 332.74 80.01 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 332.74 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "758142f7-7e26-55c7-a3da-1507110cfa6e")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/465cffaf-d599-507d-a73a-fca8ce3f545a"
+					(reference "#PWR80b410")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
 			(xy 332.74 90.17)
-			(xy 332.74 87.63)
+			(xy 332.74 92.71)
 		)
 		(stroke
 			(width 0)
@@ -11008,9 +11183,9 @@
 		)
 		(uuid "775916fb-480a-5a4b-bc80-8a59593ba967")
 	)
-	(global_label "VDD_IO"
+	(global_label "GPIO7"
 		(shape bidirectional)
-		(at 332.74 87.63 90)
+		(at 332.74 92.71 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -11028,40 +11203,9 @@
 			)
 		)
 	)
-	(wire
-		(pts
-			(xy 332.74 97.79)
-			(xy 332.74 100.33)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "80c271a9-c126-59fe-8384-4a84a09918cf")
-	)
-	(global_label "GPIO7"
-		(shape bidirectional)
-		(at 332.74 100.33 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "922c44a9-3048-5ad4-830b-3109c1be7b9d")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
 	(symbol
 		(lib_id "Device:R")
-		(at 332.74 93.98 0)
+		(at 332.74 86.36 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -11069,7 +11213,7 @@
 		(dnp no)
 		(uuid "29440c36-941e-5b07-8173-b18d053ed9f3")
 		(property "Reference" "R47"
-			(at 332.74 88.9 0)
+			(at 332.74 81.28 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11077,7 +11221,7 @@
 			)
 		)
 		(property "Value" "4.7k"
-			(at 332.74 99.06 0)
+			(at 332.74 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11085,7 +11229,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 332.74 99.06 0)
+			(at 332.74 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11094,7 +11238,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 332.74 99.06 0)
+			(at 332.74 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)

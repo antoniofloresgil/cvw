@@ -5,8 +5,9 @@ mcu_board.kicad_sch and one schematic per sheet; the nets are named after the pa
 asic/librelane/chip/chip_top.sv.
 
 Supplies: USB-C 5 V -> 3.3 V (+3V3) -> 1.2 V (+1V2).  The chip's pads take VDD_IO and its core
-VDD_CORE, each through a jumper (JP1, JP2) across which an ammeter measures the chip alone; the
-rest of the board runs from +3V3.
+VDD_CORE, each through a jumper (JP1, JP2) an ammeter replaces to measure the chip alone: VDD_IO
+feeds only the chip's pads, its decoupling, the reset supervisor that watches it and the JTAG
+header's reference; the flash, the oscillator and every pull-up run from +3V3 like the rest.
 
 The chip's site is a QFN32 (its pin numbers are provisional until the bonding plan) and three
 Pmod-style headers carry the same nets, so that an FPGA running asic_soc_rv32imc takes the chip's
@@ -152,18 +153,18 @@ def chip(s):
     s.add("mcu_board", "asic_soc_rv32imc", "U6", "asic_soc_rv32imc", nets)
     caps(s, "C2", "VDD_IO", ["100n", "100n", "4.7u"])
     caps(s, "C3", "VDD_CORE", ["100n", "100n", "4.7u"])
-    s.add("Oscillator", "ASE-xxxMHz", "X1", "18.432MHz", {"EN": "VDD_IO", "Vdd": "VDD_IO", "GND": "GND", "OUT": "OSC_OUT"})
-    s.add("Device", "C", "C40", "100n", {"1": "VDD_IO", "2": "GND"}, footprint=C0603)
+    s.add("Oscillator", "ASE-xxxMHz", "X1", "18.432MHz", {"EN": "+3V3", "Vdd": "+3V3", "GND": "GND", "OUT": "OSC_OUT"})
+    s.add("Device", "C", "C40", "100n", {"1": "+3V3", "2": "GND"}, footprint=C0603)
     s.add("Device", "R", "R16", "33", {"1": "OSC_OUT", "2": "CLK"}, footprint=R0603)
     s.add("Power_Supervisor", "MAX811SEUS-T", "U7", "MAX811S (2.93 V)",
           {"VCC": "VDD_IO", "GND": "GND", "~{RESET}": "RST_N", "~{MR}": "MR_N"})
     s.add("Switch", "SW_Push", "SW1", "RESET", {"1": "MR_N", "2": "GND"}, footprint=BUTTON)
     s.add("Memory_Flash", "W25Q32JVSS", "U8", "W25Q32JVSS",
           {"~{CS}": "SPI_CS", "CLK": "SPI_SCK", "DI/IO_{0}": "SPI_MOSI", "DO/IO_{1}": "SPI_MISO",
-           "~{WP}/IO_{2}": "FLASH_WP_N", "~{HOLD}/~{RESET}/IO_{3}": "FLASH_HOLD_N", "VCC": "VDD_IO", "GND": "GND"})
-    s.add("Device", "C", "C41", "100n", {"1": "VDD_IO", "2": "GND"}, footprint=C0603)
+           "~{WP}/IO_{2}": "FLASH_WP_N", "~{HOLD}/~{RESET}/IO_{3}": "FLASH_HOLD_N", "VCC": "+3V3", "GND": "GND"})
+    s.add("Device", "C", "C41", "100n", {"1": "+3V3", "2": "GND"}, footprint=C0603)
     for i, net in enumerate(("SPI_CS", "FLASH_WP_N", "FLASH_HOLD_N")):
-        s.add("Device", "R", f"R{17 + i}", "10k", {"1": "VDD_IO", "2": net}, footprint=R0603)
+        s.add("Device", "R", f"R{17 + i}", "10k", {"1": "+3V3", "2": net}, footprint=R0603)
     for i, net in enumerate(("CLK", "RST_N", "UART_TX", "UART_RX", "SPI_SCK", "SPI_CS")):
         s.add("Connector", "TestPoint", f"TP{10 + i}", net, {"1": net}, footprint=TP, bom=False)
 
@@ -174,7 +175,7 @@ def peripherals(s):
           {**{str(i + 1): f"GPIO{i}" for i in range(6)}, **{str(12 - i): f"STRAP{i}" for i in range(6)}},
           footprint="Button_Switch_SMD:SW_DIP_SPSTx06_Slide_6.7x16.8mm_W8.61mm_P2.54mm_LowProfile")
     for i in range(6):
-        s.add("Device", "R", f"R{20 + i}", "4.7k", {"1": f"STRAP{i}", "2": "VDD_IO"}, footprint=R0603)
+        s.add("Device", "R", f"R{20 + i}", "4.7k", {"1": f"STRAP{i}", "2": "+3V3"}, footprint=R0603)
         s.add("Device", "R", f"R{26 + i}", "47k", {"1": f"GPIO{i}", "2": "GND"}, footprint=R0603)
     for i in range(6):
         s.add("Device", "R", f"R{32 + i}", "1k", {"1": f"GPIO{i}", "2": f"BTN{i}"}, footprint=R0603)
@@ -190,8 +191,8 @@ def peripherals(s):
     for i in range(8):
         s.add("Connector", "TestPoint", f"TP{20 + i}", f"GPIO{i}", {"1": f"GPIO{i}"}, footprint=TP, bom=False)
     # I2C on GPIO6 (SCL) and GPIO7 (SDA): EEPROM 0x50, TMP102 0x48, ADS1115 0x49, MCP4725 0x60
-    s.add("Device", "R", "R46", "4.7k", {"1": "VDD_IO", "2": "GPIO6"}, footprint=R0603)
-    s.add("Device", "R", "R47", "4.7k", {"1": "VDD_IO", "2": "GPIO7"}, footprint=R0603)
+    s.add("Device", "R", "R46", "4.7k", {"1": "+3V3", "2": "GPIO6"}, footprint=R0603)
+    s.add("Device", "R", "R47", "4.7k", {"1": "+3V3", "2": "GPIO7"}, footprint=R0603)
     s.add("Memory_EEPROM", "24LC256", "U10", "24LC256", {"A0": "GND", "A1": "GND", "A2": "GND", "GND": "GND",
                                                         "SDA": "GPIO7", "SCL": "GPIO6", "WP": "GND", "VCC": "+3V3"},
           footprint="Package_SO:SOIC-8_3.9x4.9mm_P1.27mm")

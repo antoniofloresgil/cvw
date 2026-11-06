@@ -18,7 +18,16 @@ ring and are provisional until the bonding plan.
 The PCB (`mcu_board.kicad_pcb`, 110 x 85 mm, four layers: In1 GND, In2 +3V3) is placed by `mcu_pcb.py`,
 which reads the schematic's netlist, loads the footprints, gives the pads their nets, places the parts
 by function (`FIXED` positions and `GROUPS` packed beside the part they serve) and writes the design
-rules into `mcu_board.kicad_pro`. It is not routed yet; `mcu_board_top.png` is KiCad's 3D render.
+rules into `mcu_board.kicad_pro`. `route.py` then routes it with Freerouting (2.5.0, run without its GUI):
+it first gives every SMD pad of GND and +3V3 a locked via to its plane, exports the board as Specctra DSN,
+routes F.Cu and B.Cu, and imports the result. `mcu_board_top.png` and `mcu_board_bottom.png` are KiCad's
+3D renders.
+
+    python3 mcu_pcb.py && python3 route.py      # about 5 minutes; regenerating discards the routing
+
+Routing result: DRC with 0 unconnected items and no electrical violation (only silkscreen warnings),
+the board matches the schematic. Not yet done: the USB pair as a 90 ohm differential pair, the
+silkscreen clean-up, the manufacturing files.
 
     python3 mcu_pcb.py                                         # the system Python, which has pcbnew
     kicad-cli pcb drc --refill-zones --schematic-parity mcu_board.kicad_pcb
