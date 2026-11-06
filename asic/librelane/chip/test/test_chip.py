@@ -8,6 +8,7 @@ flash, which the bootloader rejects, loads it through the JTAG port instead, as 
 halts the hart, loads the program with System Bus Access, turns the instruction trace on, resumes
 the hart at the program, then halts it again and reads the trace back, which etracedecode.py
 ($WALLY/testbench/debug/etrace) decodes into the program's path.
+atomics runs atomics.S from the flash: the atomic memory operations and LR/SC on the RAM, and misa.A.
 mcu_peripherals boots mcu.S the same way and checks the timer, I2C, RTC and watchdog through the
 pads: PWM duty cycles on GPIO0 and GPIO1, a capture of an edge the test puts on GPIO2, an I2C slave
 (i2c_slave) on GPIO6 and GPIO7, the RTC alarm, and the reset the unserviced watchdog causes.
@@ -129,6 +130,15 @@ async def boot_over_uart(dut):
         await uart_send(dut, byte)
     assert await uart_recv(dut) == sum(program) & 0xFF, "wrong checksum"
     await check_program_output(dut)
+
+
+@cocotb.test()
+async def atomics(dut):
+    """The A extension (Zaamo and Zalrsc): atomics.S sends 'P' if every operation gave the right result."""
+    program = (HERE / "build/atomics.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    result = await uart_recv(dut)
+    assert result == ord("P"), f"atomics.S failed check {chr(result)!r}"
 
 
 ###########################################################################################
@@ -411,6 +421,9 @@ def main():
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "hello.elf", build / "hello.bin"], check=True)
     subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imc_zicsr", "-mabi=ilp32", "-nostdlib",
                     "-Wl,-Ttext=0x80000000", "-o", build / "mcu.elf", HERE / "mcu.S"], check=True)
+    subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imac_zicsr", "-mabi=ilp32", "-nostdlib",
+                    "-Wl,-Ttext=0x80000000", "-o", build / "atomics.elf", HERE / "atomics.S"], check=True)
+    subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "atomics.elf", build / "atomics.bin"], check=True)
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "mcu.elf", build / "mcu.bin"], check=True)
 
     lib = pdk.name.removeprefix("ihp-")              # sg13g2 or sg13cmos5l

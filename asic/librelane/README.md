@@ -54,6 +54,9 @@ Configurations:
   the hart, loads the program with System Bus Access, turns the instruction trace on, resumes the
   hart at the program, halts it again and decodes the trace it reads back
   (`$WALLY/testbench/debug/etrace/etracedecode.py`).
+- `asic_soc_rv32imc` is an RV32IMAC core: the A extension (`ZAAMO_SUPPORTED`, `ZALRSC_SUPPORTED`; atomics
+  only on the RAM, as the PMA checker allows) adds 1,168 cells (+2.0 %, +1.0 % of the area) in Yosys.
+  `chipsim`'s `atomics` test runs `chip/test/atomics.S`. The name keeps `imc`.
 - `asic_soc_rv32imc` also has the microcontroller peripherals of
   [ADR 0022](../../docs/engineering/decisions/0022-asic-microcontroller.md) (`MCU_SUPPORTED`,
   `src/uncore/mcu/`, APB region at 0x10080000, PLIC sources 15-18): a timer with four PWM or
