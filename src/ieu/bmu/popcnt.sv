@@ -16,6 +16,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
+// WIDTH must be a power of two (cnt.sv uses 32 and 64).
 module popcnt #(parameter WIDTH = 32) (
   input  logic [WIDTH-1:0]        num,    // number to count total ones
   output logic [$clog2(WIDTH):0]  PopCnt  // the total number of ones
