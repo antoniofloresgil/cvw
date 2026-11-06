@@ -32,10 +32,10 @@ module singlecore_peripherals_tb import cvw::*; #(
         .PREADY(crdy[2]), .MTIME(timevalue[2]), .MTimerInt(mtip[2]), .MSwInt(msip[2]));
     plic_apb #(C) baseplic(.PCLK(clk), .PRESETn(rstn), .PSEL(sel && !cl), .PADDR(addr),
         .PWDATA(data), .PSTRB(strb), .PWRITE(wr), .PENABLE(enable), .PRDATA(pq[0]), .PREADY(prdy[0]),
-        .UARTIntr(uart), .GPIOIntr(1'b0), .SPIIntr(1'b0), .SDCIntr(1'b0), .PWMIntr('0), .MExtInt(meip[0]), .SExtInt(seip[0]));
+        .UARTIntr(uart), .GPIOIntr(1'b0), .SPIIntr(1'b0), .SDCIntr(1'b0), .PWMIntr('0), .MCUIntr('0), .MExtInt(meip[0]), .SExtInt(seip[0]));
     plic_multicore_apb #(.P(C), .NCORES(1)) smpplic(.PCLK(clk), .PRESETn(rstn), .PSEL(sel && !cl), .PADDR(addr),
         .PWDATA(data), .PSTRB(strb), .PWRITE(wr), .PENABLE(enable), .PRDATA(pq[1]), .PREADY(prdy[1]),
-        .UARTIntr(uart), .GPIOIntr(1'b0), .SPIIntr(1'b0), .SDCIntr(1'b0), .PWMIntr('0), .MExtInt(meip[1]), .SExtInt(seip[1]));
+        .UARTIntr(uart), .GPIOIntr(1'b0), .SPIIntr(1'b0), .SDCIntr(1'b0), .PWMIntr('0), .MCUIntr('0), .MExtInt(meip[1]), .SExtInt(seip[1]));
     plic_upstream_apb #(C) refplic(.PCLK(clk), .PRESETn(rstn), .PSEL(sel && !cl), .PADDR(addr),
         .PWDATA(data), .PSTRB(strb), .PWRITE(wr), .PENABLE(enable), .PRDATA(pq[2]), .PREADY(prdy[2]),
         .UARTIntr(uart), .GPIOIntr(1'b0), .SPIIntr(1'b0), .SDCIntr(1'b0), .PWMIntr('0), .MExtInt(meip[2]), .SExtInt(seip[2]));

@@ -190,6 +190,9 @@ localparam logic [63:0] SPI_RANGE        = 64'h00000FFF;
 localparam logic PWM_SUPPORTED = 1;
 localparam logic [63:0] PWM_BASE         = 64'h10020000;
 localparam logic [63:0] PWM_RANGE        = 64'h000000FF;
+localparam logic MCU_SUPPORTED = 0;
+localparam logic [63:0] MCU_BASE         = 64'h10080000;
+localparam logic [63:0] MCU_RANGE        = 64'h0000FFFF;
 
 // Bus Interface width
 localparam AHBW = (XLEN);
@@ -217,6 +220,7 @@ localparam PLIC_UART_ID = 32'd10;
 localparam PLIC_SPI_ID = 32'd6;
 localparam PLIC_SDC_ID = 32'd9;
 localparam PLIC_PWM_ID = 32'd11; // base of a contiguous block of 4, one per PWM comparator
+localparam PLIC_MCU_ID = 32'd0;  // base of a contiguous block of 4 (timer, watchdog, I2C, RTC), 0 = none
 
 // Branch prediction
 localparam logic BPRED_SUPPORTED = 1;

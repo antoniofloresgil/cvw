@@ -74,7 +74,15 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic                       NDMReset;
   logic [NCORES-1:0]          HartReset;
   synchronizer resetsync(.clk, .d(reset_ext), .q(PowerOnReset));
-  assign reset = PowerOnReset | NDMReset;
+  // The watchdog's reset request (MCU_SUPPORTED) resets everything but the Debug Module.  It is held
+  // for 16 clocks: the reset clears the watchdog, which drops the request.
+  logic                       WDTReset;         // from the watchdog in the uncore
+  logic [3:0]                 WDTHold;
+  always_ff @(posedge clk)
+    if (PowerOnReset)         WDTHold <= 4'd0;
+    else if (WDTReset)        WDTHold <= 4'd15;
+    else if (WDTHold != 4'd0) WDTHold <= WDTHold - 4'd1;
+  assign reset = PowerOnReset | NDMReset | (WDTHold != 4'd0);
   assign CoreReset = {NCORES{reset}} | HartReset;
 
   // AHB between the memory system and the uncore, and the Debug Module's System Bus Access
@@ -186,10 +194,10 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HRDATAEXT,
       .HREADYEXT, .HRESPEXT, .HRDATA(UncoreHRDATA), .HREADY, .HRESP, .HSELEXT,
       .MTimerInt, .MSwInt, .MExtInt, .SExtInt, .GPIOIN, .GPIOOUT, .GPIOEN, .UARTSin,
-      .UARTSout, .MTIME_CLINT, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO);
+      .UARTSout, .MTIME_CLINT, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO, .WDTReset);
   end else begin
     assign {UncoreHRDATA, HREADY, HRESP, HSELEXT, MTimerInt, MSwInt, MExtInt, SExtInt,
-            MTIME_CLINT, GPIOOUT, GPIOEN, UARTSout, SPIOut, SPICS, SPICLK, SDCCmd, SDCCS, SDCCLK, PWMGPIO} = '0;
+            MTIME_CLINT, GPIOOUT, GPIOEN, UARTSout, SPIOut, SPICS, SPICLK, SDCCmd, SDCCS, SDCCLK, PWMGPIO, WDTReset} = '0;
   end
 
 endmodule

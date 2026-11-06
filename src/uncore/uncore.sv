@@ -49,29 +49,36 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   output logic                 SDCCmd,
   output logic [3:0]           SDCCS,
   output logic                 SDCCLK,
-  output logic [3:0]           PWMGPIO
+  output logic [3:0]           PWMGPIO,
+  output logic                 WDTReset                   // from the MCU peripherals' watchdog
 );
 
   logic [P.XLEN-1:0]           HREADRam;
 
-  logic [12:0]                 HSELRegions;
-  logic                        HSELDTIM, HSELIROM, HSELRam, HSELCLINT, HSELPLIC, HSELGPIO, HSELUART, HSELSDC, HSELSPI, HSELPWM;
-  logic                        HSELDTIMD, HSELIROMD, HSELEXTD, HSELRamD, HSELCLINTD, HSELPLICD, HSELGPIOD, HSELUARTD, HSELSDCD, HSELSPID, HSELPWMD;
+  logic [13:0]                 HSELRegions;
+  logic                        HSELDTIM, HSELIROM, HSELRam, HSELCLINT, HSELPLIC, HSELGPIO, HSELUART, HSELSDC, HSELSPI, HSELPWM, HSELMCU;
+  logic                        HSELDTIMD, HSELIROMD, HSELEXTD, HSELRamD, HSELCLINTD, HSELPLICD, HSELGPIOD, HSELUARTD, HSELSDCD, HSELSPID, HSELPWMD, HSELMCUD;
   logic                        HRESPRam, HREADYRam;
   logic [P.XLEN-1:0]           HREADBootRom;
   logic                        HSELBootRom, HSELBootRomD, HRESPBootRom, HREADYBootRom;
   logic                        HSELNoneD;
   logic                        UARTIntr, GPIOIntr, SPIIntr;
+  // The MCU peripherals' pins are GPIO alternate function 1 (IOF_SEL set): timer channels 0-3 on
+  // GPIO 0-3, I2C SCL and SDA on GPIO 4 and 5 (open drain: the line is pulled low while the output
+  // enable is set).  Their inputs read the pads, whatever the GPIO's own input enable.
+  logic [3:0]                  TimerPWMOut, TimerPWMEn;
+  logic                        I2CSCLDrive, I2CSDADrive;
+  logic [3:0]                  MCUIntr;                     // timer, watchdog, I2C, RTC: four consecutive PLIC sources
   logic [3:0]                  PWMIntr;                     // one PLIC source per PWM comparator, as in the FU540
 
   logic                        PCLK, PRESETn, PWRITE, PENABLE;
-  logic [6:0]                  PSEL;
+  logic [7:0]                  PSEL;
   logic [31:0]                 PADDR;
   logic [P.XLEN-1:0]           PWDATA;
   logic [P.XLEN/8-1:0]         PSTRB;
   /* verilator lint_off UNDRIVEN */ // undriven in rv32e configuration
-  logic [6:0]                  PREADY;
-  logic [6:0][P.XLEN-1:0]      PRDATA;
+  logic [7:0]                  PREADY;
+  logic [7:0][P.XLEN-1:0]      PRDATA;
   /* verilator lint_on UNDRIVEN */
   logic [P.XLEN-1:0]           HREADBRIDGE;
   logic                        HRESPBRIDGE, HREADYBRIDGE, HSELBRIDGE, HSELBRIDGED;
@@ -84,14 +91,14 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   adrdecs #(P) adrdecs(HADDR, 1'b1, 1'b1, 1'b1, HSIZE[1:0], HSELRegions);
 
   // unswizzle HSEL signals
-  assign {HSELPWM, HSELSPI, HSELSDC, HSELPLIC, HSELUART, HSELGPIO, HSELCLINT, HSELRam, HSELBootRom, HSELEXT, HSELIROM, HSELDTIM} = HSELRegions[12:1];
+  assign {HSELMCU, HSELPWM, HSELSPI, HSELSDC, HSELPLIC, HSELUART, HSELGPIO, HSELCLINT, HSELRam, HSELBootRom, HSELEXT, HSELIROM, HSELDTIM} = HSELRegions[13:1];
 
   // AHB -> APB bridge
-  ahbapbbridge #(P, 7) ahbapbbridge (
-    .HCLK, .HRESETn, .HSEL({HSELPWM, HSELSDC, HSELSPI, HSELUART, HSELPLIC, HSELCLINT, HSELGPIO}), .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HTRANS, .HREADY,
+  ahbapbbridge #(P, 8) ahbapbbridge (
+    .HCLK, .HRESETn, .HSEL({HSELMCU, HSELPWM, HSELSDC, HSELSPI, HSELUART, HSELPLIC, HSELCLINT, HSELGPIO}), .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HTRANS, .HREADY,
     .HRDATA(HREADBRIDGE), .HRESP(HRESPBRIDGE), .HREADYOUT(HREADYBRIDGE),
     .PCLK, .PRESETn, .PSEL, .PWRITE, .PENABLE, .PADDR, .PWDATA, .PSTRB, .PREADY, .PRDATA);
-  assign HSELBRIDGE = HSELGPIO | HSELCLINT | HSELPLIC | HSELUART | HSELSPI | HSELSDC | HSELPWM; // if any of the bridge signals are selected
+  assign HSELBRIDGE = HSELGPIO | HSELCLINT | HSELPLIC | HSELUART | HSELSPI | HSELSDC | HSELPWM | HSELMCU; // if any of the bridge signals are selected
 
   // on-chip RAM
   if (P.UNCORE_RAM_SUPPORTED) begin : ram
@@ -120,10 +127,10 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
 
   if (P.PLIC_SUPPORTED == 1 && NCORES == 1) begin : plic
     plic_apb #(P) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
-      .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MExtInt, .SExtInt);
+      .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MCUIntr, .MExtInt, .SExtInt);
   end else if (P.PLIC_SUPPORTED == 1) begin : plic
     plic_multicore_apb #(.P(P), .NCORES(NCORES)) plic(.PCLK, .PRESETn, .PSEL(PSEL[2]), .PADDR(PADDR[27:0] - 28'(P.PLIC_BASE)), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
-      .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MExtInt, .SExtInt);
+      .PRDATA(PRDATA[2]), .PREADY(PREADY[2]), .UARTIntr, .GPIOIntr, .SDCIntr, .SPIIntr, .PWMIntr, .MCUIntr, .MExtInt, .SExtInt);
   end else begin : plic
     assign MExtInt = '0;
     assign SExtInt = '0;
@@ -133,7 +140,8 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
     gpio_apb #(P) gpio(
       .PCLK, .PRESETn, .PSEL(PSEL[0]), .PADDR(PADDR[7:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[0]), .PREADY(PREADY[0]),
-      .iof0({28'b0, PWMGPIO[3:0]}), .iof1('0), .GPIOIN, .GPIOOUT, .GPIOEN, .GPIOIntr);
+      .iof0({28'b0, PWMGPIO[3:0]}), .iof1({28'b0, TimerPWMOut}),
+      .iof1oen({26'b0, I2CSDADrive, I2CSCLDrive, TimerPWMEn}), .GPIOIN, .GPIOOUT, .GPIOEN, .GPIOIntr);
   end else begin : gpio
     assign GPIOOUT = '0; assign GPIOEN = '0; assign GPIOIntr = 1'b0;
   end
@@ -176,6 +184,17 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
     assign PWMIntr = '0; assign PWMGPIO = '0;
   end
 
+  if (P.MCU_SUPPORTED == 1) begin : mcu
+    mcu_apb #(P) mcu(
+      .PCLK, .PRESETn, .PSEL(PSEL[7]), .PADDR(PADDR[15:0]), .PWDATA, .PWRITE, .PENABLE,
+      .PREADY(PREADY[7]), .PRDATA(PRDATA[7]), .MCUIntr,
+      .TimerCaptureIn(GPIOIN[3:0]), .TimerPWMOut, .TimerPWMEn, .I2CSCLIn(GPIOIN[4]), .I2CSDAIn(GPIOIN[5]),
+      .I2CSCLDrive, .I2CSDADrive, .WDTReset);
+  end else begin : mcu
+    assign MCUIntr = '0; assign TimerPWMOut = '0; assign TimerPWMEn = '0;
+    assign I2CSCLDrive = 1'b0; assign I2CSDADrive = 1'b0; assign WDTReset = 1'b0;
+  end
+
   // AHB Read Multiplexer
   assign HRDATA = ({P.XLEN{HSELRamD}} & HREADRam) |
                   ({P.XLEN{HSELEXTD}} & HRDATAEXT) |
@@ -198,8 +217,8 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   // takes more than 1 cycle to respond it needs to hold on to the old select until the
   // device is ready.  Hence this register must be selectively enabled by HREADY.
   // However on reset None must be selected.
-  flopenl #(13) hseldelayreg(HCLK, ~HRESETn, HREADY, HSELRegions, 13'b1,
-    {HSELPWMD, HSELSPID, HSELSDCD, HSELPLICD, HSELUARTD, HSELGPIOD, HSELCLINTD,
+  flopenl #(14) hseldelayreg(HCLK, ~HRESETn, HREADY, HSELRegions, 14'b1,
+    {HSELMCUD, HSELPWMD, HSELSPID, HSELSDCD, HSELPLICD, HSELUARTD, HSELGPIOD, HSELCLINTD,
       HSELRamD, HSELBootRomD, HSELEXTD, HSELIROMD, HSELDTIMD, HSELNoneD});
   flopenr #(1) hselbridgedelayreg(HCLK, ~HRESETn, HREADY, HSELBRIDGE, HSELBRIDGED);
 endmodule

@@ -19,7 +19,7 @@ module peripherals_tb import cvw::*;();
     plic_multicore_apb #(.P(P), .NCORES(N)) plic(.PCLK(clk), .PRESETn(rstn), .PSEL(sel && !clintsel),
         .PADDR(addr), .PWDATA(data), .PSTRB(strb), .PWRITE(write), .PENABLE(enable),
         .PRDATA(prdata), .PREADY(), .UARTIntr(uart), .GPIOIntr(1'b0), .SPIIntr(1'b0), .SDCIntr(1'b0),
-        .PWMIntr('0), .MExtInt(meip), .SExtInt(seip));
+        .PWMIntr('0), .MCUIntr('0), .MExtInt(meip), .SExtInt(seip));
 
     task automatic access(input bit cl, input bit wr, input int a, input logic [P.XLEN-1:0] d,
                                                 input logic [P.XLEN/8-1:0] st, output logic [P.XLEN-1:0] q);

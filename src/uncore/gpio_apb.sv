@@ -28,6 +28,7 @@ module gpio_apb import cvw::*; #(parameter cvw_t P) (
   output logic [P.XLEN-1:0]   PRDATA,
   output logic                PREADY,
   input  logic [31:0]         iof0, iof1,
+  input  logic [31:0]         iof1oen,                    // output enables of the pins whose IOF1 is selected
   input  logic [31:0]         GPIOIN,
   output logic [31:0]         GPIOOUT, GPIOEN,
   output logic                GPIOIntr
@@ -146,7 +147,9 @@ module gpio_apb import cvw::*; #(parameter cvw_t P) (
   assign iof_out   = iof_sel & iof1 | ~iof_sel & iof0;        // per-bit mux between iof1 and iof0
   assign gpio_out  = iof_en & iof_out | ~iof_en & output_val; // per-bit mux between IOF and output_val
   assign GPIOOUT   = gpio_out ^ out_xor;                      // per-bit flip output polarity
-  assign GPIOEN    = output_en;
+  // a pin whose IOF1 is selected takes its output enable from it too, so that an open-drain or an
+  // input-only function needs no software output enable
+  assign GPIOEN    = (iof_en & iof_sel & iof1oen) | (~(iof_en & iof_sel) & output_en);
 
   assign GPIOIntr  = |{(rise_ip & rise_ie), (fall_ip & fall_ie), (high_ip & high_ie), (low_ip & low_ie)};
 endmodule

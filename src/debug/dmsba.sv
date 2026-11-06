@@ -66,7 +66,7 @@ module dmsba import cvw::*; #(parameter cvw_t P) (
   // A request while an access is under way sets sbbusyerror; none starts while an error is pending
   logic SBAccessBusy, SBRequest, SBRequestWrite, SBNoErrors, SBSizeOK, SBAligned, SBAddressOK;
   logic [63:0] NewAddress;
-  logic [12:0] SelRegions;
+  logic [13:0] SelRegions;
   assign SBAccessBusy = DMActive && SBBusy &&
     ((Write && (DMIAddr == SBADDRESS0 || DMIAddr == SBADDRESS1 || DMIAddr == SBDATA0 || DMIAddr == SBDATA1)) ||
      (Read && (DMIAddr == SBDATA0 || DMIAddr == SBDATA1)));
@@ -86,7 +86,7 @@ module dmsba import cvw::*; #(parameter cvw_t P) (
   logic SelTrace;
   adrdec #(P.PA_BITS) tracedec(NewAddress[P.PA_BITS-1:0], P.TRACE_BASE[P.PA_BITS-1:0],
     P.TRACE_RANGE[P.PA_BITS-1:0], P.TRACE_SUPPORTED, 1'b1, SBAccess[1:0], 4'b0100, SelTrace);
-  assign SBAddressOK = (|SelRegions[12:3] || SelTrace) && (P.PA_BITS == 64 || NewAddress >> P.PA_BITS == 64'b0);
+  assign SBAddressOK = (|SelRegions[13:3] || SelTrace) && (P.PA_BITS == 64 || NewAddress >> P.PA_BITS == 64'b0);
   assign SBStart = SBRequest && SBSizeOK && SBAligned && SBAddressOK;
   assign SBStartWrite = SBRequestWrite;
 

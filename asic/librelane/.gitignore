@@ -1,0 +1,9 @@
+work/
+*.log
+chip/boot.elf
+chip/boot.bin
+chip/boot.mem
+chip/test/build/
+chip/test/results.xml
+chip/test/build.log
+chip/test/__pycache__/

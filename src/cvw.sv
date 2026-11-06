@@ -205,6 +205,9 @@ typedef struct packed {
   logic         PWM_SUPPORTED;
   logic [63:0]  PWM_BASE;
   logic [63:0]  PWM_RANGE;
+  logic         MCU_SUPPORTED;      // timer, watchdog, I2C and RTC of the open-ASIC chip (src/uncore/mcu)
+  logic [63:0]  MCU_BASE;
+  logic [63:0]  MCU_RANGE;
 
   // Test modes
 
@@ -224,6 +227,7 @@ typedef struct packed {
   int           PLIC_SPI_ID;
   int           PLIC_SDC_ID;
   int           PLIC_PWM_ID;
+  int           PLIC_MCU_ID;
 
   logic         BPRED_SUPPORTED;
   bpred_type_t  BPRED_TYPE;

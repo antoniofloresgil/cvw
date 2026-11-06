@@ -1,0 +1,63 @@
+{
+  "DESIGN_NAME": "sramtest",
+  "VERILOG_FILES": [
+    "dir::../../sramtest/sramtest.sv"
+  ],
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 30,
+  "FP_SIZING": "absolute",
+  "DIE_AREA": [
+    0,
+    0,
+    700,
+    600
+  ],
+  "MACROS": {
+    "RM_IHPSG13_1P_1024x32_c2_bm_bist": {
+      "gds": [
+        "pdk_dir::libs.ref/sg13g2_sram/gds/RM_IHPSG13_1P_1024x32_c2_bm_bist.gds"
+      ],
+      "lef": [
+        "pdk_dir::libs.ref/sg13g2_sram/lef/RM_IHPSG13_1P_1024x32_c2_bm_bist.lef"
+      ],
+      "vh": [
+        "dir::../../sram/RM_IHPSG13_1P_1024x32_c2_bm_bist_bb.v"
+      ],
+      "lib": {
+        "*typ*": [
+          "pdk_dir::libs.ref/sg13g2_sram/lib/RM_IHPSG13_1P_1024x32_c2_bm_bist_typ_1p20V_25C.lib"
+        ],
+        "*fast*": [
+          "pdk_dir::libs.ref/sg13g2_sram/lib/RM_IHPSG13_1P_1024x32_c2_bm_bist_fast_1p32V_m55C.lib"
+        ],
+        "*slow*": [
+          "pdk_dir::libs.ref/sg13g2_sram/lib/RM_IHPSG13_1P_1024x32_c2_bm_bist_slow_1p08V_125C.lib"
+        ]
+      },
+      "instances": {
+        "sram": {
+          "location": [
+            100,
+            150
+          ],
+          "orientation": "N"
+        }
+      }
+    }
+  },
+  "PDN_MACRO_CONNECTIONS": [
+    "sram VPWR VGND VDD! VSS!",
+    "sram VPWR VGND VDDARRAY! VSS!"
+  ],
+  "RUN_MAGIC_DRC": true,
+  "PDN_CFG": "dir::../../sram/pdn_cfg.tcl",
+  "MAGIC_GDS_FLATGLOB": [
+    "lvsres_*",
+    "*_CELL_SUB",
+    "VIA_M1_*",
+    "VIA_M2_*",
+    "RSC_*",
+    "*_CELL_CORNER"
+  ],
+  "ERROR_ON_MAGIC_DRC": false
+}
