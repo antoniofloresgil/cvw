@@ -9,7 +9,8 @@ step 4 (the MCU peripherals) is implemented and passes its tests, its silicon nu
 ## Context
 
 The chip is already most of a small microcontroller: an RV32IMAC core (the A extension, Zaamo and
-Zalrsc, was added for toolchains and RTOSes: +1.0 % area in Yosys), an AHB bus with
+Zalrsc, was added for toolchains and RTOSes: +1.0 % area in Yosys; PMP with 16 entries, for the
+memory protection of an RTOS such as Zephyr's User mode: +8.2 % more), an AHB bus with
 APB peripherals (the AMBA structure of Cortex-M3 parts), UART, SPI, 8 GPIOs and a
 4 KiB SRAM macro, in a pad ring of 24 pads (16 signal, 8 power) aimed at a QFN32
 package. The Debug Module of branch `riscv-debug` will provide the JTAG debug access

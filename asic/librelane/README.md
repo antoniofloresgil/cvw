@@ -57,6 +57,10 @@ Configurations:
 - `asic_soc_rv32imc` is an RV32IMAC core: the A extension (`ZAAMO_SUPPORTED`, `ZALRSC_SUPPORTED`; atomics
   only on the RAM, as the PMA checker allows) adds 1,168 cells (+2.0 %, +1.0 % of the area) in Yosys.
   `chipsim`'s `atomics` test runs `chip/test/atomics.S`. The name keeps `imc`.
+  It also has PMP with 16 entries (`PMP_ENTRIES`, the smallest Wally has, grain 4 bytes) for an RTOS's
+  memory protection: +7,851 cells (+12.9 %, +8.2 % of the area) in Yosys. `chipsim`'s `pmp` test runs
+  `chip/test/pmp.S`: the PMP CSRs, User mode against regions with R+X, R+W, R and no entry, and a locked
+  entry that stops Machine mode too.
 - `asic_soc_rv32imc` also has the microcontroller peripherals of
   [ADR 0022](../../docs/engineering/decisions/0022-asic-microcontroller.md) (`MCU_SUPPORTED`,
   `src/uncore/mcu/`, APB region at 0x10080000, PLIC sources 15-18): a timer with four PWM or
