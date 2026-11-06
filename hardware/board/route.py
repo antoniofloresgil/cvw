@@ -14,6 +14,7 @@ Freerouting runs in a clean environment: from VS Code's snap, Java would load th
 import argparse
 import os
 import subprocess
+from itertools import pairwise
 from pathlib import Path
 
 import pcbnew
@@ -95,7 +96,7 @@ def usb_pair(board):
     # to what sits at one of its ends
     for net, start, stops, end in ((dn, b7, [v2, v4], dm), (dp, a6, [V(e1.x, a6.y)], dpp)):
         points = [start] + sorted(stops, key=lambda q: q.x) + [end]
-        for a, b in zip(points, points[1:]):
+        for a, b in pairwise(points):
             track(a, b, net)
     return pcbnew.ToMM(dm.x - b7.x), pcbnew.ToMM(dpp.x - a6.x)
 
