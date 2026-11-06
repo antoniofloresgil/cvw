@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-// Chip top of asic_soc_rv32imc: Wally's SoC inside an IHP pad ring, after the layout of IHP's
+// Chip top of asic_soc_rv32imac: Wally's SoC inside an IHP pad ring, after the layout of IHP's
 // LibreLane template (github.com/IHP-GmbH/ihp-sg13-librelane-template, src/chip_top.sv).  The pads
 // are those of SG13G2, or of SG13CMOS5L with SG13CMOS5L defined.
 // 20 signal pads (clock, reset, UART, SPI, 8 GPIOs, JTAG) and 8 power pads, two of each on opposite

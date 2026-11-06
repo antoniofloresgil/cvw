@@ -133,7 +133,7 @@ Lockstep mode runs Wally in lock-step against ImperasDV (commercial) or the RISC
 Open-tool RTL-to-GDS for a Wally configuration (IHP SG13G2 or SG13CMOS5L, LibreLane 3.1.0.dev4 through Nix, the IHP PDK it pins fetched by ciel), in `asic/librelane/`; see its `README.md`.
 ```bash
 cd asic/librelane && make CONFIG=syn_rv32imc        # synthesis to GDS, DRC, LVS at 40 ns (a few hours)
-make CONFIG=asic_soc_rv32imc                        # the chip: SoC in a pad ring, UART bootloader
+make CONFIG=asic_soc_rv32imac                        # the chip: SoC in a pad ring, UART bootloader
 make chipsim                                        # cocotb RTL test of the chip (oss-cad-suite)
 make boardsim                                       # the chip on the KiCad test board's netlist (hardware/board/sim, needs kicad-cli)
 make PDK=ihp-sg13cmos5l CONFIG=asic_rv32imc         # SG13CMOS5L, in work/<CONFIG>-sg13cmos5l

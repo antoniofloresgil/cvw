@@ -5,7 +5,7 @@
     gen_board.py [mcu_board.kicad_sch | netlist.xml] [board.sv]
 
 The netlist (kicad-cli's XML export) is the board as drawn.  This script turns it into a module `board`
-that wires chip_top (the asic_soc_rv32imc RTL) and the behavioural models in models.sv exactly as the
+that wires chip_top (the asic_soc_rv32imac RTL) and the behavioural models in models.sv exactly as the
 schematic does, so a simulation exercises the board's wiring, not a description of it:
 
   - nets joined by a series part (ferrite, fuse, an installed jumper, a resistor between two signal nets)
@@ -64,7 +64,7 @@ PARTS = {
     "Analog_DAC:MCP4725xxx-xCH": ("mcp4725", {"A0": "a0", "SCL": "scl", "SDA": "sda"}, {}),
 }
 SWITCHES = ("Switch:SW_Push", "Switch:SW_DIP_x06")
-CHIP = "mcu_board:asic_soc_rv32imc"
+CHIP = "mcu_board:asic_soc_rv32imac"
 
 # Supply pins: lib:part -> {pin function: (min V, max V)}; ground pins must be on GND
 SUPPLY = {

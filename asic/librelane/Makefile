@@ -5,7 +5,7 @@
 #   make synth CONFIG=syn_rv32imc        synthesis only
 #   make check CONFIG=sramtest           DRC check of the newest run of a design with SRAM macros
 #   make sramsim                         sram/ram1p1rwbe.sv with the macro's model against Wally's RAM
-#   make CONFIG=asic_soc_rv32imc         a chip: Wally's SoC in a pad ring (chip/), Chip flow
+#   make CONFIG=asic_soc_rv32imac         a chip: Wally's SoC in a pad ring (chip/), Chip flow
 #   make chipsim                         cocotb test of that chip: boots a program from SPI flash,
 #                                        over the UART and through JTAG
 #   make boardsim                        the same chip on the netlist of the KiCad test board
@@ -60,13 +60,13 @@ check:
 	cd $(WORK) && $(NIX) python3 $(CURDIR)/check_drc.py
 
 chipsim: $(IHP_PDK)
-	$(MAKE) inputs CONFIG=asic_soc_rv32imc
-	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imc$(SUFFIX) \
+	$(MAKE) inputs CONFIG=asic_soc_rv32imac
+	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imac$(SUFFIX) \
 	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_chip.py
 
 boardsim: $(IHP_PDK)
-	$(MAKE) inputs CONFIG=asic_soc_rv32imc
-	cd $(WALLY)/hardware/board/sim && WALLY=$(WALLY) IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imc$(SUFFIX) \
+	$(MAKE) inputs CONFIG=asic_soc_rv32imac
+	cd $(WALLY)/hardware/board/sim && WALLY=$(WALLY) IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imac$(SUFFIX) \
 	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_board.py
 
 pdk: $(IHP_PDK)

@@ -3,7 +3,7 @@
 Status: **accepted**; steps 1-3 (SPI-flash boot, 32 KiB RAM, debug and trace) are implemented,
 step 4 (the MCU peripherals) is implemented and passes its tests, its silicon numbers are in the
 [experiment record](../experiments/2026-11-02-open-asic-flow.md). Applies to the chip of the
-[open ASIC flow](../experiments/2026-11-02-open-asic-flow.md) (`asic_soc_rv32imc`,
+[open ASIC flow](../experiments/2026-11-02-open-asic-flow.md) (`asic_soc_rv32imac`,
 `asic/librelane/chip/`), on branch `open-asic-flow`.
 
 ## Context

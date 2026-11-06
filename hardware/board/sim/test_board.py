@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-"""cocotb test of the MCU test board: the asic_soc_rv32imc RTL on the board's own netlist.
+"""cocotb test of the MCU test board: the asic_soc_rv32imac RTL on the board's own netlist.
 
 gen_board.py turns the KiCad schematic into build/board.sv, which wires chip_top and the models of
 models.sv (oscillator, reset supervisor, SPI flash, I2C devices, LED buffer, LEDs, the FT2232's pins)
@@ -10,8 +10,8 @@ the straps on its pins, that the UART runs at the baud rate the straps and the o
 the debugger and the reset line reach the chip, that every I2C device answers at its address, and that
 buttons, straps and LEDs sit on the GPIO pins they should.
 
-Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imc inputs` in asic/librelane
-(whose work/asic_soc_rv32imc/config.json lists the chip's sources):  tabbypy3 test_board.py
+Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imac inputs` in asic/librelane
+(whose work/asic_soc_rv32imac/config.json lists the chip's sources):  tabbypy3 test_board.py
 `make boardsim` there does both.
 """
 
@@ -325,7 +325,7 @@ def main():
     from cocotb_tools.check_results import get_results
     from cocotb_tools.runner import get_runner
 
-    work = Path(os.environ.get("WORK", WALLY / "asic/librelane/work/asic_soc_rv32imc"))
+    work = Path(os.environ.get("WORK", WALLY / "asic/librelane/work/asic_soc_rv32imac"))
     config = json.loads((work / "config.json").read_text())
     pdk = Path(os.environ.get("IHP_PDK", Path.home() / ".ciel/ciel/ihp-sg13/versions/"
                               "89d42ee6d2fd9b50b86a1aada6fee6673c3e6008/ihp-sg13g2"))

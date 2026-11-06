@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-# Bootloader image of asic_soc_rv32imc: boot.mem, one 32-bit word per line for the 512-byte BOOTROM.
+# Bootloader image of asic_soc_rv32imac: boot.mem, one 32-bit word per line for the 512-byte BOOTROM.
 
 CROSS ?= riscv64-unknown-elf-
 WORDS := 128

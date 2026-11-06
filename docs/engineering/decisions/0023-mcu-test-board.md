@@ -4,7 +4,7 @@ Status: accepted (2026-11-06)
 
 ## Context
 
-`asic_soc_rv32imc` (ADR 0022) is a microcontroller in a pad ring of 28 pads (20 signal, 8 power) for a
+`asic_soc_rv32imac` (ADR 0022) is a microcontroller in a pad ring of 28 pads (20 signal, 8 power) for a
 QFN32 package. It is not fabricated yet, and its analog side (supplies, clock, reset supervision, flash,
 converters) cannot go in silicon. A board is needed to bring the chip up, debug it easily, and to
 validate the board and the firmware before the silicon exists. KiCad 10.0.8 is installed.
@@ -15,7 +15,7 @@ One board, in KiCad 10, under `hardware/board/`:
 
 - **Chip site.** The final QFN32 footprint (a QFN test socket once the package is known). Until silicon
   arrives, three Pmod headers (J5: clock, reset, UART, SPI; J6: GPIO0-7; J7: JTAG) carry the same nets at
-  3.3 V to an FPGA board (Nexys Video, Pmod cables) running `asic_soc_rv32imc` with the chip removed, so the
+  3.3 V to an FPGA board (Nexys Video, Pmod cables) running `asic_soc_rv32imac` with the chip removed, so the
   board, the straps, the bootloader and the firmware are checked first. Their VCC pins are left open, so
   that the board's and the FPGA's 3.3 V do not meet; the FPGA top for these pins is still to be written.
 - **Power.** USB-C 5 V, then an LDO to 3.3 V (IOVDD) and one to 1.2 V (VDD). The chip's two

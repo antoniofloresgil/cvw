@@ -156,7 +156,7 @@ LATCH_BASED_REGISTERFILE 0
 # The asic configurations keep the flop register file: with rv32imc's latch-based one (upstream
 # 6c75547b3), OpenROAD's clock tree synthesis treats the 32 row clock gates as macro sinks and loses
 # one of them, which fails the disconnected-pins check.
-deriv asic_soc_rv32imc rv32imc syn_rv32e
+deriv asic_soc_rv32imac rv32imc syn_rv32e
 LATCH_BASED_REGISTERFILE 0
 ZAAMO_SUPPORTED         1
 ZALRSC_SUPPORTED        1

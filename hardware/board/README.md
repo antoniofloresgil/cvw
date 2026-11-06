@@ -1,6 +1,6 @@
 # MCU test board
 
-KiCad 10 project for the test board of `asic_soc_rv32imc`; the decisions are in
+KiCad 10 project for the test board of `asic_soc_rv32imac`; the decisions are in
 `docs/engineering/decisions/0023-mcu-test-board.md`.
 
 The schematic is generated: `mcu_board.py` describes the parts and the net of each pin, and

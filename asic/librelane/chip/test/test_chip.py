@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-"""cocotb test of the asic_soc_rv32imc chip (RTL, with the IHP pad and SRAM models).
+"""cocotb test of the asic_soc_rv32imac chip (RTL, with the IHP pad and SRAM models).
 
 boot_from_flash has the bootloader (../boot.S) copy hello.S from an SPI flash, which spi_flash
 plays, and checks what the program prints and drives.  boot_over_uart loads it over the UART, with
@@ -13,8 +13,8 @@ pmp runs pmp.S: the PMP CSRs, User mode against three regions, and a locked entr
 mcu_peripherals boots mcu.S the same way and checks the timer, I2C, RTC and watchdog through the
 pads: PWM duty cycles on GPIO0 and GPIO1, a capture of an edge the test puts on GPIO2, an I2C slave
 (i2c_slave) on GPIO6 and GPIO7, the RTC alarm, and the reset the unserviced watchdog causes.
-Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imc inputs` (whose
-work/asic_soc_rv32imc/config.json lists the sources):  tabbypy3 test_chip.py
+Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imac inputs` (whose
+work/asic_soc_rv32imac/config.json lists the sources):  tabbypy3 test_chip.py
 `make chipsim` sets IHP_PDK (the process: .../ihp-sg13g2 or .../ihp-sg13cmos5l) and WORK.
 """
 
@@ -421,7 +421,7 @@ def main():
     from cocotb_tools.check_results import get_results
     from cocotb_tools.runner import get_runner
 
-    work = Path(os.environ.get("WORK", HERE.parents[1] / "work/asic_soc_rv32imc"))
+    work = Path(os.environ.get("WORK", HERE.parents[1] / "work/asic_soc_rv32imac"))
     config = json.loads((work / "config.json").read_text())
     pdk = Path(os.environ.get("IHP_PDK", Path.home() / ".ciel/ciel/ihp-sg13/versions/"
                               "89d42ee6d2fd9b50b86a1aada6fee6673c3e6008/ihp-sg13g2"))
