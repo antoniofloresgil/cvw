@@ -27,6 +27,8 @@ One board, in KiCad 10, under `hardware/board/`:
   For the peripherals: an I2C EEPROM and a temperature sensor as slaves for the I2C master, an external
   ADC and DAC on the SPI/I2C pins, and the timer's PWM and capture pins on test points.
 - **No expansion header** (user decision 2026-11-06).
+- **Base board first.** A Nano-format module (the chip, both regulators, clock, reset supervisor and flash on
+  18 x 45 mm, 20 signals on 2 x 15 pins at 3.3 V) is deferred; the base board gets a female socket for it later.
 
 ## Consequences
 
