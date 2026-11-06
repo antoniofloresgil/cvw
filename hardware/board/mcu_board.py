@@ -93,8 +93,8 @@ def power(s):
     for i, (net, vals) in enumerate((("+3V3", ["10u", "100n"]), ("+1V2", ["10u", "100n"]))):
         for j, v in enumerate(vals):
             s.add("Device", "C", f"C{3 + 2 * i + j}", v, {"1": net, "2": "GND"}, footprint=C0805 if "u" in v else C0603)
-    s.add("Connector_Generic", "Conn_01x02", "JP1", "VDD_IO (ammeter)", {"1": "+3V3", "2": "VDD_IO"}, footprint=HDR2)
-    s.add("Connector_Generic", "Conn_01x02", "JP2", "VDD_CORE (ammeter)", {"1": "+1V2", "2": "VDD_CORE"}, footprint=HDR2)
+    s.add("Connector_Generic", "Conn_01x02", "JP1", "Pin header 1x02 2.54mm + jumper", {"1": "+3V3", "2": "VDD_IO"}, footprint=HDR2)
+    s.add("Connector_Generic", "Conn_01x02", "JP2", "Pin header 1x02 2.54mm + jumper", {"1": "+1V2", "2": "VDD_CORE"}, footprint=HDR2)
     for i, (net, r) in enumerate((("+5V", "2.2k"), ("+3V3", "1k"))):
         s.add("Device", "R", f"R{3 + i}", r, {"1": net, "2": f"LED_{net[1:]}"}, footprint=R0603)
         s.add("Device", "LED", f"D{1 + i}", "green", {"A": f"LED_{net[1:]}", "K": "GND"}, footprint=LED0603)
@@ -139,10 +139,10 @@ def debug(s):
                                 ("FT_TXD", "UART_RX"), ("UART_TX", "FT_RXD"))):
         s.add("Device", "R", f"R{9 + i}", "33", {"1": a, "2": b}, footprint=R0603)
     s.add("Device", "R", "R15", "1k", {"1": "FT_NSRST", "2": "MR_N"}, footprint=R0603)
-    s.add("Connector_Generic", "Conn_02x05_Odd_Even", "J2", "JTAG (Cortex 10-pin)",
+    s.add("Connector_Generic", "Conn_02x05_Odd_Even", "J2", "Pin header 2x05 1.27mm (Cortex JTAG)",
           {"1": "VDD_IO", "2": "TMS", "3": "GND", "4": "TCK", "5": "GND", "6": "TDO", "7": "NC", "8": "TDI",
            "9": "GND", "10": "MR_N"}, footprint="Connector_PinHeader_1.27mm:PinHeader_2x05_P1.27mm_Vertical_SMD")
-    s.add("Connector_Generic", "Conn_01x03", "J3", "UART", {"1": "GND", "2": "UART_TX", "3": "UART_RX"},
+    s.add("Connector_Generic", "Conn_01x03", "J3", "Pin header 1x03 2.54mm", {"1": "GND", "2": "UART_TX", "3": "UART_RX"},
           footprint="Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical")
 
 
@@ -156,9 +156,9 @@ def chip(s):
     s.add("Oscillator", "ASE-xxxMHz", "X1", "18.432MHz", {"EN": "+3V3", "Vdd": "+3V3", "GND": "GND", "OUT": "OSC_OUT"})
     s.add("Device", "C", "C40", "100n", {"1": "+3V3", "2": "GND"}, footprint=C0603)
     s.add("Device", "R", "R16", "33", {"1": "OSC_OUT", "2": "CLK"}, footprint=R0603)
-    s.add("Power_Supervisor", "MAX811SEUS-T", "U7", "MAX811S (2.93 V)",
+    s.add("Power_Supervisor", "MAX811SEUS-T", "U7", "MAX811SEUS-T",
           {"VCC": "VDD_IO", "GND": "GND", "~{RESET}": "RST_N", "~{MR}": "MR_N"})
-    s.add("Switch", "SW_Push", "SW1", "RESET", {"1": "MR_N", "2": "GND"}, footprint=BUTTON)
+    s.add("Switch", "SW_Push", "SW1", "TL3342", {"1": "MR_N", "2": "GND"}, footprint=BUTTON)
     s.add("Memory_Flash", "W25Q32JVSS", "U8", "W25Q32JVSS",
           {"~{CS}": "SPI_CS", "CLK": "SPI_SCK", "DI/IO_{0}": "SPI_MOSI", "DO/IO_{1}": "SPI_MISO",
            "~{WP}/IO_{2}": "FLASH_WP_N", "~{HOLD}/~{RESET}/IO_{3}": "FLASH_HOLD_N", "VCC": "+3V3", "GND": "GND"})
@@ -171,7 +171,7 @@ def chip(s):
 
 def peripherals(s):
     # Straps: a DIP switch pulls GPIO0-5 up through 4.7k against a 47k pull-down (open: 0)
-    s.add("Switch", "SW_DIP_x06", "SW2", "BOOT STRAPS",
+    s.add("Switch", "SW_DIP_x06", "SW2", "DIP switch 6x slide",
           {**{str(i + 1): f"GPIO{i}" for i in range(6)}, **{str(12 - i): f"STRAP{i}" for i in range(6)}},
           footprint="Button_Switch_SMD:SW_DIP_SPSTx06_Slide_6.7x16.8mm_W8.61mm_P2.54mm_LowProfile")
     for i in range(6):
@@ -179,7 +179,7 @@ def peripherals(s):
         s.add("Device", "R", f"R{26 + i}", "47k", {"1": f"GPIO{i}", "2": "GND"}, footprint=R0603)
     for i in range(6):
         s.add("Device", "R", f"R{32 + i}", "1k", {"1": f"GPIO{i}", "2": f"BTN{i}"}, footprint=R0603)
-        s.add("Switch", "SW_Push", f"SW{3 + i}", f"GPIO{i}", {"1": f"BTN{i}", "2": "GND"}, footprint=BUTTON)
+        s.add("Switch", "SW_Push", f"SW{3 + i}", "TL3342", {"1": f"BTN{i}", "2": "GND"}, footprint=BUTTON)
     # LEDs through a buffer powered from +3V3
     s.add("74xx", "74AHC541", "U9", "74AHC541",
           {"G1": "GND", "G2": "GND", "GND": "GND", "VCC": "+3V3", **{f"A{i}": f"GPIO{i}" for i in range(8)},
@@ -187,7 +187,7 @@ def peripherals(s):
     s.add("Device", "C", "C42", "100n", {"1": "+3V3", "2": "GND"}, footprint=C0603)
     for i in range(8):
         s.add("Device", "R", f"R{38 + i}", "1k", {"1": f"LEDDRV{i}", "2": f"LEDA{i}"}, footprint=R0603)
-        s.add("Device", "LED", f"D{3 + i}", f"GPIO{i}", {"A": f"LEDA{i}", "K": "GND"}, footprint=LED0603)
+        s.add("Device", "LED", f"D{3 + i}", "green", {"A": f"LEDA{i}", "K": "GND"}, footprint=LED0603)
     for i in range(8):
         s.add("Connector", "TestPoint", f"TP{20 + i}", f"GPIO{i}", {"1": f"GPIO{i}"}, footprint=TP, bom=False)
     # I2C on GPIO6 (SCL) and GPIO7 (SDA): EEPROM 0x50, TMP102 0x48, ADS1115 0x49, MCP4725 0x60
@@ -207,15 +207,15 @@ def peripherals(s):
         s.add("Device", "C", f"C{43 + i}", "100n", {"1": "+3V3", "2": "GND"}, footprint=C0603)
     s.add("Device", "R_Potentiometer", "RV1", "10k", {"1": "+3V3", "2": "POT", "3": "GND"},
           footprint="Potentiometer_SMD:Potentiometer_Bourns_3314J_Vertical")
-    s.add("Connector_Generic", "Conn_01x04", "J4", "ANALOG", {"1": "AIN2", "2": "AIN3", "3": "DAC_OUT", "4": "GND"},
+    s.add("Connector_Generic", "Conn_01x04", "J4", "Pin header 1x04 2.54mm", {"1": "AIN2", "2": "AIN3", "3": "DAC_OUT", "4": "GND"},
           footprint="Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical")
 
 
 def fpga(s):
     # Pmod pinout: 1-4 and 7-10 signals, 5 and 11 GND, 6 and 12 VCC (left open: the FPGA board has its own 3.3 V)
-    groups = [("J5", "PMOD A", ["CLK", "RST_N", "UART_RX", "UART_TX", "SPI_SCK", "SPI_MOSI", "SPI_MISO", "SPI_CS"]),
-              ("J6", "PMOD B", [f"GPIO{i}" for i in range(8)]),
-              ("J7", "PMOD C", ["TCK", "TMS", "TDI", "TDO", "NC", "NC", "NC", "NC"])]
+    groups = [("J5", "Pin header 2x06 2.54mm right angle", ["CLK", "RST_N", "UART_RX", "UART_TX", "SPI_SCK", "SPI_MOSI", "SPI_MISO", "SPI_CS"]),
+              ("J6", "Pin header 2x06 2.54mm right angle", [f"GPIO{i}" for i in range(8)]),
+              ("J7", "Pin header 2x06 2.54mm right angle", ["TCK", "TMS", "TDI", "TDO", "NC", "NC", "NC", "NC"])]
     # The header's pads alternate between the rows (1 and 2 face each other): Pmod pin n of the top row
     # (1-6) is pad 2n-1, pin n+6 of the bottom row pad 2n.
     for ref, value, sig in groups:

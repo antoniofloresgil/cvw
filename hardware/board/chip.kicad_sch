@@ -4675,7 +4675,7 @@
 				)
 			)
 		)
-		(property "Value" "MAX811S (2.93 V)"
+		(property "Value" "MAX811SEUS-T"
 			(at 185.42 45.72 0)
 			(effects
 				(font
@@ -4819,7 +4819,7 @@
 				)
 			)
 		)
-		(property "Value" "RESET"
+		(property "Value" "TL3342"
 			(at 226.06 25.4 0)
 			(effects
 				(font

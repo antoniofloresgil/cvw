@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 """Routes mcu_board.kicad_pcb with Freerouting: exports the board as a Specctra DSN, runs
 Freerouting without its GUI, imports the session back and saves the board with its planes filled.
-The inner layers are planes (In1 GND, In2 +3V3): every SMD pad of those nets first gets a locked
-via beside it (fanout), and the router keeps to F.Cu and B.Cu for the rest.  Run with the system Python (pcbnew):
+The USB pair is routed first, coupled and matched (usb_pair).  The inner layers are planes (In1 GND,
+In2 +3V3): every SMD pad of those nets then gets a locked via beside it (fanout), and the router
+keeps to F.Cu and B.Cu for the rest.  Run with the system Python (pcbnew):
     python3 route.py [--jar freerouting.jar] [--passes 40]
+On a board that already has tracks it only routes what is still unconnected (run it again when the
+autorouter leaves a connection or two).
 Freerouting runs in a clean environment: from VS Code's snap, Java would load the snap's libraries.
 """
 
@@ -19,6 +22,110 @@ HERE = Path(__file__).resolve().parent
 
 
 PLANES = ("GND", "+3V3")      # the nets of In1 and In2
+
+
+def usb_pair(board):
+    """The USB pair, routed here and locked before the autorouter (which has no differential pairs):
+    J1's D- (B7) and D+ (A6) pads are level with the FT2232HL's DM (7) and DP (8), so the pair runs
+    straight and coupled on F.Cu, 0.30 mm tracks 0.20 mm apart, both the same length.  The other
+    orientation's pads join with short stubs: B6 (D+) along to the ESD diode's pin 1 and up to D+; A7
+    (D-) through two 0.4/0.2 mm vias and a B.Cu link to D-.  The ESD diode's D- (pin 4) reaches the
+    line the same way, and its twin pins (1-6, 3-4) are joined under its body.  Returns the length of each line between the connector and the FT2232HL."""
+    mm = pcbnew.FromMM
+    fp = {f.GetReference(): f for f in board.GetFootprints()}
+
+    def pad(ref, n):
+        return next(p for p in fp[ref].Pads() if p.GetNumber() == n)
+
+    dn, dp = board.FindNet("USB_DN"), board.FindNet("USB_DP")
+    b7, a6, a7, b6 = (pad("J1", n).GetPosition() for n in ("B7", "A6", "A7", "B6"))
+    dm, dpp = pad("U4", "7").GetPosition(), pad("U4", "8").GetPosition()
+    e1, e4 = pad("U1", "1").GetPosition(), pad("U1", "4").GetPosition()
+    e6, e3 = pad("U1", "6").GetPosition(), pad("U1", "3").GetPosition()
+    if b7.y != dm.y or a6.y != dpp.y:
+        raise SystemExit("USB pair: J1 and the FT2232HL's USB pins are not level; move J1 or U4")
+    V = pcbnew.VECTOR2I
+
+    def track(a, b, net, width=0.3, layer=pcbnew.F_Cu):
+        t = pcbnew.PCB_TRACK(board)
+        t.SetStart(a)
+        t.SetEnd(b)
+        t.SetWidth(mm(width))
+        t.SetLayer(layer)
+        t.SetNet(net)
+        t.SetLocked(True)
+        board.Add(t)
+
+    def via(at, net):
+        v = pcbnew.PCB_VIA(board)
+        v.SetPosition(at)
+        v.SetWidth(mm(0.4))
+        v.SetDrill(mm(0.2))
+        v.SetNet(net)
+        v.SetLocked(True)
+        board.Add(v)
+
+    track(e1, e6, dp, 0.2)                                      # the ESD diode's twin pins, under its body
+    track(e3, e4, dn, 0.2)
+    corner = V(e1.x, b6.y)                                      # B6 along to the ESD pin 1, which rises to D+
+    track(b6, corner, dp, 0.2)
+    track(corner, e1, dp, 0.2)
+    track(e1, V(e1.x, a6.y), dp, 0.2)
+    v1 = V(b7.x + mm(1.25), a7.y + mm(0.025))                   # A7 down between D+ and the B6 stub
+    v2 = V(v1.x + mm(0.7), b7.y)                                # and up again onto D-
+    track(a7, v1, dn, 0.2)
+    via(v1, dn)
+    track(v1, v2, dn, 0.2, pcbnew.B_Cu)
+    via(v2, dn)
+    v3 = V(e4.x + mm(1.05), e4.y)                               # ESD pin 4 under D+ onto D-
+    v4 = V(v3.x, b7.y)
+    track(e4, v3, dn, 0.2)
+    via(v3, dn)
+    track(v3, v4, dn, 0.2, pcbnew.B_Cu)
+    via(v4, dn)
+    # VBUS: the connector's two pairs of VBUS pads sit either side of the pair; a via in each (at the
+    # pad's inner half) and a B.Cu track under the connector join them
+    vb = board.FindNet("VBUS")
+    upper, lower = sorted({pad("J1", n).GetPosition().y for n in ("A4", "A9", "B4", "B9")})
+    vx = b7.x + mm(0.25)
+    via(V(vx, upper), vb)
+    via(V(vx, lower), vb)
+    track(V(vx, upper), V(vx, lower), vb, 0.3, pcbnew.B_Cu)
+    # the pair, broken at every via and junction on it: the router (and its DSN) only joins a track
+    # to what sits at one of its ends
+    for net, start, stops, end in ((dn, b7, [v2, v4], dm), (dp, a6, [V(e1.x, a6.y)], dpp)):
+        points = [start] + sorted(stops, key=lambda q: q.x) + [end]
+        for a, b in zip(points, points[1:]):
+            track(a, b, net)
+    return pcbnew.ToMM(dm.x - b7.x), pcbnew.ToMM(dpp.x - a6.x)
+
+
+def cleanup(board):
+    """Remove what the router leaves behind: isolated tracks shorter than 0.01 mm, and vias of a signal net that
+    no track reaches on one side or the other.  Everything is found first and removed at the end:
+    removing while KiCad's track list is being read breaks its Python binding."""
+    items = list(board.GetTracks())
+    tracks = [t for t in items if not isinstance(t, pcbnew.PCB_VIA)]
+    count = {}
+    for t in tracks:
+        for q in (t.GetStart(), t.GetEnd()):
+            key = (t.GetNetCode(), t.GetLayer(), q.x, q.y)
+            count[key] = count.get(key, 0) + 1
+    # a tiny track no other track meets at either end: the router's dot on a pad (a tiny track that
+    # joins two others at a bend is kept)
+    stubs = [t for t in tracks if t.GetLength() < pcbnew.FromMM(0.01) and not t.IsLocked()
+             and all(count[(t.GetNetCode(), t.GetLayer(), q.x, q.y)] == 1 for q in (t.GetStart(), t.GetEnd()))]
+    ends = {}
+    for t in tracks:
+        if t in stubs:
+            continue
+        for q in (t.GetStart(), t.GetEnd()):
+            ends.setdefault((t.GetNetCode(), q.x, q.y), set()).add(t.GetLayer())
+    dangling = [v for v in items if isinstance(v, pcbnew.PCB_VIA) and not v.IsLocked() and v.GetNetname() not in PLANES
+                and len(ends.get((v.GetNetCode(), v.GetPosition().x, v.GetPosition().y), ())) < 2]
+    for item in stubs + dangling:
+        board.Remove(item)
+    return len(stubs) + len(dangling)
 
 
 def seg_dist(p, a, b):
@@ -112,8 +219,12 @@ def main():
     dsn, ses = board_file.with_suffix(".dsn"), board_file.with_suffix(".ses")
     board = pcbnew.LoadBoard(str(board_file))
     if any(isinstance(t, pcbnew.PCB_TRACK) for t in board.GetTracks()):
-        raise SystemExit("the board already has tracks: regenerate it with mcu_pcb.py first")
-    print(f"fanout: {fanout(board)} vias to the planes", flush=True)
+        # a routed board: only what is still unconnected is routed, around everything already there
+        print("the board has tracks: routing only what is left", flush=True)
+    else:
+        dn_len, dp_len = usb_pair(board)
+        print(f"USB pair: D- {dn_len:.2f} mm, D+ {dp_len:.2f} mm", flush=True)
+        print(f"fanout: {fanout(board)} vias to the planes", flush=True)
     if not pcbnew.ExportSpecctraDSN(board, str(dsn)):
         raise SystemExit("DSN export failed")
     env = {"HOME": os.environ["HOME"], "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
@@ -121,6 +232,7 @@ def main():
                     "--gui.enabled=false"], check=True, env=env)
     if not pcbnew.ImportSpecctraSES(board, str(ses)):
         raise SystemExit("SES import failed")
+    print(f"clean-up: {cleanup(board)} zero-length tracks and dangling vias removed", flush=True)
     pcbnew.ZONE_FILLER(board).Fill(board.Zones())
     pcbnew.SaveBoard(str(board_file), board)
     print(f"routed: {board_file}")

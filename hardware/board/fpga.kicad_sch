@@ -948,7 +948,7 @@
 				)
 			)
 		)
-		(property "Value" "PMOD A"
+		(property "Value" "Pin header 2x06 2.54mm right angle"
 			(at 33.02 30.48 0)
 			(effects
 				(font
@@ -1390,7 +1390,7 @@
 				)
 			)
 		)
-		(property "Value" "PMOD B"
+		(property "Value" "Pin header 2x06 2.54mm right angle"
 			(at 76.2 30.48 0)
 			(effects
 				(font
@@ -1724,7 +1724,7 @@
 				)
 			)
 		)
-		(property "Value" "PMOD C"
+		(property "Value" "Pin header 2x06 2.54mm right angle"
 			(at 116.84 30.48 0)
 			(effects
 				(font

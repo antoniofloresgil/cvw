@@ -25,9 +25,23 @@ routes F.Cu and B.Cu, and imports the result. `mcu_board_top.png` and `mcu_board
 
     python3 mcu_pcb.py && python3 route.py      # about 5 minutes; regenerating discards the routing
 
-Routing result: DRC with 0 unconnected items and no electrical violation (only silkscreen warnings),
-the board matches the schematic. Not yet done: the USB pair as a 90 ohm differential pair, the
-silkscreen clean-up, the manufacturing files.
+`route.py` routes the USB pair itself first (straight and coupled, both lines 9.28 mm, 0.30 mm tracks
+0.20 mm apart: about 90-95 ohm on JLCPCB's JLC04161H-7628 stack-up, an estimate to confirm with their
+impedance calculator), joins the connector's second VBUS pair under it, and cleans up what the router
+leaves. The router is not deterministic: when a run leaves a connection, run both scripts again.
+`mcu_pcb.py --update-values` copies changed values from the schematic onto the routed board.
+
+Routing result: DRC with 0 unconnected items and no electrical violation; the only warnings are the
+Pmod footprints' silkscreen outline past the board edge, which the maker clips. The board matches the
+schematic.
+
+Manufacturing files (`fab/`, git-ignored):
+
+    python3 fab.py      # Gerbers + drill (zip), BOM and CPL in JLCPCB's columns, schematic and PCB PDFs
+
+U6 (the chip, in a hand-soldered QFN socket), the test points and the mounting holes are not
+assembled. The BOM leaves the LCSC column empty: JLCPCB's tool matches by value and footprint and
+prefers its basic parts.
 
     python3 mcu_pcb.py                                         # the system Python, which has pcbnew
     kicad-cli pcb drc --refill-zones --schematic-parity mcu_board.kicad_pcb

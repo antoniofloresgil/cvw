@@ -6515,7 +6515,7 @@
 				)
 			)
 		)
-		(property "Value" "VDD_IO (ammeter)"
+		(property "Value" "Pin header 1x02 2.54mm + jumper"
 			(at 220.98 25.4 0)
 			(effects
 				(font
@@ -6653,7 +6653,7 @@
 				)
 			)
 		)
-		(property "Value" "VDD_CORE (ammeter)"
+		(property "Value" "Pin header 1x02 2.54mm + jumper"
 			(at 246.38 25.4 0)
 			(effects
 				(font

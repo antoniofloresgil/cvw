@@ -9174,7 +9174,7 @@
 				)
 			)
 		)
-		(property "Value" "JTAG (Cortex 10-pin)"
+		(property "Value" "Pin header 2x05 1.27mm (Cortex JTAG)"
 			(at 347.98 30.48 0)
 			(effects
 				(font
@@ -9367,7 +9367,7 @@
 				)
 			)
 		)
-		(property "Value" "UART"
+		(property "Value" "Pin header 1x03 2.54mm"
 			(at 391.16 27.94 0)
 			(effects
 				(font

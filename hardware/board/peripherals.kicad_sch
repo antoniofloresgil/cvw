@@ -3998,7 +3998,7 @@
 				)
 			)
 		)
-		(property "Value" "BOOT STRAPS"
+		(property "Value" "DIP switch 6x slide"
 			(at 33.02 33.02 0)
 			(effects
 				(font
@@ -5942,7 +5942,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO0"
+		(property "Value" "TL3342"
 			(at 139.7 25.4 0)
 			(effects
 				(font
@@ -6200,7 +6200,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO1"
+		(property "Value" "TL3342"
 			(at 175.26 25.4 0)
 			(effects
 				(font
@@ -6458,7 +6458,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO2"
+		(property "Value" "TL3342"
 			(at 213.36 25.4 0)
 			(effects
 				(font
@@ -6716,7 +6716,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO3"
+		(property "Value" "TL3342"
 			(at 248.92 25.4 0)
 			(effects
 				(font
@@ -6974,7 +6974,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO4"
+		(property "Value" "TL3342"
 			(at 284.48 25.4 0)
 			(effects
 				(font
@@ -7232,7 +7232,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO5"
+		(property "Value" "TL3342"
 			(at 320.04 25.4 0)
 			(effects
 				(font
@@ -8450,7 +8450,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO0"
+		(property "Value" "green"
 			(at 25.4 81.28 0)
 			(effects
 				(font
@@ -8708,7 +8708,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO1"
+		(property "Value" "green"
 			(at 58.42 81.28 0)
 			(effects
 				(font
@@ -8966,7 +8966,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO2"
+		(property "Value" "green"
 			(at 93.98 81.28 0)
 			(effects
 				(font
@@ -9224,7 +9224,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO3"
+		(property "Value" "green"
 			(at 129.54 81.28 0)
 			(effects
 				(font
@@ -9482,7 +9482,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO4"
+		(property "Value" "green"
 			(at 162.56 81.28 0)
 			(effects
 				(font
@@ -9740,7 +9740,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO5"
+		(property "Value" "green"
 			(at 198.12 81.28 0)
 			(effects
 				(font
@@ -9998,7 +9998,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO6"
+		(property "Value" "green"
 			(at 233.68 81.28 0)
 			(effects
 				(font
@@ -10256,7 +10256,7 @@
 				)
 			)
 		)
-		(property "Value" "GPIO7"
+		(property "Value" "green"
 			(at 266.7 81.28 0)
 			(effects
 				(font
@@ -13678,7 +13678,7 @@
 				)
 			)
 		)
-		(property "Value" "ANALOG"
+		(property "Value" "Pin header 1x04 2.54mm"
 			(at 210.82 121.92 0)
 			(effects
 				(font
