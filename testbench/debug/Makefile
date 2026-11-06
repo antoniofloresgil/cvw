@@ -4,6 +4,7 @@
 #   make                          # debug_tb.sv drives the JTAG pins itself: debug_rv32imc and debug_rv64gc
 #   make CONFIGS=debug_rv64gc     # one configuration
 #   make CONFIGS=debug_rv32imc NHARTS=2   # a SoC with two harts (needs a configuration without caches)
+#   make COVERAGE=1 WORK=/tmp/dbgcov CONFIGS=debug_rv32imc   # with Verilator line coverage in <WORK>/<config>/coverage.dat
 #   make openocd                  # OpenOCD (openocd.cfg, openocd_test.tcl) on openocd_tb.sv through remote_bitbang
 # Needs $WALLY (source setup.sh), the derivative configurations (derivgen.pl) and, for
 # make openocd, OpenOCD 0.12 or later.
@@ -21,7 +22,7 @@ WORK    ?= $(WALLY)/sim/verilator/wkdir/debug
 JOBS    ?= 3
 
 SOURCES  = $(WALLY)/src/cvw.sv $(shell find $(WALLY)/src -name '*.sv' ! -name cvw.sv)
-VFLAGS   = --binary --timing -j $(JOBS) -GNHARTS=$(NHARTS) -Wno-fatal -Wno-lint -Wno-style -Wno-TIMESCALEMOD -I$(WALLY)/config/shared
+VFLAGS   = $(if $(COVERAGE),--coverage-line) --binary --timing -j $(JOBS) -GNHARTS=$(NHARTS) -Wno-fatal -Wno-lint -Wno-style -Wno-TIMESCALEMOD -I$(WALLY)/config/shared
 
 .PHONY: all openocd $(CONFIGS)
 all: $(CONFIGS)
@@ -37,7 +38,7 @@ endef
 
 $(CONFIGS):
 	$(call build,debug_tb,$@,$(WORK)/$@$(SUFFIX))
-	@$(WORK)/$@$(SUFFIX)/Vdebug_tb | tee $(WORK)/$@$(SUFFIX)/sim.log
+	@$(WORK)/$@$(SUFFIX)/Vdebug_tb $(if $(COVERAGE),+verilator+coverage+file+$(WORK)/$@$(SUFFIX)/coverage.dat) | tee $(WORK)/$@$(SUFFIX)/sim.log
 	@grep -q "SUCCESS! All tests ran without failures." $(WORK)/$@$(SUFFIX)/sim.log
 
 openocd:
