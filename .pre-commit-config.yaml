@@ -14,7 +14,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: check-added-large-files
-        exclude: uv.lock  # lockfile can be large
+        exclude: uv.lock|\.kicad_pcb$  # lockfile and KiCad boards can be large
       - id: check-case-conflict
       - id: check-docstring-first
       - id: check-executables-have-shebangs
@@ -37,7 +37,7 @@ repos:
     rev: v1.5.5
     hooks:
       - id: forbid-tabs
-        exclude: '.*\.(diff|dump|patch|svg|mk|mak)|(M|m)akefile*'
+        exclude: '.*\.(diff|dump|patch|svg|mk|mak|kicad_sch|kicad_sym|kicad_pcb)|(M|m)akefile*'
 
   # Ruff python linter
   - repo: https://github.com/astral-sh/ruff-pre-commit
