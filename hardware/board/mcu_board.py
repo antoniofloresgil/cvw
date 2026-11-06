@@ -37,13 +37,13 @@ TP = "TestPoint:TestPoint_Pad_D1.5mm"
 HDR2 = "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
 BUTTON = "Button_Switch_SMD:SW_SPST_TL3342"
 
-# The chip: pads of chip_top.sv in the order of the pad ring (gen_config.py: south, east, north, west),
-# seven per side, on the QFN32's eight pins per side; the eighth of each side is not bonded.
-# Provisional: the bonding plan fixes the real numbering.
-RING = [["clk", "rst_n", "vdd", "vss", "uart_rx", "uart_tx", "iovdd2"],
-        ["spi_sck", "spi_mosi", "iovss2", "spi_miso", "spi_cs", "tck", "tms"],
-        ["gpio0", "gpio1", "vss2", "vdd2", "gpio2", "gpio3", "iovdd"],
-        ["tdi", "tdo", "gpio4", "gpio5", "gpio6", "gpio7", "iovss"]]
+# The chip's QFN32 pinout (provisional until the bonding plan): each pad of the ring goes to the nearest
+# package pin, from the pads' places in the final DEF; the eighth pin of each side is not bonded.
+# Pins counter-clockwise from pin 1 at the top of the left side (chip_qfn32_socket.png).
+RING = [["iovss", "gpio7", "gpio6", "gpio5", "gpio4", "tdo", "tdi"],          # 1-7: west pads, top to bottom
+        ["clk", "rst_n", "vdd", "vss", "uart_rx", "uart_tx", "iovdd2"],        # 9-15: south pads, west to east
+        ["spi_sck", "spi_mosi", "iovss2", "spi_miso", "spi_cs", "tck", "tms"],  # 17-23: east pads, south to north
+        ["iovdd", "gpio3", "gpio2", "vdd2", "vss2", "gpio1", "gpio0"]]          # 25-31: north pads, east to west
 PAD_NET = {"clk": "CLK", "rst_n": "RST_N", "uart_rx": "UART_RX", "uart_tx": "UART_TX", "spi_sck": "SPI_SCK",
            "spi_mosi": "SPI_MOSI", "spi_miso": "SPI_MISO", "spi_cs": "SPI_CS", "tck": "TCK", "tms": "TMS",
            "tdi": "TDI", "tdo": "TDO", "vdd": "VDD_CORE", "vdd2": "VDD_CORE", "vss": "GND", "vss2": "GND",
@@ -98,7 +98,9 @@ def power(s):
         s.add("Device", "R", f"R{3 + i}", r, {"1": net, "2": f"LED_{net[1:]}"}, footprint=R0603)
         s.add("Device", "LED", f"D{1 + i}", "green", {"A": f"LED_{net[1:]}", "K": "GND"}, footprint=LED0603)
     for i, net in enumerate(("+5V", "+3V3", "+1V2", "VDD_IO", "VDD_CORE", "GND", "GND")):
-        s.add("Connector", "TestPoint", f"TP{1 + i}", net, {"1": net}, footprint=TP)
+        s.add("Connector", "TestPoint", f"TP{1 + i}", net, {"1": net}, footprint=TP, bom=False)
+    for i in range(4):
+        s.add("Mechanical", "MountingHole", f"H{i + 1}", "M3", {}, footprint="MountingHole:MountingHole_3.2mm_M3", bom=False)
     for i, net in enumerate(("VBUS", "+5V", "GND", "VDD_IO", "VDD_CORE", "FT_VPHY")):
         s.add("power", "PWR_FLAG", f"#FLG0{1 + i}", "PWR_FLAG", {"1": net})
 
@@ -163,7 +165,7 @@ def chip(s):
     for i, net in enumerate(("SPI_CS", "FLASH_WP_N", "FLASH_HOLD_N")):
         s.add("Device", "R", f"R{17 + i}", "10k", {"1": "VDD_IO", "2": net}, footprint=R0603)
     for i, net in enumerate(("CLK", "RST_N", "UART_TX", "UART_RX", "SPI_SCK", "SPI_CS")):
-        s.add("Connector", "TestPoint", f"TP{10 + i}", net, {"1": net}, footprint=TP)
+        s.add("Connector", "TestPoint", f"TP{10 + i}", net, {"1": net}, footprint=TP, bom=False)
 
 
 def peripherals(s):
@@ -186,7 +188,7 @@ def peripherals(s):
         s.add("Device", "R", f"R{38 + i}", "1k", {"1": f"LEDDRV{i}", "2": f"LEDA{i}"}, footprint=R0603)
         s.add("Device", "LED", f"D{3 + i}", f"GPIO{i}", {"A": f"LEDA{i}", "K": "GND"}, footprint=LED0603)
     for i in range(8):
-        s.add("Connector", "TestPoint", f"TP{20 + i}", f"GPIO{i}", {"1": f"GPIO{i}"}, footprint=TP)
+        s.add("Connector", "TestPoint", f"TP{20 + i}", f"GPIO{i}", {"1": f"GPIO{i}"}, footprint=TP, bom=False)
     # I2C on GPIO6 (SCL) and GPIO7 (SDA): EEPROM 0x50, TMP102 0x48, ADS1115 0x49, MCP4725 0x60
     s.add("Device", "R", "R46", "4.7k", {"1": "VDD_IO", "2": "GPIO6"}, footprint=R0603)
     s.add("Device", "R", "R47", "4.7k", {"1": "VDD_IO", "2": "GPIO7"}, footprint=R0603)
@@ -213,10 +215,12 @@ def fpga(s):
     groups = [("J5", "PMOD A", ["CLK", "RST_N", "UART_RX", "UART_TX", "SPI_SCK", "SPI_MOSI", "SPI_MISO", "SPI_CS"]),
               ("J6", "PMOD B", [f"GPIO{i}" for i in range(8)]),
               ("J7", "PMOD C", ["TCK", "TMS", "TDI", "TDO", "NC", "NC", "NC", "NC"])]
+    # The header's pads alternate between the rows (1 and 2 face each other): Pmod pin n of the top row
+    # (1-6) is pad 2n-1, pin n+6 of the bottom row pad 2n.
     for ref, value, sig in groups:
-        nets = {str(p): n for p, n in zip((1, 2, 3, 4, 7, 8, 9, 10), sig)}
-        nets.update({"5": "GND", "11": "GND", "6": "NC", "12": "NC"})
-        s.add("Connector_Generic", "Conn_02x06_Top_Bottom", ref, value, nets,
+        pmod = dict(zip((1, 2, 3, 4, 7, 8, 9, 10), sig)) | {5: "GND", 11: "GND", 6: "NC", 12: "NC"}
+        nets = {str(2 * n - 1 if n <= 6 else 2 * (n - 6)): net for n, net in pmod.items()}
+        s.add("Connector_Generic", "Conn_02x06_Odd_Even", ref, value, nets,
               footprint="Connector_PinHeader_2.54mm:PinHeader_2x06_P2.54mm_Horizontal")
     s.text(15, 15, "FPGA headers: an FPGA running asic_soc_rv32imc on these nets replaces the chip (remove U6).")
 

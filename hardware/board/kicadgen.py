@@ -172,7 +172,7 @@ class Sheet:
         self.bottom = max(self.bottom, self.cursor[1] + h)
         return x, y
 
-    def add(self, lib, name, ref, value, nets, footprint=None, unit=1, x=None, y=None):
+    def add(self, lib, name, ref, value, nets, footprint=None, unit=1, x=None, y=None, bom=True):
         """Place a part; `nets` maps a pin number (or name) to a net, "NC" for a no-connect."""
         sym = self._symbol(lib, name)
         pins = pins_of(sym)
@@ -185,7 +185,7 @@ class Sheet:
         fp = footprint or next((str(c[2]) for c in find(sym, "property") if c[1] == "Footprint"), "")
         sx, sy = round(x / GRID) * GRID, round(y / GRID) * GRID
         inst = ["symbol", ["lib_id", Q(f"{lib}:{name}")], ["at", f"{sx:g}", f"{sy:g}", "0"], ["unit", str(unit)],
-                ["exclude_from_sim", "no"], ["in_bom", "yes"], ["on_board", "yes"], ["dnp", "no"],
+                ["exclude_from_sim", "no"], ["in_bom", "yes" if bom else "no"], ["on_board", "yes"], ["dnp", "no"],
                 ["uuid", Q(uid(self.name, ref, "sym"))]]
         for k, v in (("Reference", ref), ("Value", value), ("Footprint", fp), ("Datasheet", "")):
             hide = k in ("Footprint", "Datasheet")

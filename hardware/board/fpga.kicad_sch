@@ -8,7 +8,7 @@
 		(title "FPGA headers")
 	)
 	(lib_symbols
-		(symbol "Connector_Generic:Conn_02x06_Top_Bottom"
+		(symbol "Connector_Generic:Conn_02x06_Odd_Even"
 			(pin_names
 				(offset 1.016)
 				(hide yes)
@@ -28,7 +28,7 @@
 					)
 				)
 			)
-			(property "Value" "Conn_02x06_Top_Bottom"
+			(property "Value" "Conn_02x06_Odd_Even"
 				(at 1.27 -10.16 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -60,7 +60,7 @@
 					)
 				)
 			)
-			(property "Description" "Generic connector, double row, 02x06, top/bottom pin numbering scheme (row 1: 1...pins_per_row, row2: pins_per_row+1 ... num_pins), script generated (kicad-library-utils/schlib/autogen/connector/)"
+			(property "Description" "Generic connector, double row, 02x06, odd/even pin numbering scheme (row 1 odd numbers, row 2 even numbers), script generated (kicad-library-utils/schlib/autogen/connector/)"
 				(at 0 0 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -93,7 +93,7 @@
 					)
 				)
 			)
-			(symbol "Conn_02x06_Top_Bottom_1_1"
+			(symbol "Conn_02x06_Odd_Even_1_1"
 				(rectangle
 					(start -1.27 6.35)
 					(end 3.81 -8.89)
@@ -256,7 +256,7 @@
 					)
 				)
 				(pin passive line
-					(at -5.08 2.54 0)
+					(at 7.62 5.08 180)
 					(length 3.81)
 					(name "Pin_2"
 						(effects
@@ -274,7 +274,7 @@
 					)
 				)
 				(pin passive line
-					(at -5.08 0 0)
+					(at -5.08 2.54 0)
 					(length 3.81)
 					(name "Pin_3"
 						(effects
@@ -292,7 +292,7 @@
 					)
 				)
 				(pin passive line
-					(at -5.08 -2.54 0)
+					(at 7.62 2.54 180)
 					(length 3.81)
 					(name "Pin_4"
 						(effects
@@ -310,7 +310,7 @@
 					)
 				)
 				(pin passive line
-					(at -5.08 -5.08 0)
+					(at -5.08 0 0)
 					(length 3.81)
 					(name "Pin_5"
 						(effects
@@ -328,7 +328,7 @@
 					)
 				)
 				(pin passive line
-					(at -5.08 -7.62 0)
+					(at 7.62 0 180)
 					(length 3.81)
 					(name "Pin_6"
 						(effects
@@ -346,7 +346,7 @@
 					)
 				)
 				(pin passive line
-					(at 7.62 5.08 180)
+					(at -5.08 -2.54 0)
 					(length 3.81)
 					(name "Pin_7"
 						(effects
@@ -364,7 +364,7 @@
 					)
 				)
 				(pin passive line
-					(at 7.62 2.54 180)
+					(at 7.62 -2.54 180)
 					(length 3.81)
 					(name "Pin_8"
 						(effects
@@ -382,7 +382,7 @@
 					)
 				)
 				(pin passive line
-					(at 7.62 0 180)
+					(at -5.08 -5.08 0)
 					(length 3.81)
 					(name "Pin_9"
 						(effects
@@ -400,7 +400,7 @@
 					)
 				)
 				(pin passive line
-					(at 7.62 -2.54 180)
+					(at 7.62 -5.08 180)
 					(length 3.81)
 					(name "Pin_10"
 						(effects
@@ -418,7 +418,7 @@
 					)
 				)
 				(pin passive line
-					(at 7.62 -5.08 180)
+					(at -5.08 -7.62 0)
 					(length 3.81)
 					(name "Pin_11"
 						(effects
@@ -610,6 +610,37 @@
 	)
 	(wire
 		(pts
+			(xy 40.64 20.32)
+			(xy 43.18 20.32)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5d857899-a430-50f4-85cb-1283aea682e4")
+	)
+	(global_label "SPI_SCK"
+		(shape bidirectional)
+		(at 43.18 20.32 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "8c19c702-f396-5ead-a0a1-4b1b89309fd2")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(wire
+		(pts
 			(xy 27.94 22.86)
 			(xy 25.4 22.86)
 		)
@@ -629,6 +660,37 @@
 			)
 		)
 		(uuid "62e855fb-d896-5e90-881d-7a93372c1dd8")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 40.64 22.86)
+			(xy 43.18 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b5981c20-b2fa-5c75-bb94-2539f6835326")
+	)
+	(global_label "SPI_MOSI"
+		(shape bidirectional)
+		(at 43.18 22.86 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "e0434373-723c-516a-a22e-145e972ad87e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 0 0 0)
 			(effects
@@ -672,6 +734,37 @@
 	)
 	(wire
 		(pts
+			(xy 40.64 25.4)
+			(xy 43.18 25.4)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cbe69a2c-57ce-5f0c-af06-8be582406d68")
+	)
+	(global_label "SPI_MISO"
+		(shape bidirectional)
+		(at 43.18 25.4 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "ac233864-f0e4-5a18-8cb2-010e3ded2107")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(wire
+		(pts
 			(xy 27.94 27.94)
 			(xy 25.4 27.94)
 		)
@@ -691,6 +784,37 @@
 			)
 		)
 		(uuid "736f2bed-64e7-5a20-a7ca-c33ac5e84904")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 40.64 27.94)
+			(xy 43.18 27.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c663c3a9-111c-5e36-b1ec-853ba9bf62e3")
+	)
+	(global_label "SPI_CS"
+		(shape bidirectional)
+		(at 43.18 27.94 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "a701457e-c62e-5857-a23a-68a7c600a405")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 0 0 0)
 			(effects
@@ -750,134 +874,6 @@
 			)
 		)
 	)
-	(no_connect
-		(at 27.94 33.02)
-		(uuid "35161661-8a6f-55b9-83d4-5ad5d138cbf8")
-	)
-	(wire
-		(pts
-			(xy 40.64 20.32)
-			(xy 43.18 20.32)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5d857899-a430-50f4-85cb-1283aea682e4")
-	)
-	(global_label "SPI_SCK"
-		(shape bidirectional)
-		(at 43.18 20.32 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "8c19c702-f396-5ead-a0a1-4b1b89309fd2")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
-	(wire
-		(pts
-			(xy 40.64 22.86)
-			(xy 43.18 22.86)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b5981c20-b2fa-5c75-bb94-2539f6835326")
-	)
-	(global_label "SPI_MOSI"
-		(shape bidirectional)
-		(at 43.18 22.86 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "e0434373-723c-516a-a22e-145e972ad87e")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
-	(wire
-		(pts
-			(xy 40.64 25.4)
-			(xy 43.18 25.4)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "cbe69a2c-57ce-5f0c-af06-8be582406d68")
-	)
-	(global_label "SPI_MISO"
-		(shape bidirectional)
-		(at 43.18 25.4 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "ac233864-f0e4-5a18-8cb2-010e3ded2107")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
-	(wire
-		(pts
-			(xy 40.64 27.94)
-			(xy 43.18 27.94)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c663c3a9-111c-5e36-b1ec-853ba9bf62e3")
-	)
-	(global_label "SPI_CS"
-		(shape bidirectional)
-		(at 43.18 27.94 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "a701457e-c62e-5857-a23a-68a7c600a405")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
 	(wire
 		(pts
 			(xy 40.64 30.48)
@@ -928,11 +924,15 @@
 		)
 	)
 	(no_connect
+		(at 27.94 33.02)
+		(uuid "35161661-8a6f-55b9-83d4-5ad5d138cbf8")
+	)
+	(no_connect
 		(at 40.64 33.02)
 		(uuid "86b642db-8dff-50fa-9bda-67cbae07d80c")
 	)
 	(symbol
-		(lib_id "Connector_Generic:Conn_02x06_Top_Bottom")
+		(lib_id "Connector_Generic:Conn_02x06_Odd_Even")
 		(at 33.02 25.4 0)
 		(unit 1)
 		(exclude_from_sim no)
@@ -1052,6 +1052,37 @@
 	)
 	(wire
 		(pts
+			(xy 83.82 20.32)
+			(xy 86.36 20.32)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d3af01fa-92a9-59bd-a28f-00c485c38ab4")
+	)
+	(global_label "GPIO4"
+		(shape bidirectional)
+		(at 86.36 20.32 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "850ff563-fa5f-536b-9a98-81c08652a1c1")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(wire
+		(pts
 			(xy 71.12 22.86)
 			(xy 68.58 22.86)
 		)
@@ -1071,6 +1102,37 @@
 			)
 		)
 		(uuid "52ac5380-2573-5fa1-b833-8f8f0a2a4240")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 83.82 22.86)
+			(xy 86.36 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1cd0b978-a4a3-593b-b478-768f329a5408")
+	)
+	(global_label "GPIO5"
+		(shape bidirectional)
+		(at 86.36 22.86 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "acc0be9e-5e64-5208-a5d4-fba20d6b1d1e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 0 0 0)
 			(effects
@@ -1114,6 +1176,37 @@
 	)
 	(wire
 		(pts
+			(xy 83.82 25.4)
+			(xy 86.36 25.4)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "42461d98-51a1-5dc4-a4f5-772476b86cb1")
+	)
+	(global_label "GPIO6"
+		(shape bidirectional)
+		(at 86.36 25.4 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "6ce9c1c5-7d1d-5f92-8ed0-dc40161c2769")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(wire
+		(pts
 			(xy 71.12 27.94)
 			(xy 68.58 27.94)
 		)
@@ -1133,6 +1226,37 @@
 			)
 		)
 		(uuid "d669f5df-6cee-5fa7-ad9b-3675657eccda")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 83.82 27.94)
+			(xy 86.36 27.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "92d97ba7-17cc-50a0-9508-c47ea59531cd")
+	)
+	(global_label "GPIO7"
+		(shape bidirectional)
+		(at 86.36 27.94 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "5b838191-c3b2-501a-8029-0d83955b07eb")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 0 0 0)
 			(effects
@@ -1192,134 +1316,6 @@
 			)
 		)
 	)
-	(no_connect
-		(at 71.12 33.02)
-		(uuid "fdda011b-98c5-59cb-a857-68480d0ea667")
-	)
-	(wire
-		(pts
-			(xy 83.82 20.32)
-			(xy 86.36 20.32)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d3af01fa-92a9-59bd-a28f-00c485c38ab4")
-	)
-	(global_label "GPIO4"
-		(shape bidirectional)
-		(at 86.36 20.32 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "850ff563-fa5f-536b-9a98-81c08652a1c1")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
-	(wire
-		(pts
-			(xy 83.82 22.86)
-			(xy 86.36 22.86)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1cd0b978-a4a3-593b-b478-768f329a5408")
-	)
-	(global_label "GPIO5"
-		(shape bidirectional)
-		(at 86.36 22.86 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "acc0be9e-5e64-5208-a5d4-fba20d6b1d1e")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
-	(wire
-		(pts
-			(xy 83.82 25.4)
-			(xy 86.36 25.4)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "42461d98-51a1-5dc4-a4f5-772476b86cb1")
-	)
-	(global_label "GPIO6"
-		(shape bidirectional)
-		(at 86.36 25.4 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "6ce9c1c5-7d1d-5f92-8ed0-dc40161c2769")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
-	(wire
-		(pts
-			(xy 83.82 27.94)
-			(xy 86.36 27.94)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "92d97ba7-17cc-50a0-9508-c47ea59531cd")
-	)
-	(global_label "GPIO7"
-		(shape bidirectional)
-		(at 86.36 27.94 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "5b838191-c3b2-501a-8029-0d83955b07eb")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
 	(wire
 		(pts
 			(xy 83.82 30.48)
@@ -1370,11 +1366,15 @@
 		)
 	)
 	(no_connect
+		(at 71.12 33.02)
+		(uuid "fdda011b-98c5-59cb-a857-68480d0ea667")
+	)
+	(no_connect
 		(at 83.82 33.02)
 		(uuid "a95305c0-3ff8-5732-8019-41ea6d6b2bc0")
 	)
 	(symbol
-		(lib_id "Connector_Generic:Conn_02x06_Top_Bottom")
+		(lib_id "Connector_Generic:Conn_02x06_Odd_Even")
 		(at 76.2 25.4 0)
 		(unit 1)
 		(exclude_from_sim no)
@@ -1492,6 +1492,10 @@
 			)
 		)
 	)
+	(no_connect
+		(at 124.46 20.32)
+		(uuid "cec6078c-bff7-5c7d-b482-937e451c70d9")
+	)
 	(wire
 		(pts
 			(xy 111.76 22.86)
@@ -1522,6 +1526,10 @@
 				(hide yes)
 			)
 		)
+	)
+	(no_connect
+		(at 124.46 22.86)
+		(uuid "4ec02f9d-be99-5a21-a31b-3a17e448a1b0")
 	)
 	(wire
 		(pts
@@ -1554,6 +1562,10 @@
 			)
 		)
 	)
+	(no_connect
+		(at 124.46 25.4)
+		(uuid "8b3a1b09-0716-5980-8a3c-d8ddd656118a")
+	)
 	(wire
 		(pts
 			(xy 111.76 27.94)
@@ -1584,6 +1596,10 @@
 				(hide yes)
 			)
 		)
+	)
+	(no_connect
+		(at 124.46 27.94)
+		(uuid "4d72d09a-4d1a-5794-aed4-14ac1f8a82fb")
 	)
 	(wire
 		(pts
@@ -1633,26 +1649,6 @@
 				)
 			)
 		)
-	)
-	(no_connect
-		(at 111.76 33.02)
-		(uuid "59a159ab-ce7a-5371-9a1e-1445fbfeaa94")
-	)
-	(no_connect
-		(at 124.46 20.32)
-		(uuid "cec6078c-bff7-5c7d-b482-937e451c70d9")
-	)
-	(no_connect
-		(at 124.46 22.86)
-		(uuid "4ec02f9d-be99-5a21-a31b-3a17e448a1b0")
-	)
-	(no_connect
-		(at 124.46 25.4)
-		(uuid "8b3a1b09-0716-5980-8a3c-d8ddd656118a")
-	)
-	(no_connect
-		(at 124.46 27.94)
-		(uuid "4d72d09a-4d1a-5794-aed4-14ac1f8a82fb")
 	)
 	(wire
 		(pts
@@ -1704,11 +1700,15 @@
 		)
 	)
 	(no_connect
+		(at 111.76 33.02)
+		(uuid "59a159ab-ce7a-5371-9a1e-1445fbfeaa94")
+	)
+	(no_connect
 		(at 124.46 33.02)
 		(uuid "e0b7c59a-6231-5343-a1fc-c30b133f43ba")
 	)
 	(symbol
-		(lib_id "Connector_Generic:Conn_02x06_Top_Bottom")
+		(lib_id "Connector_Generic:Conn_02x06_Odd_Even")
 		(at 116.84 25.4 0)
 		(unit 1)
 		(exclude_from_sim no)

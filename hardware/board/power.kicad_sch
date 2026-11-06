@@ -3266,6 +3266,105 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Mechanical:MountingHole"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom no)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "H"
+				(at 0 5.08 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "MountingHole"
+				(at 0 3.175 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Mounting Hole without connection"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "mounting hole"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_fp_filters" "MountingHole*"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "MountingHole_0_1"
+				(circle
+					(center 0 0)
+					(radius 1.27)
+					(stroke
+						(width 1.27)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "power:PWR_FLAG"
 			(power global)
 			(pin_numbers
@@ -7201,7 +7300,7 @@
 		(at 322.58 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "43012219-2d3e-56b5-a8a9-963bec626d7c")
@@ -7305,7 +7404,7 @@
 		(at 327.66 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "21580b56-92d1-5bdc-b97d-2d1c6f18876b")
@@ -7409,7 +7508,7 @@
 		(at 332.74 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "5700f7c4-2e4f-540d-92f4-115ac21c9eeb")
@@ -7495,7 +7594,7 @@
 		(at 337.82 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "95de77a3-f46b-56be-a89c-19031a51df64")
@@ -7581,7 +7680,7 @@
 		(at 342.9 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "35f5e9f8-f629-594d-a103-827ac4dacc6a")
@@ -7685,7 +7784,7 @@
 		(at 347.98 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "2c69b90b-38e1-545f-9713-07bd164b786f")
@@ -7789,7 +7888,7 @@
 		(at 353.06 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "203ecc7a-7ad7-56b9-8579-1ad56267cbcd")
@@ -7839,65 +7938,16 @@
 			)
 		)
 	)
-	(wire
-		(pts
-			(xy 358.14 20.32)
-			(xy 358.14 22.86)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "8291408a-19ac-5815-b1ad-2eb6f88e3ad5")
-	)
 	(symbol
-		(lib_id "power:VBUS")
-		(at 358.14 22.86 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "bd280b64-0492-5574-9a8f-2cf33ffa20bf")
-		(property "Reference" "#PWR"
-			(at 358.14 22.86 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "VBUS"
-			(at 358.14 19.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "ecba1cb5-3d95-51b3-82a7-0ee8deda65b6")
-		)
-		(instances
-			(project "mcu_board"
-				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
-					(reference "#PWRf53578")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:PWR_FLAG")
+		(lib_id "Mechanical:MountingHole")
 		(at 358.14 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
-		(uuid "b5e44b4d-0b64-5930-aaeb-c9d7a452da01")
-		(property "Reference" "#FLG01"
+		(uuid "603b7d87-2d52-52eb-ac33-825a8441cd90")
+		(property "Reference" "H1"
 			(at 358.14 15.24 0)
 			(effects
 				(font
@@ -7905,7 +7955,7 @@
 				)
 			)
 		)
-		(property "Value" "PWR_FLAG"
+		(property "Value" "M3"
 			(at 358.14 25.4 0)
 			(effects
 				(font
@@ -7913,7 +7963,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
 			(at 358.14 25.4 0)
 			(effects
 				(font
@@ -7931,77 +7981,25 @@
 				(hide yes)
 			)
 		)
-		(pin "1"
-			(uuid "b8286547-4f93-5391-91b6-f44d8ad428f2")
-		)
 		(instances
 			(project "mcu_board"
 				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
-					(reference "#FLG01")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(wire
-		(pts
-			(xy 363.22 20.32)
-			(xy 363.22 22.86)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d231b440-e893-5f73-a21d-5444f7514892")
-	)
-	(symbol
-		(lib_id "power:+5V")
-		(at 363.22 22.86 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "cb4b437e-2c2a-52a5-a5a2-06615aa7a048")
-		(property "Reference" "#PWR"
-			(at 363.22 22.86 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "+5V"
-			(at 363.22 19.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "10abe364-05e4-5e48-8d81-a4c08874ce56")
-		)
-		(instances
-			(project "mcu_board"
-				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
-					(reference "#PWR697ef5")
+					(reference "H1")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(symbol
-		(lib_id "power:PWR_FLAG")
+		(lib_id "Mechanical:MountingHole")
 		(at 363.22 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
-		(uuid "e1b974ed-859d-52b7-9750-b7f2eee77069")
-		(property "Reference" "#FLG02"
+		(uuid "3b1e790c-4f9e-5e28-96ea-02086b4a9770")
+		(property "Reference" "H2"
 			(at 363.22 15.24 0)
 			(effects
 				(font
@@ -8009,7 +8007,7 @@
 				)
 			)
 		)
-		(property "Value" "PWR_FLAG"
+		(property "Value" "M3"
 			(at 363.22 25.4 0)
 			(effects
 				(font
@@ -8017,7 +8015,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
 			(at 363.22 25.4 0)
 			(effects
 				(font
@@ -8035,77 +8033,25 @@
 				(hide yes)
 			)
 		)
-		(pin "1"
-			(uuid "5f4494c7-5a2d-5fda-b351-fb04149b7677")
-		)
 		(instances
 			(project "mcu_board"
 				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
-					(reference "#FLG02")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(wire
-		(pts
-			(xy 368.3 20.32)
-			(xy 368.3 22.86)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f0fa372b-6629-5197-925a-0bccf00219ba")
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 368.3 22.86 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "d4f1d456-01f2-5add-831e-76a046d44b5e")
-		(property "Reference" "#PWR"
-			(at 368.3 22.86 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 368.3 26.67 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "01f4ebe7-14ea-5fdd-a52c-d52f2677bf69")
-		)
-		(instances
-			(project "mcu_board"
-				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
-					(reference "#PWRbe3f46")
+					(reference "H2")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(symbol
-		(lib_id "power:PWR_FLAG")
+		(lib_id "Mechanical:MountingHole")
 		(at 368.3 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
-		(uuid "8896459e-597e-5d5f-bc31-417d2709f919")
-		(property "Reference" "#FLG03"
+		(uuid "a6d08f1c-12d4-5b11-806b-fdb99b751fe2")
+		(property "Reference" "H3"
 			(at 368.3 15.24 0)
 			(effects
 				(font
@@ -8113,7 +8059,7 @@
 				)
 			)
 		)
-		(property "Value" "PWR_FLAG"
+		(property "Value" "M3"
 			(at 368.3 25.4 0)
 			(effects
 				(font
@@ -8121,7 +8067,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
 			(at 368.3 25.4 0)
 			(effects
 				(font
@@ -8139,59 +8085,25 @@
 				(hide yes)
 			)
 		)
-		(pin "1"
-			(uuid "79e02326-8220-5f6f-aad3-6ebbdc60a5a2")
-		)
 		(instances
 			(project "mcu_board"
 				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
-					(reference "#FLG03")
+					(reference "H3")
 					(unit 1)
 				)
 			)
 		)
 	)
-	(wire
-		(pts
-			(xy 373.38 20.32)
-			(xy 373.38 22.86)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d664343d-5da6-5c86-abc6-524acbfc5268")
-	)
-	(global_label "VDD_IO"
-		(shape bidirectional)
-		(at 373.38 22.86 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "afa30379-d684-573d-baba-a1fb03c02b1f")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-	)
 	(symbol
-		(lib_id "power:PWR_FLAG")
+		(lib_id "Mechanical:MountingHole")
 		(at 373.38 20.32 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
-		(uuid "ffe59c2e-12fb-5e09-a12c-4ad8ae8468be")
-		(property "Reference" "#FLG04"
+		(uuid "28da2788-f6a4-5628-8c40-510aeff88818")
+		(property "Reference" "H4"
 			(at 373.38 15.24 0)
 			(effects
 				(font
@@ -8199,7 +8111,7 @@
 				)
 			)
 		)
-		(property "Value" "PWR_FLAG"
+		(property "Value" "M3"
 			(at 373.38 25.4 0)
 			(effects
 				(font
@@ -8207,7 +8119,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
 			(at 373.38 25.4 0)
 			(effects
 				(font
@@ -8225,13 +8137,10 @@
 				(hide yes)
 			)
 		)
-		(pin "1"
-			(uuid "fcdec3bb-92a2-5fa3-aa71-c5d1a48aea42")
-		)
 		(instances
 			(project "mcu_board"
 				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
-					(reference "#FLG04")
+					(reference "H4")
 					(unit 1)
 				)
 			)
@@ -8246,25 +8155,43 @@
 			(width 0)
 			(type default)
 		)
-		(uuid "8fb82f10-d323-5e02-b74f-d550c22d2498")
+		(uuid "9163422f-807f-5fc4-aca1-29ab44322364")
 	)
-	(global_label "VDD_CORE"
-		(shape bidirectional)
-		(at 378.46 22.86 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "c582152f-e462-523c-b2df-4dbb27a4ff54")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
+	(symbol
+		(lib_id "power:VBUS")
+		(at 378.46 22.86 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "a717cfd4-22d4-54ab-ba69-288808a65d9e")
+		(property "Reference" "#PWR"
+			(at 378.46 22.86 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Value" "VBUS"
+			(at 378.46 19.05 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "3e983db3-4ea9-5ea1-bbae-66b777374716")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
+					(reference "#PWR2458d4")
+					(unit 1)
+				)
 			)
 		)
 	)
@@ -8276,8 +8203,8 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "ca15c4ec-5659-5845-bf76-116cc84df528")
-		(property "Reference" "#FLG05"
+		(uuid "b5e44b4d-0b64-5930-aaeb-c9d7a452da01")
+		(property "Reference" "#FLG01"
 			(at 378.46 15.24 0)
 			(effects
 				(font
@@ -8312,12 +8239,12 @@
 			)
 		)
 		(pin "1"
-			(uuid "9013c151-1484-5a0c-80fe-0d621503667c")
+			(uuid "b8286547-4f93-5391-91b6-f44d8ad428f2")
 		)
 		(instances
 			(project "mcu_board"
 				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
-					(reference "#FLG05")
+					(reference "#FLG01")
 					(unit 1)
 				)
 			)
@@ -8332,25 +8259,43 @@
 			(width 0)
 			(type default)
 		)
-		(uuid "71f60300-8b62-5190-9137-dee4a4a60e7a")
+		(uuid "ccc3e5e8-68e2-512d-bba1-766d64ddb4bb")
 	)
-	(global_label "FT_VPHY"
-		(shape bidirectional)
-		(at 383.54 22.86 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "be4e763a-0e26-5b30-a08a-3384cd9bb0f9")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 0 0 0)
+	(symbol
+		(lib_id "power:+5V")
+		(at 383.54 22.86 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "993c061d-3621-505e-922e-bae3a7bb55e7")
+		(property "Reference" "#PWR"
+			(at 383.54 22.86 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(hide yes)
+			)
+		)
+		(property "Value" "+5V"
+			(at 383.54 19.05 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "984e86ed-6df4-598c-ac3a-b565c382e225")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
+					(reference "#PWR43940e")
+					(unit 1)
+				)
 			)
 		)
 	)
@@ -8362,8 +8307,8 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "22ad5d56-057e-5b63-b4f1-bfa9c6e72d1c")
-		(property "Reference" "#FLG06"
+		(uuid "e1b974ed-859d-52b7-9750-b7f2eee77069")
+		(property "Reference" "#FLG02"
 			(at 383.54 15.24 0)
 			(effects
 				(font
@@ -8390,6 +8335,368 @@
 		)
 		(property "Datasheet" ""
 			(at 383.54 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "5f4494c7-5a2d-5fda-b351-fb04149b7677")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
+					(reference "#FLG02")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 388.62 20.32)
+			(xy 388.62 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "26a9a79d-8706-5efe-8716-b10d88632410")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 388.62 22.86 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "9e46a042-1db2-5410-bec9-f5209bab0059")
+		(property "Reference" "#PWR"
+			(at 388.62 22.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 388.62 26.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "84ea6e38-d853-5519-ab4c-58d89806aa46")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
+					(reference "#PWRf2f6a2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 388.62 20.32 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "8896459e-597e-5d5f-bc31-417d2709f919")
+		(property "Reference" "#FLG03"
+			(at 388.62 15.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 388.62 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 388.62 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 388.62 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "79e02326-8220-5f6f-aad3-6ebbdc60a5a2")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
+					(reference "#FLG03")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 393.7 20.32)
+			(xy 393.7 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d2781039-d248-5344-a969-6a73c109b933")
+	)
+	(global_label "VDD_IO"
+		(shape bidirectional)
+		(at 393.7 22.86 270)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "abcd2478-ecb3-565e-b417-e83a30862896")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 393.7 20.32 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "ffe59c2e-12fb-5e09-a12c-4ad8ae8468be")
+		(property "Reference" "#FLG04"
+			(at 393.7 15.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 393.7 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 393.7 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 393.7 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "fcdec3bb-92a2-5fa3-aa71-c5d1a48aea42")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
+					(reference "#FLG04")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 398.78 20.32)
+			(xy 398.78 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b0777e10-8e83-5e95-b011-ae9a8ad7eca6")
+	)
+	(global_label "VDD_CORE"
+		(shape bidirectional)
+		(at 398.78 22.86 270)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "64dd284c-322d-5a01-bcf0-e4ce11ecdc7a")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 398.78 20.32 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "ca15c4ec-5659-5845-bf76-116cc84df528")
+		(property "Reference" "#FLG05"
+			(at 398.78 15.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 398.78 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 398.78 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 398.78 25.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "9013c151-1484-5a0c-80fe-0d621503667c")
+		)
+		(instances
+			(project "mcu_board"
+				(path "/4bba502d-d83c-5809-84dd-6122f807a0f6/7eaddb56-9602-5ccd-b105-4c5f0b3d194d"
+					(reference "#FLG05")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 15.24 68.58)
+			(xy 15.24 71.12)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e4898eae-a8da-514c-83e8-b218f4d3f2ed")
+	)
+	(global_label "FT_VPHY"
+		(shape bidirectional)
+		(at 15.24 71.12 270)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "8924c88d-94b4-50eb-9eff-7953515bb9c3")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 15.24 68.58 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "22ad5d56-057e-5b63-b4f1-bfa9c6e72d1c")
+		(property "Reference" "#FLG06"
+			(at 15.24 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 15.24 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 15.24 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 15.24 73.66 0)
 			(effects
 				(font
 					(size 1.27 1.27)
