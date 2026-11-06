@@ -70,12 +70,12 @@ module csri import cvw::*; #(parameter cvw_t P) (
   always_ff @(posedge clk)
     if (reset)          MIP_REGW_writeable <= 14'b0;
     else if (WriteMIPM) MIP_REGW_writeable <= (CSRWriteValM[13:0] & MIP_WRITE_MASK) | (P.SSCOFPMF_SUPPORTED ? {LCOFIPSetM, 13'b0} : 14'b0);
-    else if (WriteSIPM) MIP_REGW_writeable <= (CSRWriteValM[13:0] & SIP_WRITE_MASK) | (MIP_REGW_writeable & ~SIP_WRITE_MASK) | (P.SSCOFPMF_SUPPORTED ? {LCOFIPSetM, 13'b0} : 14'b0);
+    else if (WriteSIPM) MIP_REGW_writeable <= (CSRWriteValM[13:0] & SIP_WRITE_MASK) | (MIP_REGW_writeable & ~SIP_WRITE_MASK) | (P.SSCOFPMF_SUPPORTED ? {LCOFIPSetM, 13'b0} : 14'b0); // exclusion-tag: csri-write-sip
     else if (P.SSCOFPMF_SUPPORTED & LCOFIPSetM) MIP_REGW_writeable[13] <= 1'b1;
   always_ff @(posedge clk)
     if (reset)          MIE_REGW <= 14'b0;
     else if (WriteMIEM) MIE_REGW <= (CSRWriteValM[13:0] & MIE_WRITE_MASK); // MIE controls M and S fields
-    else if (WriteSIEM) MIE_REGW <= (CSRWriteValM[13:0] & SIE_WRITE_MASK) | (MIE_REGW & ~SIE_WRITE_MASK); // only S fields
+    else if (WriteSIEM) MIE_REGW <= (CSRWriteValM[13:0] & SIE_WRITE_MASK) | (MIE_REGW & ~SIE_WRITE_MASK); // only S fields // exclusion-tag: csri-write-sie
 
   assign LCOFIP = P.SSCOFPMF_SUPPORTED & MIP_REGW_writeable[13];
   assign MIP_REGW = {LCOFIP, 1'b0, MExtInt,   1'b0, SExtInt | MIP_REGW_writeable[9], 1'b0,
