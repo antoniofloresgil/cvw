@@ -49,3 +49,23 @@ One board, in KiCad 10, under `hardware/board/`:
 - FT2232H and its USB-C add cost and area; the board is a test board, not the final product.
 - Generated manufacturing files (gerbers) are build products and stay out of the repository; the KiCad
   sources, the bill of materials and the check results go in.
+
+## Future: a development module
+
+After the base board has brought the chip up, a small module in the style of ST's Nucleo-32 (Arduino
+Nano outline, 18 x 50 mm) or of an ESP32 DevKitC (28 x 55 mm, 2 x 19 pins), for using the chip on a
+breadboard (user request 2026-11-06, not started):
+
+- The chip soldered (no socket), the 3.3 V and 1.2 V regulators, oscillator, reset supervisor, a small
+  SPI flash (USON or WSON), RESET and BOOT buttons (BOOT straps GPIO5 for the UART boot, fixed
+  resistors set the default baud divisor), a power LED and a user LED.
+- Debug and console on the USB-C like the Nucleo's ST-LINK: a CH347 (JTAG, UART, also I2C and SPI to
+  the host) instead of the FT2232HL. It needs an OpenOCD newer than 0.12, tried against our Debug
+  Module first.
+- On the module and on its pins: a TMP102 temperature sensor, the I2C bus (GPIO6-7, with pull-ups, in
+  the Nano's A4/A5 position), an ADS1115 whose four inputs are the "analog pins" A0-A3 (the chip has
+  no ADC), optionally an MCP4725 DAC output.
+- Left on the base board: the FT2232HL, strap DIP switches, buttons and LEDs on every GPIO, EEPROM,
+  potentiometer, Pmod headers, test points and ammeter jumpers (two solder jumpers instead).
+- The pin order is fixed when the module is designed; the Nucleo-32 outline needs parts on both
+  sides of a four-layer board, the ESP32 one fits comfortably.
