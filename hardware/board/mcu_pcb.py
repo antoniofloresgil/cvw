@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 """Places the test board's PCB from the schematic: reads the netlist (kicad-cli), loads every
-footprint from KiCad's libraries, gives each pad its net and packs the parts of each schematic sheet
-into a region of a 110 x 85 mm four-layer board (In1 GND, In2 +3V3).  The connectors sit on the
-edges: USB-C on the left, the Pmod headers on top.  Run with the Python that has KiCad's pcbnew
+footprint from KiCad's libraries, gives each pad its net and places the parts by function on a
+110 x 85 mm four-layer board (In1 GND, In2 +3V3): the connectors on the edges (USB-C and the UART on
+the left, the Pmod headers on top, the analog header on the right), each IC with its passives beside
+it, and a row along the bottom edge with a test point, an LED and a button for each GPIO.  Run with the Python that has KiCad's pcbnew
 module (the system Python):  python3 mcu_pcb.py   -> mcu_board.kicad_pcb, unrouted.
 """
 
@@ -22,19 +23,61 @@ W, H = 110.0, 85.0                      # board, mm
 ORIGIN = (100.0, 60.0)                  # the board's top left corner on the page
 GAP = 0.8                               # between courtyards
 
-# Regions (x0, y0, x1, y1 on the board) each sheet's parts are packed into, in order
-REGIONS = {
-    "/power/": [(13, 8, 40, 30)],
-    "/debug/": [(8, 32, 44, 78)],
-    "/chip/": [(42, 19, 72, 50)],
-    "/peripherals/": [(74, 19, 103, 50), (46, 52, 103, 78), (8, 78, 103, 84)],
-}
-FIXED = {   # ref: (x, y, rotation in degrees); connectors on the edges
-    "J1": (5.0, 19.0, 270),
+# Placement by function.  FIXED parts sit at (x, y, rotation) on the board (mm from its top left
+# corner); each GROUP is packed, in the order given, into its rectangle (x0, y0, x1, y1) beside the
+# part it serves.  Every footprint must be in exactly one of them.
+FIXED = {
+    "J1": (5.0, 19.0, 270),                                   # USB-C, left edge
     # Pmod headers, right angle: pin 1 6.6 mm in, so the plastic ends at the edge and the pins stick out
     "J5": (48.0, 6.6, 90), "J6": (66.0, 6.6, 90), "J7": (84.0, 6.6, 90),
     "H1": (3.5, 3.5, 0), "H2": (W - 3.5, 3.5, 0), "H3": (3.5, H - 3.5, 0), "H4": (W - 3.5, H - 3.5, 0),
+    "U4": (24.0, 47.0, 0),                                    # FT2232HL
+    "J3": (3.5, 57.0, 0),                                     # UART header, left edge beside the FT2232HL
+    "J2": (41.0, 30.0, 0),                                    # JTAG header beside the chip
+    "U6": (57.0, 33.0, 0),                                    # the chip
+    "X1": (49.0, 42.0, 0),                                    # oscillator by the clock pin
+    "U8": (72.0, 30.0, 0),                                    # SPI flash by the SPI pins
+    "SW1": (12.0, 77.0, 0),                                   # RESET, apart from the GPIO buttons
+    "SW2": (97.0, 52.0, 90),                                  # boot straps
+    "J4": (106.0, 22.0, 0),                                   # analog header, right edge
 }
+# The GPIO row along the bottom edge: test point, LED resistor, LED, button resistor, button per GPIO
+ROW_X = [44 + 9.5 * i for i in range(6)] + [101.0, 106.0]
+for i, x in enumerate(ROW_X):
+    FIXED[f"TP{20 + i}"] = (x, 63.0, 0)
+    FIXED[f"R{38 + i}"] = (x, 66.5, 90)
+    FIXED[f"D{3 + i}"] = (x, 70.0, 90)
+    if i < 6:
+        FIXED[f"R{32 + i}"] = (x, 73.5, 0)
+        FIXED[f"SW{3 + i}"] = (x, 78.0, 0)
+
+
+def refs(spec):
+    """'R9-R15 C7' -> ['R9', ..., 'R15', 'C7']"""
+    out = []
+    for item in spec.split():
+        if "-" in item:
+            a, b = item.split("-")
+            prefix = a.rstrip("0123456789")
+            out += [f"{prefix}{n}" for n in range(int(a[len(prefix):]), int(b.lstrip(prefix)) + 1)]
+        else:
+            out.append(item)
+    return out
+
+
+GROUPS = [
+    ("U1 F1 R1 R2 U2 C1-C4 U3 C5 C6 JP1 JP2 R3 D1 R4 D2 TP1-TP7", (12, 9, 37, 34)),    # power
+    ("Y1 C7 C8", (8, 38, 16.5, 52)),                                                 # FT2232HL crystal
+    ("R9-R15", (32, 38, 40, 54)),                                                    # FT2232HL to the chip
+    ("C9-C19 FB1 R5 R6 U5 R7 R8", (10, 55, 40, 68)),                                 # FT2232HL supply, EEPROM
+    ("C21-C23 C31-C33", (50, 21, 66, 29.5)),                                         # chip decoupling
+    ("C40 R16 U7", (52, 38, 66, 45)),                                                # clock and reset
+    ("TP10-TP15", (42, 46, 66, 51)),
+    ("C41 R17-R19", (66, 36, 80, 42)),                                               # flash
+    ("U9 C42", (42, 52, 58, 61)),                                                    # LED buffer
+    ("R20-R31", (74, 44, 87.5, 61)),                                                 # strap resistors
+    ("U10 U11 U12 U13 RV1 C43-C46 R46 R47", (78, 12, 103, 40)),                      # I2C and analog
+]
 RULES = {   # mm; the default net class and the board's minimums, written into mcu_board.kicad_pro
     "clearance": 0.15, "track_width": 0.2, "via_diameter": 0.6, "via_drill": 0.3,
     "min_clearance": 0.15, "min_track_width": 0.15, "min_via_diameter": 0.5, "min_through_hole_diameter": 0.3,
@@ -117,7 +160,7 @@ def main():
         board.Add(item)
         nets[name] = (item, [(node.get("ref"), node.get("pin")) for node in n.iter("node")])
 
-    by_sheet, fps = {}, {}
+    fps = {}
     for c in root.iter("comp"):
         ref = c.get("ref")
         lib, name = c.findtext("footprint").split(":")
@@ -129,7 +172,6 @@ def main():
         fp.SetPath(pcbnew.KIID_PATH(sheet.get("tstamps") + c.findtext("tstamps")))
         board.Add(fp)
         fps[ref] = fp
-        by_sheet.setdefault(sheet.get("names"), []).append(fp)
 
     for name, (item, nodes) in nets.items():
         for ref, pin in nodes:
@@ -137,17 +179,21 @@ def main():
                 if pad.GetNumber() == pin:
                     pad.SetNet(item)
 
+    placed = []
     for ref, (x, y, rot) in FIXED.items():
         fps[ref].SetOrientationDegrees(rot)
         fps[ref].SetPosition(at(x, y))
-    left = []
-    for sheet, region in REGIONS.items():
-        movable = [fp for fp in by_sheet[sheet] if fp.GetReference() not in FIXED]
-        # largest first, so the ICs anchor each region and the passives fill in
-        movable.sort(key=lambda f: -courtyard(f).GetArea())
-        left += pack(movable, region)
-    if left:
-        raise SystemExit(f"no room for {[f.GetReference() for f in left]}")
+        placed.append(ref)
+    for spec, rect in GROUPS:
+        names = refs(spec)
+        left = pack([fps[r] for r in names], [rect])
+        if left:
+            raise SystemExit(f"group {spec}: no room for {[f.GetReference() for f in left]}")
+        placed += names
+    missing = sorted(set(fps) - set(placed))
+    twice = sorted({r for r in placed if placed.count(r) > 1})
+    if missing or twice:
+        raise SystemExit(f"not placed: {missing}; placed twice: {twice}")
 
     outline = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_RECT)
     outline.SetLayer(pcbnew.Edge_Cuts)

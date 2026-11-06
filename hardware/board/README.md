@@ -16,8 +16,9 @@ VBUS), so a net is the set of pins with the same name. The chip's QFN32 pin numb
 ring and are provisional until the bonding plan.
 
 The PCB (`mcu_board.kicad_pcb`, 110 x 85 mm, four layers: In1 GND, In2 +3V3) is placed by `mcu_pcb.py`,
-which reads the schematic's netlist, loads the footprints, gives the pads their nets, packs the parts of
-each sheet into a region and writes the design rules into `mcu_board.kicad_pro`. It is not routed yet.
+which reads the schematic's netlist, loads the footprints, gives the pads their nets, places the parts
+by function (`FIXED` positions and `GROUPS` packed beside the part they serve) and writes the design
+rules into `mcu_board.kicad_pro`. It is not routed yet; `mcu_board_top.png` is KiCad's 3D render.
 
     python3 mcu_pcb.py                                         # the system Python, which has pcbnew
     kicad-cli pcb drc --refill-zones --schematic-parity mcu_board.kicad_pcb
