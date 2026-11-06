@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 # Instruction trace (docs/trace.md): the test program for RV32 and RV64, and its check.
 #   make                # build etracetest32_r0.elf and etracetest64_r0.elf
 #   make check          # run them on trace_rv32gc and debug_rv64gc, then check with etracecheck.py

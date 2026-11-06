@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 # Checks of the JTAG debug port through OpenOCD (run by "make openocd" with openocd.cfg):
 # load a program into RAM with System Bus Access while hartreset holds the hart, read it back,
 # release the hart and read the 42 it writes to the GPIOs.

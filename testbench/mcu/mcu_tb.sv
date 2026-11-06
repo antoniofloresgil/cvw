@@ -215,6 +215,19 @@ module mcu_tb;
     check("reset clears the wdt request", wdt_reset, 0);
     rd(1, 'h00, v); check("reset clears wdt EN", v, 0);
 
+    // a prescaled watchdog: the flag is cleared by writing 1 to STATUS, which stops the second timeout
+    wr(1, 'h04, 5);
+    wr(1, 'h14, 3);          // a tick every 4 clocks: a timeout every 24
+    wr(1, 'h00, 3);
+    repeat (26) @(posedge clk);
+    check("prescaled wdt times out", wdt_intr, 1);
+    rd(1, 'h10, v); check("wdt STATUS shows the timeout", v & 1, 1);
+    wr(1, 'h10, 1);
+    check("STATUS write clears the flag", wdt_intr, 0);
+    repeat (10) @(posedge clk);
+    check("no reset after the flag was cleared", wdt_reset, 0);
+    resetn = 0; repeat (3) @(posedge clk); resetn = 1; repeat (3) @(posedge clk);
+
     // ---------------- RTC ----------------
     wr(3, 'h04, 3);          // a tick every 4 clocks
     wr(3, 'h0C, 5);
@@ -277,6 +290,12 @@ module mcu_tb;
     i2c_wait(v);
     rd(2, 'h08, v);
     check("i2c byte read", v, 8'hA5);
+
+    // an unmapped register reads zero and a write to it changes nothing
+    for (int b = 0; b < 4; b++) begin
+      wr(b, 'hFC, 32'hFFFFFFFF);
+      rd(b, 'hFC, v); check($sformatf("block %0d: unmapped register reads zero", b), v, 0);
+    end
 
     if (errors == 0) $display("PASS: timer, watchdog, RTC and I2C");
     else             $display("FAIL: %0d errors", errors);

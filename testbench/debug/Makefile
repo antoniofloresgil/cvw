@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 # Tests of the JTAG debug port (src/debug) with Verilator, on configurations with DEBUG_SUPPORTED
 # (config/derivlist.txt):
 #   make                          # debug_tb.sv drives the JTAG pins itself: debug_rv32imc and debug_rv64gc

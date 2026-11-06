@@ -185,3 +185,8 @@ sim/slack-notifier/slack-webhook-url.txt
 docs/docker/buildroot-config-src
 docs/docker/testvector-generation
 sim/*/testlists/
+
+# Verilator coverage output of testbench/mcu (make cover)
+/testbench/mcu/cov/
+/testbench/mcu/cov_obj/
+/testbench/mcu/coverage.dat
