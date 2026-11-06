@@ -61,6 +61,13 @@ CASES = [
         "covers": ["bursts-isolated-from-banking", "bursts-with-msi", "burst-d-line"],
     },
     {
+        "name": "single-home-bursts-forwarding",
+        "target": "cache",
+        "args": ["--private-dcache", "--private-icache", "--cache-bursts", "--cache-to-cache", "--cache-words", "32",
+                 "--cache-line-words", "4", "--icache-words", "32", "--icache-line-words", "1"],
+        "covers": ["bursts-with-forwarding"],
+    },
+    {
         "name": "shared-cache-unit",
         "target": "cache",
         "args": ["--shared-cache", "--shared-cache-words", "32"],
@@ -95,8 +102,8 @@ COVERAGE = {
     "private-dcache": ["minimal-msi-one-word"],
     "shared-cache": ["shared-cache-unit", "shared-cache-one-hart", "shared-cache-two-harts"],
     "private-icache": ["mesi-one-home-forwarding", "banked-msi-no-bursts"],
-    "cache-to-cache": ["mesi-one-home-forwarding", "banked-msi-no-bursts"],
-    "cache-bursts": ["single-home-msi-bursts"],
+    "cache-to-cache": ["mesi-one-home-forwarding", "banked-msi-no-bursts", "single-home-bursts-forwarding"],
+    "cache-bursts": ["single-home-msi-bursts", "single-home-bursts-forwarding"],
     "mesi": ["mesi-one-home-forwarding"],
     "coherence-banks": ["banked-msi-no-bursts"],
     "local-dcache-reads": ["local-reads-only"],
@@ -106,6 +113,7 @@ COVERAGE = {
     "single-hart-private-bypass": ["private-options-one-hart-bypass"],
     "selected-risky-pair-mesi-forwarding": ["mesi-one-home-forwarding"],
     "selected-risky-pair-banking-bursts": ["banked-msi-no-bursts", "single-home-msi-bursts"],
+    "selected-risky-pair-bursts-forwarding": ["single-home-bursts-forwarding"],
     "selected-risky-pair-local-path-independence": ["local-reads-only", "local-writes-only"],
 }
 

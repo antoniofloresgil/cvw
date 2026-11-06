@@ -223,7 +223,7 @@ branch or functional coverage. A line counts as covered when a test executed it 
 | Counter control and events (`pmuevents.sv`, `pmucountercontrol.sv`, `csri.sv`) | `tests/pmu/run.py` | 100 %; `csrc.sv` 85 % (counters that do not exist and the high halves of the RV32 counters) |
 | JTAG debug (`src/debug/`) | `debug_tb` on `debug_rv32imc`, `make COVERAGE=1` in `testbench/debug` | `dtm.sv` 81 %, `dm.sv` 90 %, the rest 89 to 95 %; the OpenOCD and `gdbserver.py` runs are not included |
 | Instruction trace (`etrace*.sv`) | `make check-harts COVERAGE=1` in `testbench/debug/etrace` | encoder 97 %, ingress, sink and registers 93 to 95 % |
-| Multicore engines (`src/ebu/`, `*_multicore_apb.sv`) | the small benches of `tests/multicore` | `ahbmulticore`, `ahblineburst`, `ahbmsifabric`, `clint_multicore_apb` 97 to 100 %; `ahbmsicache` 79 %, `ebufsmarb` 77 %, `plic_multicore_apb` 91 % |
+| Multicore engines (`src/ebu/`, `*_multicore_apb.sv`) | the small benches of `tests/multicore` | `ahbmulticore`, `ahblineburst`, `ahbmsifabric`, `clint_multicore_apb` 97 to 100 %; `ahbmsicache` 98 % (the two lines left are the unreachable `default` of its state machine; the burst plus cache-to-cache combination is the case `single-home-bursts-forwarding` of `check_feature_interactions.py`), `ebufsmarb` 78 % (the `default` and the burst `Threshold`: the benches here never drive `HBURST` other than 0, which the cached-core regressions do), `plic_multicore_apb` 91 % |
 
 Not measured: `ahbsharedcache.sv`, `ahbcacheinterface.sv`, `ahbinterface.sv`, `ahbburstmux.sv`,
 `buscachefsm.sv`, `controllerinput.sv`, `ebu.sv` and `multicore_memory_system.sv`, which only the
