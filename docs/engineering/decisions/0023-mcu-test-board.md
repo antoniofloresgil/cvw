@@ -50,6 +50,18 @@ One board, in KiCad 10, under `hardware/board/`:
 - Generated manufacturing files (gerbers) are build products and stay out of the repository; the KiCad
   sources, the bill of materials and the check results go in.
 
+## Simulation of the board
+
+The board is simulated before it is built: `hardware/board/sim/` generates a SystemVerilog model from the
+schematic's netlist (the chip's RTL plus behavioural models of the oscillator, reset supervisor, flash,
+I2C devices, LED buffer and the FT2232's pins) and runs seven cocotb tests that play the person at the
+board (`make boardsim` in `asic/librelane`). The wiring under test is the schematic's, so a mistake in the
+netlist shows up as a failing test; four deliberate netlist errors (a duplicated I2C address, the UART
+pins swapped, the flash's /HOLD pull-up removed, the LED buffer disabled) each fail it. It does not cover
+the analogue side, timing or contention (see `hardware/board/README.md`). It found that the bootloader's
+default divisor gives 64000 baud with the 18.432 MHz oscillator: the DIP switch must set divisor 10
+(GPIO1 and GPIO3) for 115200.
+
 ## Future: a development module
 
 After the base board has brought the chip up, a small module in the style of ST's Nucleo-32 (Arduino

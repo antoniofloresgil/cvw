@@ -8,6 +8,8 @@
 #   make CONFIG=asic_soc_rv32imc         a chip: Wally's SoC in a pad ring (chip/), Chip flow
 #   make chipsim                         cocotb test of that chip: boots a program from SPI flash,
 #                                        over the UART and through JTAG
+#   make boardsim                        the same chip on the netlist of the KiCad test board
+#                                        (hardware/board/sim/; needs kicad-cli)
 #   make PDK=ihp-sg13cmos5l CONFIG=...   the same in SG13CMOS5L (CMOS, 5 metals), in work/<CONFIG>-sg13cmos5l
 #
 # CONFIG is a Wally configuration, whose inputs gen_config.py writes, or a directory here with
@@ -46,7 +48,7 @@ OSS_CAD      ?= $(HOME)/riscv/oss-cad-suite
 NIX := nix develop $(LIBRELANE) --accept-flake-config --command
 LL  := $(NIX) librelane --pdk $(PDK) --pdk-root $(PDK_ROOT) --manual-pdk
 
-.PHONY: all synth check sramsim chipsim pdk inputs clean
+.PHONY: all synth check sramsim chipsim boardsim pdk inputs clean
 all: inputs $(IHP_PDK)
 	cd $(WORK) && $(LL) config.json
 	if grep -q '"MACROS"' $(WORK)/config.json; then $(MAKE) check; fi
@@ -61,6 +63,11 @@ chipsim: $(IHP_PDK)
 	$(MAKE) inputs CONFIG=asic_soc_rv32imc
 	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imc$(SUFFIX) \
 	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_chip.py
+
+boardsim: $(IHP_PDK)
+	$(MAKE) inputs CONFIG=asic_soc_rv32imc
+	cd $(WALLY)/hardware/board/sim && WALLY=$(WALLY) IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imc$(SUFFIX) \
+	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_board.py
 
 pdk: $(IHP_PDK)
 $(IHP_PDK):

@@ -13,6 +13,7 @@ make CONFIG=sramtest                     # one IHP SRAM macro (sramtest/), then 
 make CONFIG=asic_rv32imc                 # syn_rv32imc with a 4 KiB DTIM in an IHP SRAM macro
 make CONFIG=asic_soc_rv32imc             # a chip: the SoC in a pad ring (chip/), Chip flow
 make chipsim                             # cocotb test of that chip (RTL): boots a program over the UART
+make boardsim                            # the same chip on the KiCad test board's netlist (hardware/board/sim/)
 make PDK=ihp-sg13cmos5l CONFIG=asic_rv32imc   # the same in SG13CMOS5L, in work/asic_rv32imc-sg13cmos5l
 ```
 
