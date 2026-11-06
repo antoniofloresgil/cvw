@@ -63,8 +63,10 @@ Structure, following how the PWM peripheral is wired into Wally:
   have meant editing every instance (testbenches, FPGA tops, chip top). The peripherals
   reach the pads through the GPIO's existing IOF1 (`iof_en`/`iof_sel`), and the GPIO gained
   an `iof1oen` input so an alternate function can be an input or open drain: GPIO0-3 are the
-  timer channels (PWM output, or capture input), GPIO4 is I2C SCL and GPIO5 SDA (open drain,
-  external pull-ups); `IOF_EN` resets to 0, so the boot straps on GPIO keep working.
+  timer channels (PWM output, or capture input), GPIO6 is I2C SCL and GPIO7 SDA (open drain,
+  external pull-ups); `IOF_EN` resets to 0, so the boot straps on GPIO keep working. The bootloader
+  reads its straps from GPIO0-5 only, since the I2C pull-ups hold GPIO6-7 high (moved from GPIO4-5
+  on 2026-11-06 for the test board, ADR 0023).
 - The watchdog is two-stage: the first timeout sets a flag and interrupts, a second one with
   the flag still set requests a reset. The request stays inside `wallypipelinedsoc`: it is
   stretched to 16 clocks and ORed with the power-on and debug resets, and only a power-on

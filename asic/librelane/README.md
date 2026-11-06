@@ -44,11 +44,11 @@ Configurations:
   from the template (`chip/ip/`), since the PDKs have none. The BOOTROM holds `chip/boot.S`
   (built into `chip/boot.mem`), which loads a program into the 32 KiB RAM at 0x80000000 (four SRAM
   macros) and runs it. It reads straps from the GPIOs at reset: the UART's baud divisor from
-  GPIO[6:0], and with GPIO[7] high it skips the flash. Otherwise it reads an SPI flash on the SPI
+  GPIO[4:0], and with GPIO[5] high it skips the flash. Otherwise it reads an SPI flash on the SPI
   pads (Read command 0x03 from address 0: `WALY`, a 4-byte length and the program); without that
   header (no flash, or an erased one) it falls back to the UART: it sends `W`, receives a 4-byte
   length and the program, and sends back its 8-bit sum. `chip/test/test_chip.py` plays the flash
-  and loads `hello.S` from it (`boot_from_flash`), over the UART with GPIO[7] strapped
+  and loads `hello.S` from it (`boot_from_flash`), over the UART with GPIO[5] strapped
   (`boot_over_uart`), and through the JTAG port as a debugger does (`debug_over_jtag`): it halts
   the hart, loads the program with System Bus Access, turns the instruction trace on, resumes the
   hart at the program, halts it again and decodes the trace it reads back
@@ -58,9 +58,9 @@ Configurations:
   `src/uncore/mcu/`, APB region at 0x10080000, PLIC sources 15-18): a timer with four PWM or
   capture channels (0x0000), a two-stage watchdog that resets the chip (0x1000), an I2C master
   (0x2000) and an RTC with an alarm (0x3000). They share the GPIO pads through the alternate
-  function 1 (`IOF_EN`, `IOF_SEL` = 1): GPIO0-3 timer channels 0-3, GPIO4 I2C SCL, GPIO5 I2C SDA
-  (open drain, needs external pull-ups); GPIO6-7 stay plain, and the boot straps are unaffected as
-  `IOF_EN` resets to 0. `testbench/mcu` (`make`) is their unit test; the cocotb test
+  function 1 (`IOF_EN`, `IOF_SEL` = 1): GPIO0-3 timer channels 0-3, GPIO6 I2C SCL, GPIO7 I2C SDA
+  (open drain, needs external pull-ups); GPIO4-5 stay plain. The boot straps (GPIO0-5) are unaffected
+  as `IOF_EN` resets to 0, and the I2C pull-ups on GPIO6-7 are outside them. `testbench/mcu` (`make`) is their unit test; the cocotb test
   `mcu_peripherals` runs `chip/test/mcu.S` on the whole chip, PWM duty, capture, an I2C slave on
   the pads, the RTC alarm and the watchdog's reset included.
 - `asic_soc_rv32imc` has the JTAG debug port with 4 triggers and the instruction trace

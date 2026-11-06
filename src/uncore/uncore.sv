@@ -64,8 +64,8 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   logic                        HSELNoneD;
   logic                        UARTIntr, GPIOIntr, SPIIntr;
   // The MCU peripherals' pins are GPIO alternate function 1 (IOF_SEL set): timer channels 0-3 on
-  // GPIO 0-3, I2C SCL and SDA on GPIO 4 and 5 (open drain: the line is pulled low while the output
-  // enable is set).  Their inputs read the pads, whatever the GPIO's own input enable.
+  // GPIO 0-3, I2C SCL and SDA on GPIO 6 and 7 (open drain: the line is pulled low while the output
+  // enable is set), clear of the boot straps the chip's bootloader reads from GPIO 0-5.  Their inputs read the pads, whatever the GPIO's own input enable.
   logic [3:0]                  TimerPWMOut, TimerPWMEn;
   logic                        I2CSCLDrive, I2CSDADrive;
   logic [3:0]                  MCUIntr;                     // timer, watchdog, I2C, RTC: four consecutive PLIC sources
@@ -141,7 +141,7 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
       .PCLK, .PRESETn, .PSEL(PSEL[0]), .PADDR(PADDR[7:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[0]), .PREADY(PREADY[0]),
       .iof0({28'b0, PWMGPIO[3:0]}), .iof1({28'b0, TimerPWMOut}),
-      .iof1oen({26'b0, I2CSDADrive, I2CSCLDrive, TimerPWMEn}), .GPIOIN, .GPIOOUT, .GPIOEN, .GPIOIntr);
+      .iof1oen({24'b0, I2CSDADrive, I2CSCLDrive, 2'b0, TimerPWMEn}), .GPIOIN, .GPIOOUT, .GPIOEN, .GPIOIntr);
   end else begin : gpio
     assign GPIOOUT = '0; assign GPIOEN = '0; assign GPIOIntr = 1'b0;
   end
@@ -188,7 +188,7 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
     mcu_apb #(P) mcu(
       .PCLK, .PRESETn, .PSEL(PSEL[7]), .PADDR(PADDR[15:0]), .PWDATA, .PWRITE, .PENABLE,
       .PREADY(PREADY[7]), .PRDATA(PRDATA[7]), .MCUIntr,
-      .TimerCaptureIn(GPIOIN[3:0]), .TimerPWMOut, .TimerPWMEn, .I2CSCLIn(GPIOIN[4]), .I2CSDAIn(GPIOIN[5]),
+      .TimerCaptureIn(GPIOIN[3:0]), .TimerPWMOut, .TimerPWMEn, .I2CSCLIn(GPIOIN[6]), .I2CSDAIn(GPIOIN[7]),
       .I2CSCLDrive, .I2CSDADrive, .WDTReset);
   end else begin : mcu
     assign MCUIntr = '0; assign TimerPWMOut = '0; assign TimerPWMEn = '0;

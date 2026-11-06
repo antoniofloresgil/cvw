@@ -3,14 +3,14 @@
 
 boot_from_flash has the bootloader (../boot.S) copy hello.S from an SPI flash, which spi_flash
 plays, and checks what the program prints and drives.  boot_over_uart loads it over the UART, with
-GPIO[7] strapped to skip the flash, which holds a valid image.  debug_over_jtag, with an erased
+GPIO[5] strapped to skip the flash, which holds a valid image.  debug_over_jtag, with an erased
 flash, which the bootloader rejects, loads it through the JTAG port instead, as a debugger does: it
 halts the hart, loads the program with System Bus Access, turns the instruction trace on, resumes
 the hart at the program, then halts it again and reads the trace back, which etracedecode.py
 ($WALLY/testbench/debug/etrace) decodes into the program's path.
 mcu_peripherals boots mcu.S the same way and checks the timer, I2C, RTC and watchdog through the
 pads: PWM duty cycles on GPIO0 and GPIO1, a capture of an edge the test puts on GPIO2, an I2C slave
-(i2c_slave) on GPIO4 and GPIO5, the RTC alarm, and the reset the unserviced watchdog causes.
+(i2c_slave) on GPIO6 and GPIO7, the RTC alarm, and the reset the unserviced watchdog causes.
 Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imc inputs` (whose
 work/asic_soc_rv32imc/config.json lists the sources):  tabbypy3 test_chip.py
 `make chipsim` sets IHP_PDK (the process: .../ihp-sg13g2 or .../ihp-sg13cmos5l) and WORK.
@@ -26,8 +26,8 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, FallingEdge, First, RisingEdge, Timer
 
-DIVISOR = 1                       # baud divisor strapped on GPIO[6:0]: one bit every 16 clocks
-UART_BOOT = 0x80                  # GPIO[7]: skip the flash
+DIVISOR = 1                       # baud divisor strapped on GPIO[4:0]: one bit every 16 clocks
+UART_BOOT = 0x20                  # GPIO[5]: skip the flash
 BIT = 16 * DIVISOR
 HERE = Path(__file__).resolve().parent
 WALLY = Path(os.environ.get("WALLY", HERE.parents[3]))
@@ -136,7 +136,7 @@ async def boot_over_uart(dut):
 ###########################################################################################
 
 I2C_ADDR, I2C_REPLY = 0x50, 0xC3  # the slave's address, and the byte it returns on a read
-SCL, SDA = 4, 5                   # GPIO pads of I2C
+SCL, SDA = 6, 7                   # GPIO pads of I2C
 
 
 def pad_drive(dut, pad, value):

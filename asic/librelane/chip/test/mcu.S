@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 // Test program for the MCU peripherals of the chip (src/uncore/mcu), loaded by the bootloader at
 // 0x80000000.  The pins are GPIO alternate function 1: the timer's channels 0-3 on GPIO 0-3, I2C
-// SCL and SDA on GPIO 4 and 5.  Progress goes out on the UART, one letter each:
+// SCL and SDA on GPIO 6 and 7.  Progress goes out on the UART, one letter each:
 //   T  the timer runs: PWM 25 % on GPIO0, 75 % on GPIO1; channel 2 waits for a rising edge on GPIO2
 //   C  that edge was captured
 //   I  an I2C device at 0x50 acknowledged a write of 0x5A;  n: it did not
@@ -30,7 +30,7 @@ _start:
   li    s4, RTC
   li    s5, WDT
 
-  li    t0, 0x3F                  // GPIO 0-5 take alternate function 1
+  li    t0, 0xCF                  // GPIO 0-3 and 6-7 take alternate function 1
   sw    t0, GPIO_IOF_EN(s1)
   sw    t0, GPIO_IOF_SEL(s1)
 
