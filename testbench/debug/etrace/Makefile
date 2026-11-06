@@ -6,6 +6,7 @@
 #                       # etracedecode.py, they give the program counters that the hart retired
 #   make check ETRACE_SPEC=<riscv-trace-spec clone>   # also against the reference flow, byte for byte
 #   make check RESYNC_MAX=2   # another resynchronization period
+#   make check-harts COVERAGE=1 WORK=<dir>   # also Verilator line coverage in <dir>/<config>-<n>harts/coverage.dat
 #   make check-harts    # the same on SoCs with NHARTS (2) harts that trace at once, debug_rv32imc
 #                       # and debug_rv64gc_nocache (etrace_tb.sv): each hart is checked
 # Needs $WALLY (source setup.sh).
@@ -53,12 +54,12 @@ HARTELF  = $(CURDIR)/etracetest$(2)_r$(RESYNC_MAX).elf
 define checkharts
 	@mkdir -p $(HARTWORK)
 	@echo "Building etrace_tb for $(1) with $(NHARTS) harts (log in $(HARTWORK)/build.log)"
-	@verilator --binary --timing -j $(JOBS) -GNHARTS=$(NHARTS) -Wno-fatal -Wno-lint -Wno-style -Wno-TIMESCALEMOD \
+	@verilator $(if $(COVERAGE),--coverage-line) --binary --timing -j $(JOBS) -GNHARTS=$(NHARTS) -Wno-fatal -Wno-lint -Wno-style -Wno-TIMESCALEMOD \
 	  -I$(WALLY)/config/shared -I$(WALLY)/config/deriv/$(1) --top-module etrace_tb -Mdir $(HARTWORK) \
 	  $(SOURCES) $(WALLY)/testbench/common/etracedump.sv $(CURDIR)/etrace_tb.sv $(CURDIR)/../getenvval.cpp > $(HARTWORK)/build.log 2>&1 \
 	  || (grep -E "%Error|error:" $(HARTWORK)/build.log | head -20; false)
 	$(MAKE) -s -f $(WALLY)/testbench/Makefile WALLY=$(WALLY) $(HARTELF).memfile
-	$(HARTWORK)/Vetrace_tb +MemFile=$(HARTELF).memfile \
+	$(HARTWORK)/Vetrace_tb +MemFile=$(HARTELF).memfile $(if $(COVERAGE),+verilator+coverage+file+$(HARTWORK)/coverage.dat) \
 	  +Tohost=$$(riscv64-unknown-elf-nm $(HARTELF) | awk '$$3 == "tohost" {print $$1}') \
 	  +Results=$$(riscv64-unknown-elf-nm $(HARTELF) | awk '$$3 == "results" {print $$1}') \
 	  +EtraceCsv=$(HARTWORK)/etracetest.csv +EtracePackets=$(HARTWORK)/etracetest.packets \
