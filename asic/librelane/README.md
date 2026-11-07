@@ -88,8 +88,10 @@ Configurations:
 
 Notes:
 
-- The clock is 40 ns for every design but the chips (`asic_soc_*`, 45 ns: at 40 ns a path from the
-  trigger comparators through the trap logic to the counters fails by 0.25 ns in the slow corner). With LibreLane 3.1 (Yosys 0.69) `asic_rv32imc` misses 30 ns
+- The clock is 40 ns for every design but the chips (`asic_soc_*`, 50 ns: at 40 ns a path from the
+  trigger comparators through the trap logic to the counters fails by 0.25 ns in the slow corner,
+  and with the 16 PMP entries a path from the memory stage's address through the PMP comparators
+  fails by 0.12 ns at 45 ns; the board's oscillator is 18.432 MHz, 54 ns). With LibreLane 3.1 (Yosys 0.69) `asic_rv32imc` misses 30 ns
   by 6.8 ns in the slow corner, and the chip has a path from the PLIC through the trap logic to
   the counters as long. Synthesis uses `SYNTH_STRATEGY` `AREA 0` with `SYNTH_ARITH_TREE` and
   `SYNTH_MUL_BOOTH` off: 3.1's defaults (`DELAY 4`, both on) close 30 ns, but with 50 % more area

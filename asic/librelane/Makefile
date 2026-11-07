@@ -28,9 +28,11 @@ PDK          ?= ihp-sg13g2
 # slow corner, and the chips have a path from the PLIC through the trap logic to the 64-bit
 # counters as long; 40 ns for every design until those paths are optimized.  The chips (asic_soc_*)
 # add the debug triggers and the 32 KiB RAM, which put a path from the trigger comparators through
-# the trap logic to the counters at -0.25 ns in the slow corner at 40 ns: 45 ns for them
+# the trap logic to the counters at -0.25 ns in the slow corner at 40 ns, and the 16 PMP entries a
+# path from the address of the memory stage through the PMP comparators at -0.12 ns at 45 ns: 50 ns
+# for them (20 MHz; the board's oscillator is 18.432 MHz)
 ifneq (,$(findstring asic_soc_,$(CONFIG)))
-CLOCK_PERIOD ?= 45
+CLOCK_PERIOD ?= 50
 else
 CLOCK_PERIOD ?= 40
 endif
