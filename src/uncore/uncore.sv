@@ -148,7 +148,10 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   end
 
   if (P.GPIO_SUPPORTED == 1) begin : gpio
-    gpio_apb #(P) gpio(
+    // IOF0 of pins 3:0 is the PWM; with the MCU peripherals IOF1 of pins 3:0 is the timer's PWM and of
+    // pins 7:6 the I2C (a pin whose IOF does not exist reverts to software control)
+    gpio_apb #(.P(P), .IOF0_PINS(P.PWM_SUPPORTED ? 32'h0000000F : 32'h0),
+               .IOF1_PINS(P.MCU_SUPPORTED ? 32'h000000CF : 32'h0)) gpio(
       .PCLK, .PRESETn, .PSEL(PSEL[0]), .PADDR(PADDR[7:0]), .PWDATA, .PSTRB, .PWRITE, .PENABLE,
       .PRDATA(PRDATA[0]), .PREADY(PREADY[0]),
       .iof0({28'b0, PWMGPIO[3:0]}), .iof1({28'b0, TimerPWMOut}),
