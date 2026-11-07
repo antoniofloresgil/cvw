@@ -10,6 +10,7 @@ the hart at the program, then halts it again and reads the trace back, which etr
 ($WALLY/testbench/debug/etrace) decodes into the program's path.
 atomics runs atomics.S from the flash: the atomic memory operations and LR/SC on the RAM, and misa.A.
 pmp runs pmp.S: the PMP CSRs, User mode against three regions, and a locked entry in Machine mode.
+freertos runs the FreeRTOS demo (../freertos): tasks, a queue, a mutex and a software timer on the CLINT tick.
 mcu_peripherals boots mcu.S the same way and checks the timer, I2C, RTC and watchdog through the
 pads: PWM duty cycles on GPIO0 and GPIO1, a capture of an edge the test puts on GPIO2, an I2C slave
 (i2c_slave) on GPIO6 and GPIO7, the RTC alarm, and the reset the unserviced watchdog causes.
@@ -99,7 +100,7 @@ async def reset_chip(dut, straps=DIVISOR, flash=b"", ready="W"):
     await ClockCycles(dut.clk, 20)
     cocotb.start_soon(spi_flash(dut, flash))
     dut.rst_n.value = 1
-    char = await uart_recv(dut, timeout=1000000)
+    char = await uart_recv(dut, timeout=1000000 + 200 * len(flash))     # the copy from the flash takes time
     assert char == ord(ready), f"the bootloader sent {chr(char)!r}, not {ready!r}"
     dut.gpio_drive.value = 0                       # the straps have been read; the program drives the pads
 
@@ -150,6 +151,39 @@ async def pmp(dut):
     await reset_chip(dut, flash=flash_image(program), ready="F")
     result = await uart_recv(dut)
     assert result == ord("P"), f"pmp.S failed check {chr(result)!r}"
+
+
+@cocotb.test()
+async def freertos(dut):
+    """FreeRTOS (../freertos): a producer, a consumer, a mutex on the UART, a software timer and a task that
+    never blocks, all driven by the CLINT's tick; the demo prints its messages and "FREERTOS OK" if the tick,
+    the queue, the timer and the stacks behaved."""
+    program = (HERE.parent / "freertos/build/freertos.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    lines, line = [], b""
+    while not lines or not lines[-1].startswith(b"FREERTOS"):
+        try:
+            byte = await uart_recv(dut, timeout=400000)
+        except AssertionError as e:
+            state = ""
+            try:                                       # halt the hart through JTAG and say where it is
+                jtag = Jtag(dut)
+                await jtag.reset()
+                await jtag.write(DMCONTROL, 1)
+                await jtag.halt()
+                for name, regno in (("dpc", 0x7B1), ("mcause", 0x342), ("mepc", 0x341), ("mtval", 0x343),
+                                    ("mstatus", 0x300), ("mie", 0x304), ("mip", 0x344), ("mtvec", 0x305)):
+                    state += f" {name}=0x{await jtag.read_csr(regno):x}"
+            except AssertionError as e2:
+                state = f" (JTAG: {e2})"
+            raise AssertionError(f"{e} after {lines!r} and {line!r};{state}") from None
+        if byte == ord("\n"):
+            lines.append(line)
+            line = b""
+        else:
+            line += bytes([byte])
+    assert lines[0].startswith(b"FreeRTOS V"), f"first line {lines[0]!r}"
+    assert lines[1:] == [b"rx %d" % n for n in range(1, 6)] + [b"FREERTOS OK"], f"the demo printed {lines!r}"
 
 
 ###########################################################################################
@@ -344,6 +378,12 @@ class Jtag:
         cs = await self.read(ABSTRACTCS)
         assert (cs >> 8) & 7 == 0 and not cs & (1 << 12), f"abstract command failed: abstractcs 0x{cs:x}"
 
+    async def read_csr(self, regno):
+        await self.write(COMMAND, (2 << 20) | (1 << 17) | regno)         # 32 bits, transfer, read
+        cs = await self.read(ABSTRACTCS)
+        assert (cs >> 8) & 7 == 0 and not cs & (1 << 12), f"abstract command failed: abstractcs 0x{cs:x}"
+        return await self.read(DATA0)
+
     async def resume(self):
         await self.write(DMCONTROL, (1 << 30) | 1)
         for _ in range(20):
@@ -438,6 +478,7 @@ def main():
     subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imc_zicsr", "-mabi=ilp32", "-nostdlib",
                     "-Wl,-Ttext=0x80000000", "-o", build / "pmp.elf", HERE / "pmp.S"], check=True)
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "pmp.elf", build / "pmp.bin"], check=True)
+    subprocess.run(["make", "-C", HERE.parent / "freertos"], check=True)     # needs addins/FreeRTOS-Kernel
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "mcu.elf", build / "mcu.bin"], check=True)
 
     lib = pdk.name.removeprefix("ihp-")              # sg13g2 or sg13cmos5l
