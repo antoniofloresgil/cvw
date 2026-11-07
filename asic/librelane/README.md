@@ -85,6 +85,10 @@ Configurations:
   Two kinds of IHP SRAM macro in one design make Magic report some 380,000 false M2.d errors (the
   GDS files share 84 of 141 subcell names; KLayout finds 0), which is why the trace buffer is
   2048 words and not 1024.
+- With the A extension, PMP and the MCU peripherals, at 50 ns in SG13G2 (2.6 mm die): 88,037 standard
+  cells, 1.20 mm² (55 % of the area outside the macros); setup +4.88 ns in the slow corner, hold
+  +0.10 ns; 0 KLayout DRC, LVS, antenna and disconnected-pin errors; 21 mW. At 45 ns the PMP comparators
+  missed setup by 0.12 ns. Magic's findings are the waived ones (see below).
 
 Notes:
 
