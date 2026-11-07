@@ -21,6 +21,29 @@ Other configurations range down to a minimal RV32E core, and derivative configur
 
 Wally is described in a textbook, [*RISC-V System-on-Chip Design*](https://pages.hmc.edu/harris/ddca/rvsocd.html), by Harris, Stine, Thompson, and Harris.  Users should follow the setup instructions below.
 
+# About this fork
+
+This repository is a fork of [openhwgroup/cvw](https://github.com/openhwgroup/cvw) (CORE-V-Wally)
+that has grown into more than the processor. The core and its configurations are Wally's, and
+upstream is merged into `main` regularly; what the fork adds sits next to it, and every addition
+to the core is behind a configuration parameter that is off by default, so the upstream
+configurations behave as before ([the inventory](docs/engineering/upstream-coupling.md)). The rest
+of this README is upstream's setup guide and still applies.
+
+| | What it is | Where |
+|---|---|---|
+| **Open FPGA flow** | Wally on Xilinx 7-series boards with no Vivado: Yosys, nextpnr-xilinx (openXC7) and Project X-Ray, with LiteX/LiteDRAM for the DDR3 instead of Vivado's MIG. On the Nexys Video the RV32 design runs at 40 MHz and RV64GC boots Linux to a BusyBox shell at 12.5 MHz. The Vivado flow stays. | `fpga/`, [flow and LiteDRAM](docs/fpga-opensource-litedram.md), [DDR3 bring-up](docs/engineering/experiments/open-ddr3-bringup.md) |
+| **Open ASIC flow** | Wally from RTL to GDS with LibreLane on the IHP SG13G2 and SG13CMOS5L open PDKs, with KLayout and Magic DRC, LVS and timing signoff, all open tools. It builds a chip: **`asic_soc_rv32imac`**, an RV32IMAC microcontroller (the Cortex-M3's class) with 16 PMP entries, the JTAG debug port and instruction trace, SRAM macros, an SPI-flash/UART bootloader, a timer with PWM and capture, a watchdog, I2C, an RTC and a pad ring for a QFN 32. It has not been fabricated. | `asic/librelane/`, [README](asic/librelane/README.md), [ADR 0022](docs/engineering/decisions/0022-asic-microcontroller.md) |
+| **Test board** | A KiCad 10 board for that chip: USB-C, an FT2232H for JTAG and UART, SPI flash, I2C and analog parts to try the peripherals, and a QFN 32 socket. Its schematic and PCB are generated and routed by Python scripts, and `fab.py` writes the JLCPCB files. `make boardsim` simulates the chip on the board's own netlist. | `hardware/board/`, [README](hardware/board/README.md), [ADR 0023](docs/engineering/decisions/0023-mcu-test-board.md) |
+| **Real-time OS** | FreeRTOS runs on the chip, with static memory protection from locked PMP entries; its demo is tested in the chip's RTL simulation (`make chipsim`). | `asic/librelane/chip/freertos/` |
+| **Debug and trace** | RISC-V Debug 1.0 over JTAG (halt, step, triggers, System Bus Access; OpenOCD and GDB) and an E-Trace instruction trace. | [debug](docs/debug.md), [trace](docs/trace.md), `testbench/debug/` |
+| **Multicore and PMU** | Optional multicore (`NCORES`) with private MSI/MESI caches and Linux SMP; the Sscofpmf, Smcntrpmf and Smcdeleg counter extensions and an SBI PMU. | [engineering notes](docs/engineering/README.md) |
+
+The design decisions, measurements and what is still open are written down in
+[`docs/engineering/`](docs/engineering/README.md): architecture decision records, experiment records and
+[current work](docs/engineering/current-work.md). To use the fork, clone `antoniofloresgil/cvw` with
+`--recurse-submodules` (the step-by-step setup below clones upstream; the commands are the same).
+
 # Configurations
 
 Wally default configurations are listed below.  Synthesis results from TSMC 28HPC+ TT conditions (0.9 V, 25 °C), Design Compiler, no layout.  Embench results are without F and D.
