@@ -61,6 +61,10 @@ Configurations:
   memory protection: +7,851 cells (+12.9 %, +8.2 % of the area) in Yosys. `chipsim`'s `pmp` test runs
   `chip/test/pmp.S`: the PMP CSRs, User mode against regions with R+X, R+W, R and no entry, and a locked
   entry that stops Machine mode too.
+- FreeRTOS runs on the chip: `chip/freertos` has the kernel's RISC-V port (the submodule
+  `addins/FreeRTOS-Kernel`, V11.3.3, `git submodule update --init addins/FreeRTOS-Kernel`), the
+  configuration (tick from the CLINT, 1 kHz) and a demo with tasks, a queue, a mutex and a software timer;
+  see its README. `chipsim`'s `freertos` test boots it from the flash and checks what it prints.
 - `asic_soc_rv32imac` also has the microcontroller peripherals of
   [ADR 0022](../../docs/engineering/decisions/0022-asic-microcontroller.md) (`MCU_SUPPORTED`,
   `src/uncore/mcu/`, APB region at 0x10080000, PLIC sources 15-18): a timer with four PWM or
