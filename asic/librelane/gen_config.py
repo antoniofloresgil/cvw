@@ -94,8 +94,10 @@ config = {
     "EXTRA_EXCLUDED_CELLS": [f"{lib}_IOPad*"],
 }
 # The chip's floorplan: the die, the core inside the pad ring (365 um), and the SRAM macros: the RAM's
-# first four banks in a row along the top of the core, the others (a 64 KiB RAM has eight) and the trace
-# buffer in a row along the bottom, all with their pins facing the standard cells
+# first four banks in a row along the top of the core, the others (a 64 KiB RAM has eight) in a row along
+# the bottom, with their pins facing the standard cells.  With a 64 KiB RAM the trace buffer joins the top
+# row and the bottom row sits against the right edge: the clock tree puts a buffer next to the clock
+# pad, on the south edge, and a row of macros over the whole edge leaves it no room.
 HALO = 10
 SIZES = {"RM_IHPSG13_1P_1024x32_c2_bm_bist": (416.64, 336.46), "RM_IHPSG13_1P_2048x32_c2_bm_bist": (416.64, 626.7)}
 # A macro's halo reaches past the core edge, so that it leaves no strip narrower than the PDN pitch
@@ -135,21 +137,24 @@ def sram_banks(prefix, words):
 # The macros: instance -> (macro, x, y, orientation)
 placed = {}
 if sram and chip:
-    # The RAM on the bus: four banks in a row along the top of the core, the others and the trace buffer
-    # in a row along the bottom, turned to face the cells between the rows
+    # The RAM on the bus: four banks in a row along the top of the core, the others in a row along the
+    # bottom.  A 32 KiB RAM leaves the bottom row to the trace buffer, in the corner; a 64 KiB RAM puts
+    # the trace buffer at the end of the top row and the four other banks against the bottom right.
     banks = list(sram_banks("soc.uncoregen.uncore.ram.ram.memory", RAM_WORDS).items())
-    bottom = banks[4:]
-    if trace:
-        bottom += list(sram_banks("soc.etracegen.etrace.hart[0].sink.ram", param("TRACE_RAM_WORDS")).items())
-    for row, macros, top in (("top", banks[:4], True), ("bottom", bottom, False)):
-        x = CORE[0] + EDGE_X
+    tracebanks = list(sram_banks("soc.etracegen.etrace.hart[0].sink.ram", param("TRACE_RAM_WORDS")).items()) if trace else []
+    two_rows = len(banks) > 4
+    top_row = banks[:4] + (tracebanks if two_rows else [])
+    bottom_row = banks[4:] + ([] if two_rows else tracebanks)
+    for row, macros, top in (("top", top_row, True), ("bottom", bottom_row, False)):
+        width = sum(SIZES[m][0] + 2 * HALO for _, m in macros) - 2 * HALO + 2 * EDGE_X
+        if width > CORE[1] - CORE[0]:
+            sys.exit(f"the {len(macros)} macros of the {row} row do not fit in a {DIE} um die")
+        x = CORE[0] + EDGE_X if not (two_rows and not top) else CORE[1] - width + EDGE_X
         for inst, macro in macros:
             w, h = SIZES[macro]
             placed[inst] = (macro, round(x, 2), round(CORE[1] - EDGE_Y - h if top else CORE[0] + EDGE_Y, 2),
                             "N" if top else "S")
             x += w + 2 * HALO
-        if macros and x - 2 * HALO + EDGE_X > CORE[1]:
-            sys.exit(f"the {len(macros)} macros of the {row} row do not fit in a {DIE} um die")
 elif sram:
     placed["core.lsu.dtim.dtim.ram.ihp.sram"] = ("RM_IHPSG13_1P_1024x32_c2_bm_bist", 100, 100, "N")
 
