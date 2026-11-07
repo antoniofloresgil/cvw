@@ -88,5 +88,7 @@ Structure, following how the PWM peripheral is wired into Wally:
   multiplexing is what makes the peripherals fit.
 - More SRAM and peripherals grow the core area; the SRAM size and peripheral set
   decide whether the 2.0 x 2.0 mm die is enough, and must be fixed before the floorplan.
+  Whether and when the chip is fabricated is open, so the cost per mm² is not the limit: the
+  QFN 32's largest die, 3 x 3 mm, is (the die is 2.6 mm with 32 KiB of RAM, 2.92 mm with 64 KiB).
 - Interrupt latency and nesting are below a Cortex-M3 NVIC (no hardware stacking)
   until a CLIC-like controller exists.
