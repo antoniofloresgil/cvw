@@ -19,10 +19,18 @@
 #define PRODUCER_TICKS  5
 #define TIMER_TICKS     7
 
+extern void * volatile pxCurrentTCB;     /* tasks.c; its first member is the saved context's address */
+
+static uint32_t ulTryStore( volatile uint32_t * p );
+static uint32_t ulTryJump( void * p );
+static void vBusyTask( void * pv );
+
 static QueueHandle_t xQueue;
 static SemaphoreHandle_t xUartMutex;
 static volatile uint32_t ulTimerExpiries;
 static volatile uint32_t ulBusyCount;
+static volatile uint32_t ulExpectFault;     /* set around an access the PMP must refuse */
+static volatile uint32_t ulFaultCause;      /* what the exception handler saw: mcause, 0 if none */
 
 static void uart_putc( char c )
 {
@@ -123,6 +131,26 @@ static void vConsumerTask( void * pv )
         fail = "stack";
     }
 
+    /* The static protection of crt0.S: the code is read only and nothing but the code executes. */
+    {
+        volatile uint32_t ulLocal = 0;
+        uint32_t ulCfg, ulFirstWord = *( volatile uint32_t * ) vBusyTask;   /* reading the code is allowed */
+        void * pvHeap = pvPortMalloc( 16 );
+        uint32_t ulStoreData = ulTryStore( &ulLocal ), ulStoreCode = ulTryStore( ( volatile uint32_t * ) vBusyTask );
+        uint32_t ulExecHeap = ulTryJump( pvHeap ), ulExecStack = ulTryJump( ( void * ) &ulLocal );
+
+        __asm volatile ( "csrr %0, pmpcfg0" : "=r" ( ulCfg ) );
+        print_line( "prot store data ", ulStoreData );    /* 0: allowed */
+        print_line( "prot store code ", ulStoreCode );    /* 7: store access fault */
+        print_line( "prot exec heap ", ulExecHeap );      /* 1: instruction access fault */
+        print_line( "prot exec stack ", ulExecStack );    /* 1 */
+        if( ulCfg != 0x008B8D00 || ulFirstWord == 0 || ulStoreData != 0 || ulStoreCode != 7 || ulExecHeap != 1 || ulExecStack != 1 )
+        {
+            fail = "protection";
+        }
+        vPortFree( pvHeap );
+    }
+
     xSemaphoreTake( xUartMutex, portMAX_DELAY );
     if( fail )
     {
@@ -137,6 +165,25 @@ static void vConsumerTask( void * pv )
     xSemaphoreGive( xUartMutex );
 
     vTaskSuspend( NULL );
+}
+
+/* The protection checks: each access must fault with the cause the PMP gives, and the task goes on. */
+static uint32_t ulTryStore( volatile uint32_t * p )
+{
+    ulFaultCause = 0;
+    ulExpectFault = 1;
+    __asm volatile ( ".option push\n .option norvc\n sw zero, 0(%0)\n .option pop" ::"r" ( p ) : "memory" );
+    ulExpectFault = 0;
+    return ulFaultCause;
+}
+
+static uint32_t ulTryJump( void * p )
+{
+    ulFaultCause = 0;
+    ulExpectFault = 1;
+    ( ( void ( * )( void ) )p )();
+    ulExpectFault = 0;
+    return ulFaultCause;
 }
 
 static void vTimerCallback( TimerHandle_t xTimer )
@@ -212,9 +259,21 @@ void vApplicationStackOverflowHook( TaskHandle_t xTask, char * pcTaskName )
     }
 }
 
-/* Any exception: print mcause and stop. */
+/* An exception the demo provoked (ulExpectFault) returns to the task; any other: print mcause and stop. */
 void freertos_risc_v_application_exception_handler( uintptr_t mcause )
 {
+    if( ulExpectFault )
+    {
+        uintptr_t * pxFrame = *( uintptr_t ** ) pxCurrentTCB;   /* [0] mepc, [1] mstatus, [2] ra */
+
+        ulFaultCause = mcause;
+        if( mcause == 1 )
+        {
+            pxFrame[ 0 ] = pxFrame[ 2 ];    /* instruction access fault: go back to the caller of the jump */
+        }
+        return;                              /* a faulting store: mepc already points past it */
+    }
+
     uart_puts( "FREERTOS FAIL exception " );
     uart_putu( ( uint32_t ) mcause );
     uart_putc( '\n' );
