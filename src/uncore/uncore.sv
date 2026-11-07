@@ -50,7 +50,14 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   output logic [3:0]           SDCCS,
   output logic                 SDCCLK,
   output logic [3:0]           PWMGPIO,
-  output logic                 WDTReset                   // from the MCU peripherals' watchdog
+  output logic                 WDTReset,                  // from the MCU peripherals' watchdog
+  // TRACE_IN_RAM: the trace sink's port to the RAM (see ram_ahb)
+  input  logic                 TrReq, TrWe,
+  input  logic [3:0]           TrBwe,
+  input  logic [$clog2(P.TRACE_RAM_WORDS)-1:0] TrAddr,
+  input  logic [31:0]          TrDin,
+  output logic                 TrGrant,
+  output logic [31:0]          TrDout
 );
 
   logic [P.XLEN-1:0]           HREADRam;
@@ -102,10 +109,14 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
 
   // on-chip RAM
   if (P.UNCORE_RAM_SUPPORTED) begin : ram
-    ram_ahb #(.P(P), .RANGE(P.UNCORE_RAM_RANGE), .PRELOAD(P.UNCORE_RAM_PRELOAD)) ram (
+    ram_ahb #(.P(P), .RANGE(P.UNCORE_RAM_RANGE), .PRELOAD(P.UNCORE_RAM_PRELOAD), .TRACE_SHARED(P.TRACE_IN_RAM)) ram (
       .HCLK, .HRESETn, .HSELRam, .HADDR, .HWRITE, .HREADY,
-      .HTRANS, .HWDATA, .HWSTRB, .HREADRam, .HRESPRam, .HREADYRam);
-  end else assign {HREADRam, HRESPRam, HREADYRam} = '0;
+      .HTRANS, .HWDATA, .HWSTRB, .HREADRam, .HRESPRam, .HREADYRam,
+      .TrReq, .TrWe, .TrBwe, .TrAddr, .TrDin, .TrGrant, .TrDout);
+  end else begin
+    assign {HREADRam, HRESPRam, HREADYRam} = '0;
+    assign {TrGrant, TrDout} = '0;
+  end
 
   if (P.BOOTROM_SUPPORTED) begin : bootrom
     rom_ahb #(.P(P), .RANGE(P.BOOTROM_RANGE), .PRELOAD(P.BOOTROM_PRELOAD))

@@ -104,6 +104,12 @@ SIZES = {"RM_IHPSG13_1P_1024x32_c2_bm_bist": (416.64, 336.46), "RM_IHPSG13_1P_20
 # (see chip/pdn_cfg.tcl): 5 um from the side and 4.54 um from the top or bottom of the core.  Side
 # by side, the halos of two macros touch, for the same reason.
 EDGE_X, EDGE_Y = 5, 4.54
+# With two rows of macros the top row sits 1.89 um (half a standard cell row) lower: at 4.54 um from the
+# core's top edge the TopMetal1 straps end 15 um short of the top macros' halos, and pdngen leaves on
+# the rails above them 28 stacks of vias to nothing, 8 um of Metal2 each, that detailed routing shorted
+# with signals (3 shorts, Checker.TrDRC) near the macros' pins.  Of the shifts tried (1.89, 3.78,
+# 5.67, 7.56, 9.45 and 15.12 um), 1.89, 5.67 and 9.45 leave none, the others leave them.
+TOP_SHIFT = 1.89
 vh = (configdir / "config.vh").read_text()
 
 
@@ -118,11 +124,16 @@ def param(name):
 # The die: 2.6 mm for the 32 KiB RAM (a row of five macros does not fit), 2.92 mm for 64 KiB; a multiple of 8
 # um, so that OpenROAD.PadRing gets whole microns between the pads (see PAD_SOUTH below)
 RAM_WORDS = (param("UNCORE_RAM_RANGE") + 1) // 4
-DIE = 2600 if RAM_WORDS <= 8192 else 2920
-CORE = (365, DIE - 365)
 
-# The instruction trace (TRACE_SUPPORTED) puts its buffer in a macro of its own
+# The instruction trace (TRACE_SUPPORTED) puts its buffer in a macro of its own, or with TRACE_IN_RAM in the last
+# TRACE_RAM_WORDS words of the RAM (a macro that the RAM would have anyway)
 trace = param("TRACE_SUPPORTED") == 1
+trace_in_ram = trace and param("TRACE_IN_RAM") == 1
+# 2.752 mm with a 64 KiB RAM of eight macros, as the antenna rule Ant.e (KLayout) needs the die under about 2.78 mm:
+# the metal of the pad ring's supply rails over the gates of the input pads grows with the die (21307 against the
+# limit of 20000 at 2.92 mm, 19700 at 2.752 mm).
+DIE = 2600 if RAM_WORDS <= 8192 else 2752 if trace_in_ram else 2920
+CORE = (365, DIE - 365)
 
 
 def sram_banks(prefix, words):
@@ -140,8 +151,18 @@ if sram and chip:
     # The RAM on the bus: four banks in a row along the top of the core, the others in a row along the
     # bottom.  A 32 KiB RAM leaves the bottom row to the trace buffer, in the corner; a 64 KiB RAM puts
     # the trace buffer at the end of the top row and the four other banks against the bottom right.
-    banks = list(sram_banks("soc.uncoregen.uncore.ram.ram.memory", RAM_WORDS).items())
-    tracebanks = list(sram_banks("soc.etracegen.etrace.hart[0].sink.ram", param("TRACE_RAM_WORDS")).items()) if trace else []
+    ram = "soc.uncoregen.uncore.ram.ram"
+    if trace_in_ram:
+        # ram_ahb.sv with TRACE_SHARED: parts of RAM_WORDS/2, /4 ... and the trace RAM, each a power of two
+        banks, words, j = list(sram_banks(f"{ram}.memory", RAM_WORDS // 2).items()), RAM_WORDS // 4, 1
+        while words >= param("TRACE_RAM_WORDS"):
+            banks += sram_banks(f"{ram}.shared.part[{j}].memory", words).items()
+            words, j = words // 2, j + 1
+        banks += sram_banks(f"{ram}.shared.tmem", param("TRACE_RAM_WORDS")).items()
+        tracebanks = []
+    else:
+        banks = list(sram_banks(f"{ram}.memory", RAM_WORDS).items())
+        tracebanks = list(sram_banks("soc.etracegen.etrace.hart[0].sink.ram", param("TRACE_RAM_WORDS")).items()) if trace else []
     two_rows = len(banks) > 4
     top_row = banks[:4] + (tracebanks if two_rows else [])
     bottom_row = banks[4:] + ([] if two_rows else tracebanks)
@@ -152,7 +173,7 @@ if sram and chip:
         x = CORE[0] + EDGE_X if not (two_rows and not top) else CORE[1] - width + EDGE_X
         for inst, macro in macros:
             w, h = SIZES[macro]
-            placed[inst] = (macro, round(x, 2), round(CORE[1] - EDGE_Y - h if top else CORE[0] + EDGE_Y, 2),
+            placed[inst] = (macro, round(x, 2), round(CORE[1] - EDGE_Y - (TOP_SHIFT if two_rows else 0) - h if top else CORE[0] + EDGE_Y, 2),
                             "N" if top else "S")
             x += w + 2 * HALO
 elif sram:
@@ -239,8 +260,9 @@ if chip:
         "DIE_AREA": [0, 0, DIE, DIE],
         # Detailed placement moves a cell at most 500 x 100 um by default; a buffer that repair_design or
         # the clock tree puts over a macro (627 um high) finds no row that near, and DPL-0036 stops the flow.
-        # Only with nine macros, so that the 32 KiB chip's flow stays as it was.
-        **({"PL_MAX_DISPLACEMENT_X": 600, "PL_MAX_DISPLACEMENT_Y": 400} if RAM_WORDS > 8192 else {}),
+        # Only with nine macros, so that the 32 KiB chip's flow stays as it was.  600 x 400 sufficed until the top
+        # row moved 1.89 um; then 600 x 400 and 1200 x 500 failed and 900 x 700 passed: the vertical limit counts.
+        **({"PL_MAX_DISPLACEMENT_X": 900, "PL_MAX_DISPLACEMENT_Y": 700} if RAM_WORDS > 8192 else {}),
         "CORE_AREA": [CORE[0], CORE[0], CORE[1], CORE[1]],
         "PDN_CORE_RING": True,
         "PDN_CORE_RING_VWIDTH": 15,      # under 30 um, the widest metal without slotting

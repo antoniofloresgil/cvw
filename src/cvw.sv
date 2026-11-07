@@ -183,6 +183,7 @@ typedef struct packed {
   int           DEBUG_TRIGGERS;     // number of Sdtrig triggers (src/debug/triggers.sv), with DEBUG_SUPPORTED
   logic         TRACE_SUPPORTED;    // E-Trace instruction trace (docs/trace.md)
   int           TRACE_RAM_WORDS;    // 32-bit words of each hart's trace RAM sink
+  logic         TRACE_IN_RAM;       // the sink buffers in the last TRACE_RAM_WORDS words of the uncore RAM
   logic [63:0]  TRACE_BASE, TRACE_RANGE; // trace control registers: 8 KiB per hart (config-shared.vh)
   logic         CLINT_SUPPORTED;
   logic [63:0]  CLINT_BASE;

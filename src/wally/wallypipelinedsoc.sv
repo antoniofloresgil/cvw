@@ -178,14 +178,20 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   // control registers sit in a window that the uncore does not decode; they supply the read data
   // of a transfer there
   logic [P.AHBW-1:0] UncoreHRDATA;
+  // The port of the trace sink to the uncore RAM (TRACE_IN_RAM), which is idle otherwise
+  logic                                 TrReq, TrWe, TrGrant;
+  logic [3:0]                           TrBwe;
+  logic [$clog2(P.TRACE_RAM_WORDS)-1:0] TrAddr;
+  logic [31:0]                          TrDin, TrDout;
   if (P.TRACE_SUPPORTED & P.BUS_SUPPORTED) begin : etracegen
     logic              TraceHSEL;
     logic [P.AHBW-1:0] TraceHRDATA;
     etrace #(.P(P), .NHARTS(NCORES)) etrace(.clk, .reset(PowerOnReset), .ITrace(CoreITrace), .HADDR, .HTRANS, .HWRITE,
-      .HREADY, .HWDATA, .TraceHSEL, .TraceHRDATA);
+      .HREADY, .HWDATA, .TraceHSEL, .TraceHRDATA, .TrReq, .TrWe, .TrBwe, .TrAddr, .TrDin, .TrGrant, .TrDout);
     assign HRDATA = TraceHSEL ? TraceHRDATA : UncoreHRDATA;
   end else begin : noetrace
     assign HRDATA = UncoreHRDATA;
+    assign {TrReq, TrWe, TrBwe, TrAddr, TrDin} = '0;
   end
 
   // instantiate uncore if a bus interface exists
@@ -194,10 +200,12 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HRDATAEXT,
       .HREADYEXT, .HRESPEXT, .HRDATA(UncoreHRDATA), .HREADY, .HRESP, .HSELEXT,
       .MTimerInt, .MSwInt, .MExtInt, .SExtInt, .GPIOIN, .GPIOOUT, .GPIOEN, .UARTSin,
-      .UARTSout, .MTIME_CLINT, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO, .WDTReset);
+      .UARTSout, .MTIME_CLINT, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO, .WDTReset,
+      .TrReq, .TrWe, .TrBwe, .TrAddr, .TrDin, .TrGrant, .TrDout);
   end else begin
     assign {UncoreHRDATA, HREADY, HRESP, HSELEXT, MTimerInt, MSwInt, MExtInt, SExtInt,
-            MTIME_CLINT, GPIOOUT, GPIOEN, UARTSout, SPIOut, SPICS, SPICLK, SDCCmd, SDCCS, SDCCLK, PWMGPIO, WDTReset} = '0;
+            MTIME_CLINT, GPIOOUT, GPIOEN, UARTSout, SPIOut, SPICS, SPICLK, SDCCmd, SDCCS, SDCCLK, PWMGPIO, WDTReset,
+            TrGrant, TrDout} = '0;
   end
 
 endmodule
