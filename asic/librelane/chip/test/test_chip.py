@@ -157,7 +157,8 @@ async def pmp(dut):
 async def freertos(dut):
     """FreeRTOS (../freertos): a producer, a consumer, a mutex on the UART, a software timer and a task that
     never blocks, all driven by the CLINT's tick; the demo prints its messages and "FREERTOS OK" if the tick,
-    the queue, the timer and the stacks behaved."""
+    the queue, the timer and the stacks behaved, and the PMP refused a write to the code and a jump into the heap
+    or a stack."""
     program = (HERE.parent / "freertos/build/freertos.bin").read_bytes()
     await reset_chip(dut, flash=flash_image(program), ready="F")
     lines, line = [], b""
@@ -183,7 +184,8 @@ async def freertos(dut):
         else:
             line += bytes([byte])
     assert lines[0].startswith(b"FreeRTOS V"), f"first line {lines[0]!r}"
-    assert lines[1:] == [b"rx %d" % n for n in range(1, 6)] + [b"FREERTOS OK"], f"the demo printed {lines!r}"
+    assert lines[1:] == [b"rx %d" % n for n in range(1, 6)] + [
+        b"prot store data 0", b"prot store code 7", b"prot exec heap 1", b"prot exec stack 1", b"FREERTOS OK"], f"the demo printed {lines!r}"
 
 
 ###########################################################################################

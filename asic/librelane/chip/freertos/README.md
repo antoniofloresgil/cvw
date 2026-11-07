@@ -18,5 +18,26 @@ so the heap is 12 KiB. The image is loaded like any program: in the SPI flash as
 `build/freertos.bin` (what `chipsim` does), or over the UART with GPIO[5] strapped (see `../boot.S`).
 It uses the UART as the bootloader left it.
 
-Not done: memory protection for the tasks (the chip has 16 PMP entries; this demo does not use them),
-interrupt-driven peripherals, and the other tick rates.
+## Memory protection (static)
+
+`crt0.S` locks three PMP entries before `main`: the code and constants (RAM start to `__text_end`) are
+read and execute only, the rest of the RAM (data, `.bss`, the heap, every stack) read and write only. A
+locked entry binds Machine mode too and stays until the next reset, so a task that writes to the code
+or jumps into the heap or a stack takes a store (7) or instruction (1) access fault. The demo proves it
+at the end: its last lines are `prot store data 0`, `prot store code 7`, `prot exec heap 1` and
+`prot exec stack 1`, recovered by the exception handler (which finds the saved context through
+`pxCurrentTCB`: `[0]` mepc, `[1]` mstatus, `[2]` ra). It costs 3 of the 16 entries, no RAM and about 100
+bytes of code.
+
+This does not isolate the tasks from each other: they run in Machine mode and share the data region.
+Real isolation needs User-mode tasks and a port of our own, because the standard RISC-V port pushes the
+context on the interrupted task's own stack in Machine mode: a User task that points `sp` at kernel
+memory and takes the tick makes the kernel write there. The design would be: `mscratch` holds the task's
+kernel stack while it runs in User mode and the trap entry swaps it with `sp` before saving anything;
+the context (with the user `sp`) goes to the kernel stack, the user stack is a separate NAPOT region;
+`traceTASK_SWITCHED_IN` reloads the task's PMP entries (its stack, its data, the code, the peripherals it
+may use) at every switch; and the kernel calls a task makes (delay, queues, UART) are `ecall`s to a table
+of handlers that validate the pointers and handles. The static entries above would then give the User
+tasks the whole data region, so the NX-for-data entry would be dropped and the User entries put first.
+
+Not done: that isolation, interrupt-driven peripherals, and the other tick rates.

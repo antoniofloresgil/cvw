@@ -14,6 +14,7 @@ SECTIONS
     *(.rodata .rodata.*)
     *(.srodata .srodata.*)
     . = ALIGN(4);
+    __text_end = .;                 /* the code and the constants end here: crt0.S makes them read-only */
   } > RAM
   .data : {
     *(.data .data.*)
@@ -29,5 +30,6 @@ SECTIONS
     . = ALIGN(16);
     __bss_end = .;
   } > RAM
+  __ram_start = ORIGIN(RAM);
   __stack_top = ORIGIN(RAM) + LENGTH(RAM);
 }

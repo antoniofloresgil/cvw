@@ -64,7 +64,8 @@ Configurations:
 - FreeRTOS runs on the chip: `chip/freertos` has the kernel's RISC-V port (the submodule
   `addins/FreeRTOS-Kernel`, V11.3.3, `git submodule update --init addins/FreeRTOS-Kernel`), the
   configuration (tick from the CLINT, 1 kHz) and a demo with tasks, a queue, a mutex and a software timer;
-  see its README. `chipsim`'s `freertos` test boots it from the flash and checks what it prints.
+  see its README. It also locks three PMP entries (code read-only and execute-only, data not executable)
+  and proves it. `chipsim`'s `freertos` test boots it from the flash and checks what it prints.
 - `asic_soc_rv32imac` also has the microcontroller peripherals of
   [ADR 0022](../../docs/engineering/decisions/0022-asic-microcontroller.md) (`MCU_SUPPORTED`,
   `src/uncore/mcu/`, APB region at 0x10080000, PLIC sources 15-18): a timer with four PWM or
