@@ -169,7 +169,7 @@ PIN_LABELS = {  # ref: ({pad: text}, side of the pads the texts go)
     "J3": ({"1": "GND", "2": "TX", "3": "RX"}, "right"),
     "J4": ({"1": "AIN2", "2": "AIN3", "3": "DAC", "4": "GND"}, "left"),
 }
-TITLE = "asic_soc_rv32imc test board\nCORE-V Wally (cvw), rev A"
+TITLE = "asic_soc_rv32imac test board\nCORE-V Wally (cvw), rev A"
 
 
 class Silk:

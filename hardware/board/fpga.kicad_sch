@@ -1795,7 +1795,7 @@
 			)
 		)
 	)
-	(text "FPGA headers: an FPGA running asic_soc_rv32imc on these nets replaces the chip (remove U6)."
+	(text "FPGA headers: an FPGA running asic_soc_rv32imac on these nets replaces the chip (remove U6)."
 		(exclude_from_sim no)
 		(at 15 15 0)
 		(effects

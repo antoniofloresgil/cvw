@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-"""cocotb test of the asic_soc_rv32imc chip (RTL, with the IHP pad and SRAM models).
+"""cocotb test of the asic_soc_rv32imac chip (RTL, with the IHP pad and SRAM models).
 
 boot_from_flash has the bootloader (../boot.S) copy hello.S from an SPI flash, which spi_flash
 plays, and checks what the program prints and drives.  boot_over_uart loads it over the UART, with
@@ -8,11 +8,13 @@ flash, which the bootloader rejects, loads it through the JTAG port instead, as 
 halts the hart, loads the program with System Bus Access, turns the instruction trace on, resumes
 the hart at the program, then halts it again and reads the trace back, which etracedecode.py
 ($WALLY/testbench/debug/etrace) decodes into the program's path.
+atomics runs atomics.S from the flash: the atomic memory operations and LR/SC on the RAM, and misa.A.
+pmp runs pmp.S: the PMP CSRs, User mode against three regions, and a locked entry in Machine mode.
 mcu_peripherals boots mcu.S the same way and checks the timer, I2C, RTC and watchdog through the
 pads: PWM duty cycles on GPIO0 and GPIO1, a capture of an edge the test puts on GPIO2, an I2C slave
 (i2c_slave) on GPIO6 and GPIO7, the RTC alarm, and the reset the unserviced watchdog causes.
-Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imc inputs` (whose
-work/asic_soc_rv32imc/config.json lists the sources):  tabbypy3 test_chip.py
+Run with the Python of oss-cad-suite, after `make CONFIG=asic_soc_rv32imac inputs` (whose
+work/asic_soc_rv32imac/config.json lists the sources):  tabbypy3 test_chip.py
 `make chipsim` sets IHP_PDK (the process: .../ihp-sg13g2 or .../ihp-sg13cmos5l) and WORK.
 """
 
@@ -129,6 +131,25 @@ async def boot_over_uart(dut):
         await uart_send(dut, byte)
     assert await uart_recv(dut) == sum(program) & 0xFF, "wrong checksum"
     await check_program_output(dut)
+
+
+@cocotb.test()
+async def atomics(dut):
+    """The A extension (Zaamo and Zalrsc): atomics.S sends 'P' if every operation gave the right result."""
+    program = (HERE / "build/atomics.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    result = await uart_recv(dut)
+    assert result == ord("P"), f"atomics.S failed check {chr(result)!r}"
+
+
+@cocotb.test()
+async def pmp(dut):
+    """PMP (16 entries): pmp.S checks the CSRs, User mode against regions with R+X, R+W, R and no entry,
+    and a locked entry in Machine mode; it sends 'P' if every access was allowed or refused as it should."""
+    program = (HERE / "build/pmp.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    result = await uart_recv(dut)
+    assert result == ord("P"), f"pmp.S failed check {chr(result)!r}"
 
 
 ###########################################################################################
@@ -400,7 +421,7 @@ def main():
     from cocotb_tools.check_results import get_results
     from cocotb_tools.runner import get_runner
 
-    work = Path(os.environ.get("WORK", HERE.parents[1] / "work/asic_soc_rv32imc"))
+    work = Path(os.environ.get("WORK", HERE.parents[1] / "work/asic_soc_rv32imac"))
     config = json.loads((work / "config.json").read_text())
     pdk = Path(os.environ.get("IHP_PDK", Path.home() / ".ciel/ciel/ihp-sg13/versions/"
                               "89d42ee6d2fd9b50b86a1aada6fee6673c3e6008/ihp-sg13g2"))
@@ -411,6 +432,12 @@ def main():
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "hello.elf", build / "hello.bin"], check=True)
     subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imc_zicsr", "-mabi=ilp32", "-nostdlib",
                     "-Wl,-Ttext=0x80000000", "-o", build / "mcu.elf", HERE / "mcu.S"], check=True)
+    subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imac_zicsr", "-mabi=ilp32", "-nostdlib",
+                    "-Wl,-Ttext=0x80000000", "-o", build / "atomics.elf", HERE / "atomics.S"], check=True)
+    subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "atomics.elf", build / "atomics.bin"], check=True)
+    subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imc_zicsr", "-mabi=ilp32", "-nostdlib",
+                    "-Wl,-Ttext=0x80000000", "-o", build / "pmp.elf", HERE / "pmp.S"], check=True)
+    subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "pmp.elf", build / "pmp.bin"], check=True)
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "mcu.elf", build / "mcu.bin"], check=True)
 
     lib = pdk.name.removeprefix("ihp-")              # sg13g2 or sg13cmos5l

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-// Bootloader of asic_soc_rv32imc, in its 512-byte BOOTROM at 0x1000: copies a program from an SPI
+// Bootloader of asic_soc_rv32imac, in its 512-byte BOOTROM at 0x1000: copies a program from an SPI
 // flash, or loads it over the UART, into the RAM at 0x80000000 and runs it with sp at the top of
 // the RAM.
 //

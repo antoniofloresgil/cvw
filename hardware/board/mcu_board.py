@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-"""The test board of asic_soc_rv32imc (ADR 0023), as parts and nets.  `python3 mcu_board.py` writes
+"""The test board of asic_soc_rv32imac (ADR 0023), as parts and nets.  `python3 mcu_board.py` writes
 mcu_board.kicad_sch and one schematic per sheet; the nets are named after the pads of
 asic/librelane/chip/chip_top.sv.
 
@@ -10,7 +10,7 @@ feeds only the chip's pads, its decoupling, the reset supervisor that watches it
 header's reference; the flash, the oscillator and every pull-up run from +3V3 like the rest.
 
 The chip's site is a QFN32 (its pin numbers are provisional until the bonding plan) and three
-Pmod-style headers carry the same nets, so that an FPGA running asic_soc_rv32imc takes the chip's
+Pmod-style headers carry the same nets, so that an FPGA running asic_soc_rv32imac takes the chip's
 place before the silicon exists (with the chip removed).  The FT2232HL gives JTAG (channel A, with
 nSRST on ADBUS4) and the UART (channel B) on the USB-C.
 
@@ -64,7 +64,7 @@ def chip_symbol():
     pins.append((33, "EP", "passive"))
     left = [p for p in pins if p[2] == "power_in" or p[1] == "EP"]
     right = [p for p in pins if p not in left]
-    return k.custom_symbol("mcu_board:asic_soc_rv32imc", left, right,
+    return k.custom_symbol("mcu_board:asic_soc_rv32imac", left, right,
                            footprint="Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.3x3.3mm", width=25.4)
 
 
@@ -147,10 +147,10 @@ def debug(s):
 
 
 def chip(s):
-    k.custom_symbol_cache["mcu_board:asic_soc_rv32imc"] = chip_symbol()
+    k.custom_symbol_cache["mcu_board:asic_soc_rv32imac"] = chip_symbol()
     nets = {pad: PAD_NET[pad] for pads in RING for pad in pads}
     nets["EP"] = "GND"
-    s.add("mcu_board", "asic_soc_rv32imc", "U6", "asic_soc_rv32imc", nets)
+    s.add("mcu_board", "asic_soc_rv32imac", "U6", "asic_soc_rv32imac", nets)
     caps(s, "C2", "VDD_IO", ["100n", "100n", "4.7u"])
     caps(s, "C3", "VDD_CORE", ["100n", "100n", "4.7u"])
     s.add("Oscillator", "ASE-xxxMHz", "X1", "18.432MHz", {"EN": "+3V3", "Vdd": "+3V3", "GND": "GND", "OUT": "OSC_OUT"})
@@ -223,11 +223,11 @@ def fpga(s):
         nets = {str(2 * n - 1 if n <= 6 else 2 * (n - 6)): net for n, net in pmod.items()}
         s.add("Connector_Generic", "Conn_02x06_Odd_Even", ref, value, nets,
               footprint="Connector_PinHeader_2.54mm:PinHeader_2x06_P2.54mm_Horizontal")
-    s.text(15, 15, "FPGA headers: an FPGA running asic_soc_rv32imc on these nets replaces the chip (remove U6).")
+    s.text(15, 15, "FPGA headers: an FPGA running asic_soc_rv32imac on these nets replaces the chip (remove U6).")
 
 
 SHEETS = [("power", power, "Power: USB-C, 3.3 V and 1.2 V", "A3"), ("debug", debug, "USB: FT2232HL JTAG and UART", "A3"),
-          ("chip", chip, "asic_soc_rv32imc, clock, reset, SPI flash", "A3"),
+          ("chip", chip, "asic_soc_rv32imac, clock, reset, SPI flash", "A3"),
           ("peripherals", peripherals, "Straps, buttons, LEDs, I2C and analog", "A3"),
           ("fpga", fpga, "FPGA headers", "A4")]
 PAPER_HEIGHT = {"A4": 210, "A3": 297, "A2": 420, "A1": 594}
@@ -244,7 +244,7 @@ def main():
             raise SystemExit(f"sheet {name}: the parts reach {s.bottom:.0f} mm, more than {paper} holds")
         s.write(out / f"{name}.kicad_sch")
         entries.append((name, f"{name}.kicad_sch", sheet_uuid))
-    k.write_root(out / f"{PROJECT}.kicad_sch", PROJECT, ROOT, "MCU test board (asic_soc_rv32imc)", entries)
+    k.write_root(out / f"{PROJECT}.kicad_sch", PROJECT, ROOT, "MCU test board (asic_soc_rv32imac)", entries)
     k.write_symbol_lib(out / f"{PROJECT}.kicad_sym", [chip_symbol()])
     (out / "sym-lib-table").write_text('(sym_lib_table\n  (version 7)\n  (lib (name "mcu_board")(type "KiCad")'
                                        '(uri "${KIPRJMOD}/mcu_board.kicad_sym")(options "")(descr "Symbols of this board"))\n)\n')

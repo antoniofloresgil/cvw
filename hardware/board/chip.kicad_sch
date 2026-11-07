@@ -5,10 +5,10 @@
 	(uuid "bd8581df-404e-5e04-b7ea-380772f870b2")
 	(paper "A3")
 	(title_block
-		(title "asic_soc_rv32imc, clock, reset, SPI flash")
+		(title "asic_soc_rv32imac, clock, reset, SPI flash")
 	)
 	(lib_symbols
-		(symbol "mcu_board:asic_soc_rv32imc"
+		(symbol "mcu_board:asic_soc_rv32imac"
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
@@ -20,7 +20,7 @@
 					)
 				)
 			)
-			(property "Value" "mcu_board:asic_soc_rv32imc"
+			(property "Value" "mcu_board:asic_soc_rv32imac"
 				(at 0 -27.94 0)
 				(effects
 					(font
@@ -46,7 +46,7 @@
 					(hide yes)
 				)
 			)
-			(symbol "asic_soc_rv32imc_1_1"
+			(symbol "asic_soc_rv32imac_1_1"
 				(rectangle
 					(start -12.7 26.67)
 					(end 12.7 -26.67)
@@ -3032,7 +3032,7 @@
 		)
 	)
 	(symbol
-		(lib_id "mcu_board:asic_soc_rv32imc")
+		(lib_id "mcu_board:asic_soc_rv32imac")
 		(at 48.26 43.18 0)
 		(unit 1)
 		(exclude_from_sim no)
@@ -3048,7 +3048,7 @@
 				)
 			)
 		)
-		(property "Value" "asic_soc_rv32imc"
+		(property "Value" "asic_soc_rv32imac"
 			(at 48.26 48.26 0)
 			(effects
 				(font

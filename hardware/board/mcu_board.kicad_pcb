@@ -5741,7 +5741,7 @@
 				)
 			)
 		)
-		(property "Value" "asic_soc_rv32imc"
+		(property "Value" "asic_soc_rv32imac"
 			(at 0 3.83 0)
 			(layer "F.Fab")
 			(uuid "0d0a96c9-ab74-4e97-8bb8-24d73a2d72db")
@@ -32754,7 +32754,7 @@
 			)
 		)
 	)
-	(gr_text "asic_soc_rv32imc test board\nCORE-V Wally (cvw), rev A"
+	(gr_text "asic_soc_rv32imac test board\nCORE-V Wally (cvw), rev A"
 		(at 128 133.046777 0)
 		(layer "F.SilkS")
 		(uuid "d8ba2bc9-4b45-4028-a64f-56d69047eeb0")

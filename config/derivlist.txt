@@ -149,11 +149,18 @@ LATCH_BASED_REGISTERFILE 0
 # banks: Magic's DRC fails on a design with two kinds of IHP SRAM macro.
 # The MCU peripherals (timer with PWM and capture, watchdog, I2C, RTC; src/uncore/mcu) take PLIC
 # sources 15 to 18, after the PWM's 11 to 14.
+# The A extension (atomics on the RAM; Zaamo and Zalrsc): RV32IMAC, the target of most toolchains and
+# RTOSes.  Yosys measures +1.0 % of the chip's area (+1,168 cells of 59,504).
+# PMP with 16 entries (the smallest Wally has), for the memory protection of an RTOS (Zephyr's User
+# mode, FreeRTOS-MPU style): +8.2 % of the area over RV32IMAC (+7,851 cells of 60,672).  No grain, 4 bytes.
 # The asic configurations keep the flop register file: with rv32imc's latch-based one (upstream
 # 6c75547b3), OpenROAD's clock tree synthesis treats the 32 row clock gates as macro sinks and loses
 # one of them, which fails the disconnected-pins check.
-deriv asic_soc_rv32imc rv32imc syn_rv32e
+deriv asic_soc_rv32imac rv32imc syn_rv32e
 LATCH_BASED_REGISTERFILE 0
+ZAAMO_SUPPORTED         1
+ZALRSC_SUPPORTED        1
+PMP_ENTRIES             32'd16
 IROM_SUPPORTED          0
 DTIM_SUPPORTED          0
 RESET_VECTOR            64'h00001000

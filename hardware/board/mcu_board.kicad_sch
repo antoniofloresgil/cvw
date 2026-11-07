@@ -5,7 +5,7 @@
 	(uuid "4bba502d-d83c-5809-84dd-6122f807a0f6")
 	(paper "A4")
 	(title_block
-		(title "MCU test board (asic_soc_rv32imc)")
+		(title "MCU test board (asic_soc_rv32imac)")
 	)
 	(lib_symbols)
 	(sheet

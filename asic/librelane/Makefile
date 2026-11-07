@@ -5,7 +5,7 @@
 #   make synth CONFIG=syn_rv32imc        synthesis only
 #   make check CONFIG=sramtest           DRC check of the newest run of a design with SRAM macros
 #   make sramsim                         sram/ram1p1rwbe.sv with the macro's model against Wally's RAM
-#   make CONFIG=asic_soc_rv32imc         a chip: Wally's SoC in a pad ring (chip/), Chip flow
+#   make CONFIG=asic_soc_rv32imac         a chip: Wally's SoC in a pad ring (chip/), Chip flow
 #   make chipsim                         cocotb test of that chip: boots a program from SPI flash,
 #                                        over the UART and through JTAG
 #   make boardsim                        the same chip on the netlist of the KiCad test board
@@ -28,9 +28,11 @@ PDK          ?= ihp-sg13g2
 # slow corner, and the chips have a path from the PLIC through the trap logic to the 64-bit
 # counters as long; 40 ns for every design until those paths are optimized.  The chips (asic_soc_*)
 # add the debug triggers and the 32 KiB RAM, which put a path from the trigger comparators through
-# the trap logic to the counters at -0.25 ns in the slow corner at 40 ns: 45 ns for them
+# the trap logic to the counters at -0.25 ns in the slow corner at 40 ns, and the 16 PMP entries a
+# path from the address of the memory stage through the PMP comparators at -0.12 ns at 45 ns: 50 ns
+# for them (20 MHz; the board's oscillator is 18.432 MHz)
 ifneq (,$(findstring asic_soc_,$(CONFIG)))
-CLOCK_PERIOD ?= 45
+CLOCK_PERIOD ?= 50
 else
 CLOCK_PERIOD ?= 40
 endif
@@ -60,13 +62,13 @@ check:
 	cd $(WORK) && $(NIX) python3 $(CURDIR)/check_drc.py
 
 chipsim: $(IHP_PDK)
-	$(MAKE) inputs CONFIG=asic_soc_rv32imc
-	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imc$(SUFFIX) \
+	$(MAKE) inputs CONFIG=asic_soc_rv32imac
+	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imac$(SUFFIX) \
 	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_chip.py
 
 boardsim: $(IHP_PDK)
-	$(MAKE) inputs CONFIG=asic_soc_rv32imc
-	cd $(WALLY)/hardware/board/sim && WALLY=$(WALLY) IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imc$(SUFFIX) \
+	$(MAKE) inputs CONFIG=asic_soc_rv32imac
+	cd $(WALLY)/hardware/board/sim && WALLY=$(WALLY) IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imac$(SUFFIX) \
 	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_board.py
 
 pdk: $(IHP_PDK)

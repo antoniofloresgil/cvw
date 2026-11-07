@@ -11,7 +11,7 @@ make CONFIG=syn_rv32imc CLOCK_PERIOD=30  # another clock period
 make synth CONFIG=syn_rv64gc             # synthesis only
 make CONFIG=sramtest                     # one IHP SRAM macro (sramtest/), then check_drc.py
 make CONFIG=asic_rv32imc                 # syn_rv32imc with a 4 KiB DTIM in an IHP SRAM macro
-make CONFIG=asic_soc_rv32imc             # a chip: the SoC in a pad ring (chip/), Chip flow
+make CONFIG=asic_soc_rv32imac             # a chip: the SoC in a pad ring (chip/), Chip flow
 make chipsim                             # cocotb test of that chip (RTL): boots a program over the UART
 make boardsim                            # the same chip on the KiCad test board's netlist (hardware/board/sim/)
 make PDK=ihp-sg13cmos5l CONFIG=asic_rv32imc   # the same in SG13CMOS5L, in work/asic_rv32imc-sg13cmos5l
@@ -54,7 +54,14 @@ Configurations:
   the hart, loads the program with System Bus Access, turns the instruction trace on, resumes the
   hart at the program, halts it again and decodes the trace it reads back
   (`$WALLY/testbench/debug/etrace/etracedecode.py`).
-- `asic_soc_rv32imc` also has the microcontroller peripherals of
+- `asic_soc_rv32imac` is an RV32IMAC core: the A extension (`ZAAMO_SUPPORTED`, `ZALRSC_SUPPORTED`; atomics
+  only on the RAM, as the PMA checker allows) adds 1,168 cells (+2.0 %, +1.0 % of the area) in Yosys.
+  `chipsim`'s `atomics` test runs `chip/test/atomics.S`.
+  It also has PMP with 16 entries (`PMP_ENTRIES`, the smallest Wally has, grain 4 bytes) for an RTOS's
+  memory protection: +7,851 cells (+12.9 %, +8.2 % of the area) in Yosys. `chipsim`'s `pmp` test runs
+  `chip/test/pmp.S`: the PMP CSRs, User mode against regions with R+X, R+W, R and no entry, and a locked
+  entry that stops Machine mode too.
+- `asic_soc_rv32imac` also has the microcontroller peripherals of
   [ADR 0022](../../docs/engineering/decisions/0022-asic-microcontroller.md) (`MCU_SUPPORTED`,
   `src/uncore/mcu/`, APB region at 0x10080000, PLIC sources 15-18): a timer with four PWM or
   capture channels (0x0000), a two-stage watchdog that resets the chip (0x1000), an I2C master
@@ -64,7 +71,7 @@ Configurations:
   as `IOF_EN` resets to 0, and the I2C pull-ups on GPIO6-7 are outside them. `testbench/mcu` (`make`) is their unit test; the cocotb test
   `mcu_peripherals` runs `chip/test/mcu.S` on the whole chip, PWM duty, capture, an I2C slave on
   the pads, the RTC alarm and the watchdog's reset included.
-- `asic_soc_rv32imc` has the JTAG debug port with 4 triggers and the instruction trace
+- `asic_soc_rv32imac` has the JTAG debug port with 4 triggers and the instruction trace
   (`DEBUG_SUPPORTED`, `DEBUG_TRIGGERS`, `TRACE_SUPPORTED`; `docs/debug.md`, `docs/trace.md`): the
   trace buffer (2048 x 32, 8 KiB) is an SRAM macro of its own, of the same kind as the RAM's. Measured with Yosys and the SG13G2 library (memories as macros),
   the debug port adds 5,064 cells to the SoC's 34,216, the triggers 3,617 and the trace 4,646;
@@ -78,11 +85,17 @@ Configurations:
   Two kinds of IHP SRAM macro in one design make Magic report some 380,000 false M2.d errors (the
   GDS files share 84 of 141 subcell names; KLayout finds 0), which is why the trace buffer is
   2048 words and not 1024.
+- With the A extension, PMP and the MCU peripherals, at 50 ns in SG13G2 (2.6 mm die): 88,037 standard
+  cells, 1.20 mm² (55 % of the area outside the macros); setup +4.88 ns in the slow corner, hold
+  +0.10 ns; 0 KLayout DRC, LVS, antenna and disconnected-pin errors; 21 mW. At 45 ns the PMP comparators
+  missed setup by 0.12 ns. Magic's findings are the waived ones (see below).
 
 Notes:
 
-- The clock is 40 ns for every design but the chips (`asic_soc_*`, 45 ns: at 40 ns a path from the
-  trigger comparators through the trap logic to the counters fails by 0.25 ns in the slow corner). With LibreLane 3.1 (Yosys 0.69) `asic_rv32imc` misses 30 ns
+- The clock is 40 ns for every design but the chips (`asic_soc_*`, 50 ns: at 40 ns a path from the
+  trigger comparators through the trap logic to the counters fails by 0.25 ns in the slow corner,
+  and with the 16 PMP entries a path from the memory stage's address through the PMP comparators
+  fails by 0.12 ns at 45 ns; the board's oscillator is 18.432 MHz, 54 ns). With LibreLane 3.1 (Yosys 0.69) `asic_rv32imc` misses 30 ns
   by 6.8 ns in the slow corner, and the chip has a path from the PLIC through the trap logic to
   the counters as long. Synthesis uses `SYNTH_STRATEGY` `AREA 0` with `SYNTH_ARITH_TREE` and
   `SYNTH_MUL_BOOTH` off: 3.1's defaults (`DELAY 4`, both on) close 30 ns, but with 50 % more area
