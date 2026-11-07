@@ -237,6 +237,10 @@ if chip:
         # to 2.6 with 32 KiB of RAM, whose four macros need it to fit in a row; 365 um for the pad ring.  (The template's 2.2 mm die left the core of the first chip half empty,
         # 49 % standard cell utilization, and its metal too sparse for the density rules.)
         "DIE_AREA": [0, 0, DIE, DIE],
+        # Detailed placement moves a cell at most 500 x 100 um by default; a buffer that repair_design or
+        # the clock tree puts over a macro (627 um high) finds no row that near, and DPL-0036 stops the flow.
+        # Only with nine macros, so that the 32 KiB chip's flow stays as it was.
+        **({"PL_MAX_DISPLACEMENT_X": 600, "PL_MAX_DISPLACEMENT_Y": 400} if RAM_WORDS > 8192 else {}),
         "CORE_AREA": [CORE[0], CORE[0], CORE[1], CORE[1]],
         "PDN_CORE_RING": True,
         "PDN_CORE_RING_VWIDTH": 15,      # under 30 um, the widest metal without slotting
