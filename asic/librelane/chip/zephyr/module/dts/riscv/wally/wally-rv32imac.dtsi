@@ -69,6 +69,57 @@
                         #interrupt-cells = <2>;
                 };
 
+                /* FE310-compatible GPIO with one interrupt line (PLIC source 3) for all 8 pins, not one per pin as
+                 * the Zephyr driver assumes: use the pins without GPIO interrupts.  Its IOF registers (IOF_EN,
+                 * IOF_SEL) pick a pad's alternate function: the PWM comparators on GPIO0-3 (IOF0), the MCU
+                 * timer on GPIO0-3 and I2C on GPIO6-7 (IOF1) */
+                gpio0: gpio@10060000 {
+                        compatible = "sifive,gpio0";
+                        reg = <0x10060000 0x100>;
+                        interrupt-parent = <&plic>;
+                        interrupts = <3 1>;
+                        gpio-controller;
+                        #gpio-cells = <2>;
+                        ngpios = <8>;
+                        status = "disabled";
+
+                        #address-cells = <1>;
+                        #size-cells = <1>;
+                        ranges;
+
+                        /* IOF_EN and IOF_SEL: the Zephyr pinctrl driver finds the pin count in its parent, the GPIO */
+                        pinctrl: pinctrl@10060038 {
+                                compatible = "sifive,pinctrl";
+                                reg = <0x10060038 0x8>;
+                        };
+                };
+
+                /* the FU540 PWM of Wally: comparator 0 sets the period, 1-3 are the outputs on GPIO1-3 (IOF0) */
+                pwm0: pwm@10020000 {
+                        compatible = "sifive,pwm0";
+                        reg = <0x10020000 0x100>;
+                        reg-names = "control";
+                        interrupt-parent = <&plic>;
+                        interrupts = <11 1>, <12 1>, <13 1>, <14 1>;
+                        sifive,compare-width = <16>;
+                        #pwm-cells = <2>;
+                        pinctrl-0 = <&pwm0_gpio1 &pwm0_gpio2 &pwm0_gpio3>;
+                        pinctrl-names = "default";
+                        status = "disabled";
+                };
+
+                spi0: spi@10040000 {
+                        compatible = "sifive,spi0";
+                        reg = <0x10040000 0x1000>;
+                        reg-names = "control";
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                        /* SCK, MOSI, MISO and CS have pads of their own: an empty state, which the driver needs */
+                        pinctrl-0 = <>;
+                        pinctrl-names = "default";
+                        status = "disabled";
+                };
+
                 uart0: uart@10000000 {
                         compatible = "ns16550";
                         reg = <0x10000000 0x8>;
@@ -79,5 +130,19 @@
                         interrupts = <10 1>;
                         status = "disabled";
                 };
+        };
+};
+
+#include <zephyr/dt-bindings/pinctrl/sifive-pinctrl.h>
+
+&pinctrl {
+        pwm0_gpio1: pwm0_gpio1 {
+                pinmux = <1 SIFIVE_PINMUX_IOF0>;
+        };
+        pwm0_gpio2: pwm0_gpio2 {
+                pinmux = <2 SIFIVE_PINMUX_IOF0>;
+        };
+        pwm0_gpio3: pwm0_gpio3 {
+                pinmux = <3 SIFIVE_PINMUX_IOF0>;
         };
 };
