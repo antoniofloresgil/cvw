@@ -32710,7 +32710,7 @@
 			)
 		)
 	)
-	(gr_text "BOOT STRAPS (ON = 1)\n1-5 baud divisor, 6 UART boot\n115200 baud: 2 and 4 ON"
+	(gr_text "BOOT STRAPS (ON = 1)\n1-5 baud divisor, 6 UART boot\n115200 baud: 1-5 OFF"
 		(at 197 100.462625 0)
 		(layer "F.SilkS")
 		(uuid "676ef3ae-7e8a-49ec-a212-4e12667bbb4e")

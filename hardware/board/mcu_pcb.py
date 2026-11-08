@@ -162,7 +162,7 @@ LABELS = {    # ref: text written beside the part
     "J1": "USB", "J2": "JTAG", "SW1": "RESET",
     "JP1": "VDD_IO", "JP2": "VDD_CORE",
     "J5": "PMOD A: CLK UART SPI", "J6": "PMOD B: GPIO0-7", "J7": "PMOD C: JTAG",
-    "SW2": "BOOT STRAPS (ON = 1)\n1-5 baud divisor, 6 UART boot\n115200 baud: 2 and 4 ON",
+    "SW2": "BOOT STRAPS (ON = 1)\n1-5 baud divisor, 6 UART boot\n115200 baud: 1-5 OFF",
     "D1": "5V", "D2": "3V3",
 }
 PIN_LABELS = {  # ref: ({pad: text}, side of the pads the texts go)
