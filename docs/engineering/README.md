@@ -38,7 +38,8 @@ revision and branch scopes, including the successful Vivado Linux boot.
 | Passive multicore test observation | [Proposed ADR 0021](decisions/0021-multicore-test-observation.md), [observation contract](interfaces/multicore-observation.md), [execution record](experiments/2026-10-22-multicore-test-observation.md) |
 | Independent multicore option combinations | [Additional recommendation 10](experiments/2026-10-21-multicore-post-refactor-review.md#10-high-verify-option-independence-beyond-named-deployment-profiles), [coverage execution record](experiments/2026-10-22-multicore-option-interactions.md) |
 | Shared downstream AHB test fixture | [Additional recommendation 12](experiments/2026-10-21-multicore-post-refactor-review.md#12-medium-share-downstream-test-infrastructure-across-topologies), [extraction record](experiments/2026-10-22-multicore-downstream-fixture.md) |
-| Open-ASIC chip as a microcontroller (flash boot, peripherals, pins) | [Proposed ADR 0022](decisions/0022-asic-microcontroller.md), [open ASIC flow record](experiments/2026-11-02-open-asic-flow.md) |
+| Open-ASIC chip as a microcontroller (flash boot, peripherals, pins) | [ADR 0022](decisions/0022-asic-microcontroller.md), [open ASIC flow record](experiments/2026-11-02-open-asic-flow.md) |
+| Test board for that chip (rev A soldered, rev A-S with the QFN 32 test socket) | [ADR 0023](decisions/0023-mcu-test-board.md), [board README](../../hardware/board/README.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 Existing flow documentation and executable sources remain authoritative for

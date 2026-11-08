@@ -146,16 +146,13 @@ simulation remains pending on the Verilator `$system` compilation issue above.
 
 ## Future work
 
-Complete open flow: add an open-source ASIC flow (Yosys with OpenROAD, through
-OpenROAD-flow-scripts or OpenLane, on an open PDK such as sky130 or gf180) next
-to the open FPGA flow, so Wally can go from RTL to both bitstream and GDS with
-free tools. It belongs on its own branch after the open FPGA optimization pass.
-Today the repository has no OpenROAD integration: `synthDC/` is a
-synthesis-only Design Compiler flow, and no routed ASIC result exists (see
-[implementation status](implementation.md)). Points to plan: the full RV64GC
-core is large for a multi-project wafer shuttle, so a smaller configuration
-such as `rv32imc` is the likely first target; the caches need SRAM macros from
-the PDK through the `USE_SRAM` path; and a submission needs DRC/LVS signoff.
+Open ASIC flow beyond the first chip: the open flow exists (LibreLane on IHP SG13G2 and SG13CMOS5L,
+`asic/librelane/`, the chip `asic_soc_rv32imac`, [ADR 0022](decisions/0022-asic-microcontroller.md)) and its
+last full run is clean, but the chip has not been fabricated. Open points: a shuttle precheck of the GDS and the
+choice of shuttle, a test of the chip's sockets and board (the contact-to-pin map of the Yamaichi socket must be
+checked on a real one, [ADR 0023](decisions/0023-mcu-test-board.md)), a review of the maximum slew and capacitance
+findings, a Debug Module halt while the hart waits in `WFI` (it failed under Zephyr's idle thread and is not
+yet isolated), FreeRTOS in User mode, Zephyr drivers for the MCU timer and RTC, and GPIO and I2C interrupts.
 
 ## Inherited main checkpoint
 

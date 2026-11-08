@@ -44,4 +44,6 @@ Extend an existing result record or add one under `experiments/` with:
 
 No revision-specific OpenROAD study, routed ASIC result, PDK characterization
 or multicore FPGA resource/timing result was recovered. Do not infer these
-from scripts, textbook examples or the Linux RTL result.
+from scripts, textbook examples or the Linux RTL result. (The open ASIC flow of this fork, `asic/librelane/`, has its own
+records: [ADR 0022](decisions/0022-asic-microcontroller.md) and the
+[experiment record](experiments/2026-11-02-open-asic-flow.md).)
