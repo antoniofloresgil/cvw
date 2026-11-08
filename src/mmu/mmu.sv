@@ -119,11 +119,23 @@ module mmu import cvw::*; #(parameter cvw_t P,
     .Cacheable, .Idempotent, .SelTIM,
     .PMAInstrAccessFaultF, .PMALoadAccessFaultM, .PMAStoreAmoAccessFaultM);
 
+  // In Debug Mode the Debug Module's memory (0x0-0xFFF: its ROM, program buffer and data registers) is not subject to
+  // PMP: a locked entry applies to Machine mode too, and a catch-all one without execute permission (an RTOS's) would
+  // fault the fetch of the Debug ROM, so the hart would never halt.  Outside Debug Mode the region is unmapped.
+  logic PMPBypass;
+  if (P.DEBUG_SUPPORTED) assign PMPBypass = DebugMode & (PhysicalAddress[P.PA_BITS-1:12] == '0);
+  else                   assign PMPBypass = 1'b0;
+
   if (P.PMP_ENTRIES > 0) begin : pmp
+    logic PMPInstrAccessFaultRawF, PMPLoadAccessFaultRawM, PMPStoreAmoAccessFaultRawM;
     pmpchecker #(P) pmpchecker(.PhysicalAddress, .EffectivePrivilegeModeW,
       .PMPCFG_ARRAY_REGW, .PMPADDR_ARRAY_REGW,
       .ExecuteAccessF, .WriteAccessM, .ReadAccessM, .Size(Size[1:0]), .CMOpM,
-      .PMPInstrAccessFaultF, .PMPLoadAccessFaultM, .PMPStoreAmoAccessFaultM);
+      .PMPInstrAccessFaultF(PMPInstrAccessFaultRawF), .PMPLoadAccessFaultM(PMPLoadAccessFaultRawM),
+      .PMPStoreAmoAccessFaultM(PMPStoreAmoAccessFaultRawM));
+    assign PMPInstrAccessFaultF     = PMPInstrAccessFaultRawF & ~PMPBypass;
+    assign PMPStoreAmoAccessFaultM  = PMPStoreAmoAccessFaultRawM & ~PMPBypass;
+    assign PMPLoadAccessFaultM      = PMPLoadAccessFaultRawM & ~PMPBypass;
   end else begin
     assign PMPInstrAccessFaultF     = 1'b0;
     assign PMPStoreAmoAccessFaultM  = 1'b0;
