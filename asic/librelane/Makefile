@@ -63,6 +63,7 @@ check:
 
 chipsim: $(IHP_PDK)
 	$(MAKE) inputs CONFIG=asic_soc_rv32imac
+	$(MAKE) -C chip/zephyr BUILD=build-sim OVERLAY=sim.overlay
 	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imac$(SUFFIX) \
 	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_chip.py
 

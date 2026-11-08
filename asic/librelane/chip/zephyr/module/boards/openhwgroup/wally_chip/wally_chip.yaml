@@ -1,0 +1,10 @@
+identifier: wally_chip
+name: CORE-V-Wally asic_soc_rv32imac
+type: mcu
+arch: riscv
+toolchain:
+  - zephyr
+  - cross-compile
+ram: 56
+supported:
+  - uart

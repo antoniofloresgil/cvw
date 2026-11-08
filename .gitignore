@@ -194,3 +194,6 @@ sim/*/testlists/
 /testbench/mcu/cov/
 /testbench/mcu/cov_obj/
 /testbench/mcu/coverage.dat
+
+# Python venv for the Zephyr build (asic/librelane/chip/zephyr)
+.zephyr-venv/

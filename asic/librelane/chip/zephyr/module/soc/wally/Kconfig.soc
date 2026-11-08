@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config SOC_WALLY_RV32IMAC
+        bool
+        select RISCV
+        select RISCV_PRIVILEGED
+        select INCLUDE_RESET_VECTOR
+        select RISCV_SOC_HAS_GP_RELATIVE_ADDRESSING
+        help
+          CORE-V-Wally RV32IMAC (Zaamo, Zalrsc, Zicntr, Zihpm) with Machine and User mode, 16 PMP entries, CLINT
+          and PLIC: the chip of asic_soc_rv32imac.
+
+config SOC
+        default "wally_rv32imac" if SOC_WALLY_RV32IMAC

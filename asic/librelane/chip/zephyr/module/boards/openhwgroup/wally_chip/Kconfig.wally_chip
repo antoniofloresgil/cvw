@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_WALLY_CHIP
+        select SOC_WALLY_RV32IMAC

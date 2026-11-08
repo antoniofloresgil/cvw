@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+
+if SOC_WALLY_RV32IMAC
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+        default $(dt_node_int_prop_int,/cpus/cpu@0,clock-frequency)
+
+# The PLIC has 18 sources (PLIC_NUM_SRC in the chip's config.vh) and is the second level under the machine
+# external interrupt (11): table offset 12, 32 sources at most
+config RISCV_SOC_INTERRUPT_INIT
+        default y
+
+config 2ND_LVL_ISR_TBL_OFFSET
+        default 12
+
+config 2ND_LVL_INTR_00_OFFSET
+        default 11
+
+config 2ND_LEVEL_INTERRUPT_BITS
+        default 6
+
+config MAX_IRQ_PER_AGGREGATOR
+        default 32
+
+config NUM_IRQS
+        default 44
+
+# PMP_ENTRIES 16 in config.vh; the grain is 4 bytes (no G bits), so TOR, NA4 and NAPOT all work
+config PMP_SLOTS
+        default 16
+
+config RISCV_HAS_PLIC
+        default y
+
+endif # SOC_WALLY_RV32IMAC

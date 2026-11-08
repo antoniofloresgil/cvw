@@ -22,6 +22,7 @@ work/asic_soc_rv32imac/config.json lists the sources):  tabbypy3 test_chip.py
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -197,6 +198,43 @@ async def freertos(dut):
     assert lines[0].startswith(b"FreeRTOS V"), f"first line {lines[0]!r}"
     assert lines[1:] == [b"rx %d" % n for n in range(1, 6)] + [
         b"prot store data 0", b"prot store code 7", b"prot exec heap 1", b"prot exec stack 1", b"FREERTOS OK"], f"the demo printed {lines!r}"
+
+
+async def read_lines(dut, last, timeout=400000):
+    """The lines the program prints on the UART, up to the first one that starts with last."""
+    lines, line = [], b""
+    while not lines or not lines[-1].startswith(last):
+        byte = await uart_recv(dut, timeout=timeout)
+        if byte == ord("\n"):
+            lines.append(line)
+            line = b""
+        elif byte != ord("\r"):                      # Zephyr's console sends \r\n
+            line += bytes([byte])
+    return lines
+
+
+@cocotb.test()
+async def zephyr(dut):
+    """Zephyr in User mode (../zephyr): the kernel in Machine mode, threads in User mode isolated by the PMP.
+    Threads A and B, each in a memory domain of its own, keep their data while the kernel switches between
+    them; then one user thread per case does what it must not (a store or load outside its domain, a store to
+    kernel code or the UART, a jump into data, a load from the RAM's trace area, a system call on a kernel
+    object it has no permission for), and each ends with the exception cause the PMP must raise, which
+    Zephyr's fatal error handler records before aborting only that thread (see app/main.c)."""
+    image = HERE.parent / "zephyr/build-sim/zephyr/zephyr.bin"    # `make chipsim` builds it (Python venv of Zephyr)
+    assert image.exists(), f"{image} is missing: make -C {image.parents[3]} BUILD=build-sim OVERLAY=sim.overlay"
+    await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
+    lines = await read_lines(dut, b"ZEPHYR ", timeout=2000000)
+    dump = re.compile(rb"( *[a-z0-9]+: [0-9a-f]+.*| *mcause: .*|call trace:|>>> .*|Current thread: .*)?")
+    lines = [l for l in lines if not dump.fullmatch(l)]        # the register dump Zephyr prints at each fault
+    assert lines[0] == b"Zephyr PMP demo", f"first line {lines[0]!r}"
+    threads = lines[1:7]
+    assert [l for l in threads if l.startswith(b"A ")] == [b"A %d" % (100 + i) for i in (1, 2, 3)], f"{lines!r}"
+    assert [l for l in threads if l.startswith(b"B ")] == [b"B %d" % (200 + i) for i in (1, 2, 3)], f"{lines!r}"
+    # the K_ERR reason (0: CPU exception, 3: kernel oops) and mcause (7 store, 5 load, 1 instruction access fault, 8 ecall)
+    assert lines[7:] == [b"isolation ok", b"own data 0 0", b"store domain B 0 7", b"load domain B 0 5",
+                         b"store kernel data 0 7", b"store kernel code 0 7", b"store UART 0 7", b"exec own data 0 1",
+                         b"load trace area 0 5", b"syscall no permission 3 8", b"ZEPHYR OK"], f"Zephyr printed {lines!r}"
 
 
 ###########################################################################################

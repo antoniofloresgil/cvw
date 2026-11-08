@@ -1,0 +1,6 @@
+board:
+  name: wally_chip
+  full_name: CORE-V-Wally asic_soc_rv32imac
+  vendor: openhwgroup
+  socs:
+    - name: wally_rv32imac

@@ -66,6 +66,12 @@ Configurations:
   configuration (tick from the CLINT, 1 kHz) and a demo with tasks, a queue, a mutex and a software timer;
   see its README. It also locks three PMP entries (code read-only and execute-only, data not executable)
   and proves it. `chipsim`'s `freertos` test boots it from the flash and checks what it prints.
+- Zephyr runs on the chip with its User mode: `chip/zephyr` has an out-of-tree board and SoC (the submodule
+  `addins/zephyr`, v4.5.0) and a demo whose threads, in User mode, are isolated by the PMP through memory
+  domains; see its README. `chipsim`'s `zephyr` test boots it from the flash and checks that two domains keep their
+  data and that every access outside a thread's domain (another domain, kernel data and code, the UART, the trace
+  area, a jump into data, a system call without permission) faults and aborts only that thread. Zephyr gets the
+  RAM's first 56 KiB; the last 8 KiB are the trace buffer's.
 - `asic_soc_rv32imac` also has the microcontroller peripherals of
   [ADR 0022](../../docs/engineering/decisions/0022-asic-microcontroller.md) (`MCU_SUPPORTED`,
   `src/uncore/mcu/`, APB region at 0x10080000, PLIC sources 15-18): a timer with four PWM or
