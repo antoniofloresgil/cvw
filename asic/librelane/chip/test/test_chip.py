@@ -12,6 +12,8 @@ atomics runs atomics.S from the flash: the atomic memory operations and LR/SC on
 pmp runs pmp.S: the PMP CSRs, User mode against three regions, and a locked entry in Machine mode.
 ram runs ram.S: the eight banks of the 64 KiB RAM, aliasing and byte and halfword stores.
 freertos runs the FreeRTOS demo (../freertos): tasks, a queue, a mutex and a software timer on the CLINT tick.
+zephyr_halt_idle halts Zephyr's sleeping idle thread through JTAG three times: the locked PMP entries of an RTOS must not
+stop the Debug Module's ROM, and the demo must still answer after each resume.
 mcu_peripherals boots mcu.S the same way and checks the timer, I2C, RTC and watchdog through the
 pads: PWM duty cycles on GPIO0 and GPIO1, a capture of an edge the test puts on GPIO2, an I2C slave
 (i2c_slave) on GPIO6 and GPIO7, the RTC alarm, and the reset the unserviced watchdog causes.
@@ -342,6 +344,33 @@ async def zephyr_uart_irq(dut):
 
 
 @cocotb.test()
+async def zephyr_halt_idle(dut):
+    """A halt request reaches a hart that sleeps in Zephyr's idle thread (a wfi, with the timer and UART interrupts
+    enabled): the debugger halts it, reads where it is, resumes it, and the echo demo of ../zephyr/uart_irq still
+    answers, so the wfi was neither skipped nor left stuck."""
+    image = HERE.parent / "zephyr/build-uart-irq-sim/zephyr/zephyr.bin"    # `make chipsim` builds it
+    assert image.exists(), f"{image} is missing: make -C {image.parents[3]} APP=uart_irq BUILD=build-uart-irq-sim OVERLAY=sim.overlay"
+    await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
+    await RisingEdge(dut.clk)
+    lines = await read_lines(dut, b"uart ready", timeout=2000000)
+    assert lines == [b"uart irq start", b"uart ready"], f"{lines!r}"
+    await ClockCycles(dut.clk, 50000)                  # the hart sleeps in the idle thread
+    jtag = Jtag(dut)
+    await jtag.reset()
+    await jtag.write(DMCONTROL, 1)                     # dmactive
+    for n in range(3):                                 # halt and resume the sleeping hart several times
+        await jtag.halt(polls=300)
+        dcsr, dpc = await jtag.read_csr(0x7B0), await jtag.read_csr(0x7B1)
+        assert (dcsr >> 6) & 7 == 3, f"halt {n}: dcsr 0x{dcsr:x} (cause must be 3, a halt request), dpc 0x{dpc:x}"
+        await jtag.resume()
+        await ClockCycles(dut.clk, 20000)
+    for c in b"abc":
+        await uart_send(dut, c)
+    lines = await read_lines(dut, b"UART ", timeout=4000000)
+    assert lines == [b"ABC", b"UART IRQ OK"], f"{lines!r}"
+
+
+@cocotb.test()
 async def zephyr_mcu(dut):
     """Zephyr's drivers for the I2C master and the watchdog (../zephyr/mcu): the demo writes 0x5A to an I2C device
     at 0x50 (played on the pads by i2c_slave), reads 0xC3 back, gets a NACK from 0x51, then arms the watchdog, feeds it
@@ -541,9 +570,9 @@ class Jtag:
         assert (await self.read(SBCS) >> 12) & 7 == 0, "System Bus Access error"
         return words
 
-    async def halt(self):
+    async def halt(self, polls=20):
         await self.write(DMCONTROL, (1 << 31) | 1)
-        for _ in range(20):
+        for _ in range(polls):
             if await self.read(DMSTATUS) & (1 << 9):                      # allhalted
                 await self.write(DMCONTROL, 1)
                 return

@@ -507,6 +507,17 @@ module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHAR
     resumeat(RAM + 32'h28);
     checkhalt("ebreak with ebreakm", 3'd1, RAM + 32'h28);
     writereg(16'h07B0, dcsr);
+    // A halt request ends a wfi that is waiting (nothing is pending): the hart halts after it, with cause 3
+    writereg(16'h07B1, RAM + 32'h2C);                  // dpc
+    dmiwrite(DMCONTROL, 32'h4000_0001);                // resumereq
+    do dmiread(DMSTATUS, d); while (!d[17]);           // allresumeack
+    repeat (300) @(posedge clk);                       // the hart waits in the wfi
+    dmiread(DMSTATUS, d);
+    check("a hart waiting in a wfi is running", d & 32'h0000_0C00, 32'h0000_0C00);
+    dmiwrite(DMCONTROL, 32'h8000_0001);                // haltreq
+    waithalted();
+    dmiwrite(DMCONTROL, 32'h0000_0001);
+    checkhalt("halt of a waiting wfi", 3'd3, RAM + 32'h30);
 
     // Triggers (Sdtrig): tselect counts DEBUG_TRIGGERS, tinfo lists the types
     writereg(16'h07A0, P.DEBUG_TRIGGERS - 1);
@@ -661,6 +672,33 @@ module debug_tb #(parameter int unsigned NHARTS = 1);   // make NHARTS=2: -GNHAR
       dmiwrite(DMCONTROL, 32'h4000_0001);                // resume hart 0
       dmiread(DMSTATUS, d);
       check("hart 0: running, resumeack", d & 32'h0003_0F00, 32'h0003_0C00);
+    end
+
+    // Locked PMP entries, as an RTOS sets them (entry 1: the RAM, read, write and execute; entry 15: the rest, read and write but
+    // not execute), do not apply to the Debug Module's memory: a halt request still halts the hart
+    if (P.PMP_ENTRIES >= 16) begin
+      dmiwrite(DMCONTROL, 32'h8000_0001);              // haltreq, in case the hart runs
+      waithalted();
+      dmiwrite(DMCONTROL, 32'h0000_0001);
+      writereg(16'h03B0, RAM >> 2);                    // pmpaddr0: the lower bound of entry 1
+      writereg(16'h03B1, (RAM + 32'h10000) >> 2);      // pmpaddr1: the top of the RAM
+      writereg(16'h03BF, 32'hFFFF_FFFF);               // pmpaddr15: NAPOT, covers the Debug Module's memory
+      writereg(16'h03A0, 32'h0000_8F00);               // pmpcfg0: entry 1 locked, TOR, R, W and X
+      if (P.XLEN == 64) begin
+        dmiwrite(DATA0, 32'h0);
+        dmiwrite(DATA1, 32'h9B00_0000);                // pmpcfg2: entry 15 in its top byte
+        command(ARX | ARWRITE | 32'h03A2, err);
+      end else writereg(16'h03A3, 32'h9B00_0000);      // pmpcfg3: entry 15
+      readreg(16'h03A0, d);
+      check("pmpcfg0: entry 1 locked", d & 32'h0000_FF00, 32'h0000_8F00);
+      writereg(16'h07B1, RAM);                         // dpc
+      dmiwrite(DMCONTROL, 32'h4000_0001);              // resumereq
+      do dmiread(DMSTATUS, d); while (!d[17]);         // allresumeack
+      repeat (300) @(posedge clk);
+      dmiwrite(DMCONTROL, 32'h8000_0001);              // haltreq
+      waithalted();
+      dmiwrite(DMCONTROL, 32'h0000_0001);
+      checkhalt("halt with locked PMP entries", 3'd3, RAM + 32'h24);
     end
 
     // ndmreset resets the SoC but not the Debug Module; the harts are held across it

@@ -206,6 +206,12 @@ executes code from the DM's **debug memory**, an AHB slave at 0x0–0xFFF:
   or store there faults (access fault, `mtval` the address), and software cannot run the ROM or
   disturb the data registers and flags. Some execution-based DMs leave the region open (PULP's
   riscv-dbg); Wally closes it, as Ibex does.
+  In Debug Mode these accesses are also exempt from PMP: a locked PMP entry applies to Machine
+  mode, so the catch-all entry without execute permission that an RTOS (Zephyr, FreeRTOS) sets would
+  fault the fetch of the ROM at 0x800, and the hart would never reach the halt loop (the Debug Module
+  would never see it halted). `mmu.sv` masks the three PMP faults when `DebugMode` is set and the
+  address is below 0x1000; every other access in Debug Mode (a program buffer's load of RAM, for
+  example) is still checked.
 
 ### Bus and clock domains
 
@@ -256,7 +262,7 @@ To keep merges from upstream simple, the core's own modules (`trap`, `privmode`,
   is `resethaltreq`'s, for `dcsr.cause` 5) inputs, default 0, passed to `privileged`; and
   `DebugMode`, from `privileged` to the IFU and the LSU.
 - `src/ifu/ifu.sv`, `src/lsu/lsu.sv`, `src/mmu/mmu.sv`: a `DebugMode` input passed on to the PMA
-  checker.
+  checker; `mmu.sv` also lets the Debug Module's memory bypass the PMP checker in Debug Mode.
 - `src/mmu/pmachecker.sv`: with `DEBUG_SUPPORTED`, 0x0–0xFFF is a region that the hart may
   read, write and execute in Debug Mode only (not cacheable, idempotent), so that it can run the
   ROM.
