@@ -76,5 +76,5 @@ contention. Verilator resolves nets without strengths, so a test must not make t
 that a closed strap or a pressed button also drives. The chip's pinout in the QFN32 comes from the
 schematic's symbol, not from the simulation.
 
-Findings: with every DIP switch open the bootloader's default divisor 18 gives 64000 baud at 18.432 MHz,
-not 115200; set GPIO1 and GPIO3 (divisor 10) for 115200.
+Findings: the bootloader's default divisor was 18, which gives 64000 baud at 18.432 MHz, not 115200; it is
+now 10, so every DIP switch open gives 115200 (strapping 10 on GPIO1 and GPIO3 still does).

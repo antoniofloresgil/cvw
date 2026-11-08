@@ -4,8 +4,8 @@
 // the RAM.
 //
 // Straps, read from GPIO[5:0] at reset (GPIO 6 and 7 are I2C, whose pull-ups would read 1):
-//   GPIO[4:0]  UART baud divisor: f_clk / (16 * divisor), or 18 if they read 0 (115200 baud with a
-//              33.3 MHz clock, 0.5 % off)
+//   GPIO[4:0]  UART baud divisor: f_clk / (16 * divisor), or 10 if they read 0 (115200 baud with the
+//              test board's 18.432 MHz oscillator, exactly)
 //   GPIO[5]    1: skip the flash and load over the UART
 //
 // SPI flash, on chip select 0, read with the standard Read command (0x03, 3 address bytes) from
@@ -38,7 +38,7 @@
   .equ SPI_RXDATA, 0x4C          // bit 31: receive FIFO empty
   .equ RAM,      0x80000000
   .equ RAMSIZE,  0x10000
-  .equ DIVISOR,  18
+  .equ DIVISOR,  10
   .equ MAGIC,    0x594C4157      // "WALY"
 
   .section .text.boot, "ax"

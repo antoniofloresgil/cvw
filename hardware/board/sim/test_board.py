@@ -207,7 +207,8 @@ async def reset_button(dut):
 @cocotb.test()
 async def baud_rate(dut):
     """The UART's bit time with the DIP switch at the divisor the board's 18.432 MHz oscillator calls for
-    (10: 115200 baud), and with every switch open (the bootloader's default divisor, 18)."""
+    (10: 115200 baud), and with every switch open (the bootloader's default divisor, also 10), and 64000 baud
+    with 18 strapped (GPIO1 and GPIO4), the old default."""
     board = Board(dut)
     board.dip(DIVISOR)
     board.program_flash(b"")                             # erased: the bootloader sends 'W' on the UART
@@ -220,8 +221,14 @@ async def baud_rate(dut):
     await board.reset_button()
     t = await board.uart_bit_time()
     baud = 1e9 / t
-    dut._log.info(f"every switch open (divisor 18): {baud:.0f} baud")
-    assert abs(baud / (CLK_MHZ * 1e6 / (16 * 18)) - 1) < 0.02, f"{baud:.0f} baud with the default divisor"
+    dut._log.info(f"every switch open (default divisor): {baud:.0f} baud")
+    assert abs(baud / BAUD - 1) < 0.02, f"{baud:.0f} baud with the default divisor, not {BAUD}"
+    board.dip(18)
+    await board.reset_button()
+    t = await board.uart_bit_time()
+    baud = 1e9 / t
+    dut._log.info(f"divisor 18: {baud:.0f} baud")
+    assert abs(baud / (CLK_MHZ * 1e6 / (16 * 18)) - 1) < 0.02, f"{baud:.0f} baud with divisor 18"
 
 
 @cocotb.test()

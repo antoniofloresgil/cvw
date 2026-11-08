@@ -59,8 +59,8 @@ board (`make boardsim` in `asic/librelane`). The wiring under test is the schema
 netlist shows up as a failing test; four deliberate netlist errors (a duplicated I2C address, the UART
 pins swapped, the flash's /HOLD pull-up removed, the LED buffer disabled) each fail it. It does not cover
 the analogue side, timing or contention (see `hardware/board/README.md`). It found that the bootloader's
-default divisor gives 64000 baud with the 18.432 MHz oscillator: the DIP switch must set divisor 10
-(GPIO1 and GPIO3) for 115200.
+default divisor (18, from a 33.3 MHz clock) gives 64000 baud with the 18.432 MHz oscillator; the default is
+now 10, 115200 baud with every DIP switch open.
 
 ## Future: a development module
 
