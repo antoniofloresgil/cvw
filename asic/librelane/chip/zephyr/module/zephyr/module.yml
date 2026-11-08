@@ -1,5 +1,7 @@
-# Zephyr module with the board and SoC of asic_soc_rv32imac (used with -DZEPHYR_EXTRA_MODULES=<this directory>)
+# Zephyr module with the board, SoC and drivers of asic_soc_rv32imac (the Makefile passes it as ZEPHYR_MODULES: without west CMake reads only that)
 build:
+  cmake: .
+  kconfig: Kconfig
   settings:
     board_root: .
     soc_root: .

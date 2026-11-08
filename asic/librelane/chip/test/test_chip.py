@@ -204,7 +204,10 @@ async def read_lines(dut, last, timeout=400000):
     """The lines the program prints on the UART, up to the first one that starts with last."""
     lines, line = [], b""
     while not lines or not lines[-1].startswith(last):
-        byte = await uart_recv(dut, timeout=timeout)
+        try:
+            byte = await uart_recv(dut, timeout=timeout)
+        except AssertionError as e:
+            raise AssertionError(f"{e} after {lines!r} and {line!r}, waiting for {last!r}") from None
         if byte == ord("\n"):
             lines.append(line)
             line = b""
@@ -235,6 +238,129 @@ async def zephyr(dut):
     assert lines[7:] == [b"isolation ok", b"own data 0 0", b"store domain B 0 7", b"load domain B 0 5",
                          b"store kernel data 0 7", b"store kernel code 0 7", b"store UART 0 7", b"exec own data 0 1",
                          b"load trace area 0 5", b"syscall no permission 3 8", b"ZEPHYR OK"], f"Zephyr printed {lines!r}"
+
+
+@cocotb.test()
+async def zephyr_peripherals(dut):
+    """Zephyr's drivers for the chip's peripherals (../zephyr/periph): the console UART in interrupt mode, the GPIO,
+    the SPI and the PWM.  The demo prints a line per step and the test plays the other side on the pads: it sends
+    three letters on the UART and gets them back in capitals, drives GPIO4 and sees GPIO5 follow it, serves the
+    flash's first bytes ("WALY") to an SPI read, and measures the duty cycles of the PWM on GPIO1 and GPIO2 (high for period - pulse, as the FU540's PWM)."""
+    image = HERE.parent / "zephyr/build-periph-sim/zephyr/zephyr.bin"    # `make chipsim` builds it
+    assert image.exists(), f"{image} is missing: make -C {image.parents[3]} APP=periph BUILD=build-periph-sim OVERLAY=sim.overlay"
+    await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
+    await RisingEdge(dut.clk)                         # reset_chip's release of the straps takes effect
+    lines = await read_lines(dut, b"uart ready", timeout=2000000)
+    assert lines == [b"periph start", b"uart ready"], f"{lines!r}"
+    for c in b"abc":
+        await uart_send(dut, c)
+    lines = await read_lines(dut, b"gpio ready", timeout=12000000)
+    assert lines == [b"ABC", b"gpio ready"], f"UART interrupt mode: {lines!r}"
+    pad_drive(dut, 4, 1)                              # the demo reads GPIO4 after 50 ms and copies it to GPIO5
+    lines = await read_lines(dut, b"gpio in", timeout=2000000)
+    assert lines == [b"gpio in 1"], f"{lines!r}"
+    for _ in range(10):
+        await FallingEdge(dut.clk)
+    pads = int(dut.gpio_out.value)
+    assert (pads >> 5) & 1 == 1 and pads & 1 == 1, f"GPIO pads 0x{pads:02x}: GPIO5 and GPIO0 should be high"
+    lines = await read_lines(dut, b"spi", timeout=2000000)
+    assert lines == [b"spi WALY"], f"SPI read of the flash: {lines!r}"
+    lines = await read_lines(dut, b"pwm set", timeout=2000000)
+    assert len(lines) == 2 and lines[1] == b"pwm set", f"{lines!r}"
+    dut._log.info(lines[0].decode())
+    highs = [0, 0]
+    for _ in range(2000):                             # pulses of 25 % and 75 %: the pads are high for the rest of the period
+        await FallingEdge(dut.clk)
+        pads = int(dut.gpio_out.value)
+        highs[0] += (pads >> 1) & 1
+        highs[1] += (pads >> 2) & 1
+    assert 1400 <= highs[0] <= 1600, f"GPIO1 was high {highs[0]} of 2000 clocks, not about 1500"
+    assert 400 <= highs[1] <= 600, f"GPIO2 was high {highs[1]} of 2000 clocks, not about 500"
+    lines = await read_lines(dut, b"PERIPH ", timeout=4000000)
+    assert lines == [b"PERIPH OK"], f"{lines!r}"
+
+
+@cocotb.test()
+async def zephyr_uart_irq(dut):
+    """Zephyr's console UART with an interrupt-driven receiver (../zephyr/uart_irq): the host sends three letters,
+    the PLIC raises the UART's source and the demo echoes them in capitals.  If the hart stops answering, the test
+    reads the PLIC and the UART over System Bus Access, which does not need the hart."""
+    image = HERE.parent / "zephyr/build-uart-irq-sim/zephyr/zephyr.bin"    # `make chipsim` builds it
+    assert image.exists(), f"{image} is missing: make -C {image.parents[3]} APP=uart_irq BUILD=build-uart-irq-sim OVERLAY=sim.overlay"
+    await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
+    await RisingEdge(dut.clk)
+    lines = await read_lines(dut, b"uart ready", timeout=2000000)
+    assert lines == [b"uart irq start", b"uart ready"], f"{lines!r}"
+    for c in b"abc":
+        await uart_send(dut, c)
+    try:
+        lines = await read_lines(dut, b"UART ", timeout=4000000)
+    except AssertionError as e:
+        state = ""
+        jtag = Jtag(dut)
+        await jtag.reset()
+        await jtag.write(DMCONTROL, 1)
+
+        async def peek(name, addr):
+            try:
+                return f" {name}=0x{(await jtag.sb_read(addr))[0]:x}"
+            except AssertionError:
+                await jtag.write(SBCS, 7 << 12)              # clear the sticky error
+                return f" {name}=ERR"
+        async def peek8(name, addr):                         # a byte access, for the UART's 8-bit registers
+            try:
+                await jtag.write(SBCS, (1 << 20) | (0 << 17) | (1 << 15))
+                await jtag.write(SBADDRESS0, addr)
+                value = await jtag.read(SBDATA0)
+                assert (await jtag.read(SBCS) >> 12) & 7 == 0
+                return f" {name}=0x{value & 0xFF:02x}"
+            except AssertionError:
+                await jtag.write(SBCS, 7 << 12)
+                return f" {name}=ERR"
+        for name, addr in (("uart_ier", 0x10000001), ("uart_iir", 0x10000002), ("uart_lcr", 0x10000003),
+                           ("uart_mcr", 0x10000004), ("uart_lsr", 0x10000005)):
+            state += await peek8(name, addr)
+        symbols = {}                                         # the demo's variables, from the ELF
+        for line in subprocess.run(["riscv64-unknown-elf-nm", image.parent / "zephyr.elf"], capture_output=True,
+                                   text=True, check=True).stdout.splitlines():
+            fields = line.split()
+            if len(fields) == 3:                             # not the undefined symbols, which have no address
+                symbols[fields[2]] = int(fields[0], 16)
+        for name in ("rx_n", "rx_buf"):
+            state += await peek(name, symbols[name])
+        for name, n in (("rx_sem", 4), ("_kernel", 8)):         # raw words: the semaphore, the scheduler's state
+            words = await jtag.sb_read(symbols[name], n)
+            state += f" {name}=[" + " ".join(f"{w:x}" for w in words) + "]"
+        state += f" main_thread=0x{symbols['z_main_thread']:x} idle_thread=0x{symbols['z_idle_threads']:x}"
+        plic = 0x0C000000
+        for name, addr in (("mtime", 0x0200BFF8), ("plic_prio10", plic + 40),
+                           ("plic_pending", plic + 0x1000), ("plic_enable", plic + 0x2000),
+                           ("plic_threshold", plic + 0x200000), ("ram0", 0x80000000)):
+            state += await peek(name, addr)
+        raise AssertionError(f"{e};{state}") from None
+    assert lines == [b"ABC", b"UART IRQ OK"], f"{lines!r}"
+
+
+@cocotb.test()
+async def zephyr_mcu(dut):
+    """Zephyr's drivers for the I2C master and the watchdog (../zephyr/mcu): the demo writes 0x5A to an I2C device
+    at 0x50 (played on the pads by i2c_slave), reads 0xC3 back, gets a NACK from 0x51, then arms the watchdog, feeds it
+    three times and stops: its second timeout resets the chip and the bootloader sends 'F' again."""
+    image = HERE.parent / "zephyr/build-mcu-sim/zephyr/zephyr.bin"    # `make chipsim` builds it
+    assert image.exists(), f"{image} is missing: make -C {image.parents[3]} APP=mcu BUILD=build-mcu-sim OVERLAY=sim.overlay"
+    await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
+    await RisingEdge(dut.clk)
+    received = []
+    cocotb.start_soon(i2c_slave(dut, received))
+    lines = await read_lines(dut, b"i2c nack", timeout=4000000)
+    assert lines == [b"mcu start", b"i2c write ok", b"i2c read c3", b"i2c nack -5"], f"{lines!r}"
+    assert received == [0x5A], f"the I2C slave received {received}"
+    lines = await read_lines(dut, b"wdt fed", timeout=4000000)
+    assert lines == [b"wdt fed"], f"{lines!r}"
+    dut.gpio_in.value = DIVISOR                        # the bootloader reads its straps again after the reset
+    dut.gpio_drive.value = 0xFF
+    char = await uart_recv(dut, timeout=8000000)
+    assert char == ord("F"), f"after the watchdog's reset the bootloader sent {chr(char)!r}, not 'F'"
 
 
 ###########################################################################################

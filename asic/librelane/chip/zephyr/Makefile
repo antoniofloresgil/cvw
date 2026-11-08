@@ -24,7 +24,7 @@ all: $(BUILD)/zephyr/zephyr.bin
 
 $(BUILD)/zephyr/zephyr.bin: FORCE
 	PATH=$(ZEPHYR_VENV)/bin:$$PATH cmake -GNinja -S $(APP) -B $(BUILD) -DBOARD=wally_chip \
-	  -DZEPHYR_EXTRA_MODULES=$(abspath module) -DBOARD_ROOT=$(abspath module) -DSOC_ROOT=$(abspath module) -DDTS_ROOT=$(abspath module) -DPython3_EXECUTABLE=$(ZEPHYR_VENV)/bin/python3 \
+	  -DZEPHYR_MODULES=$(abspath module) -DPython3_EXECUTABLE=$(ZEPHYR_VENV)/bin/python3 \
 	  $(if $(OVERLAY),-DEXTRA_DTC_OVERLAY_FILE=$(abspath $(OVERLAY))) >$(BUILD).log 2>&1 || { cat $(BUILD).log; exit 1; }
 	PATH=$(ZEPHYR_VENV)/bin:$$PATH ninja -C $(BUILD)
 	test $$(stat -c %s $@) -le 57344

@@ -1,0 +1,9 @@
+description: CORE-V-Wally I2C master (src/uncore/mcu/i2c_apb.sv)
+
+compatible: "wally,i2c"
+
+include: [i2c-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  reg:
+    required: true

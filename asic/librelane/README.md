@@ -72,6 +72,8 @@ Configurations:
   data and that every access outside a thread's domain (another domain, kernel data and code, the UART, the trace
   area, a jump into data, a system call without permission) faults and aborts only that thread. Zephyr gets the
   RAM's first 56 KiB; the last 8 KiB are the trace buffer's.
+  Zephyr also drives the chip's peripherals (UART with interrupts, GPIO, SPI, PWM, I2C and the watchdog), each with a
+  `chipsim` test on the pads; the FE310-compatible blocks use Zephyr's SiFive drivers (see `chip/zephyr/README.md`).
 - `asic_soc_rv32imac` also has the microcontroller peripherals of
   [ADR 0022](../../docs/engineering/decisions/0022-asic-microcontroller.md) (`MCU_SUPPORTED`,
   `src/uncore/mcu/`, APB region at 0x10080000, PLIC sources 15-18): a timer with four PWM or
