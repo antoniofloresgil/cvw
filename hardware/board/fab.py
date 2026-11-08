@@ -12,20 +12,25 @@ build products):
   fab/mcu_board-cpl.csv                      placement in JLCPCB's columns (Designator, Mid X, Mid Y,
                                              Layer, Rotation); check the rotations in JLCPCB's preview
   fab/mcu_board-schematic.pdf, fab/mcu_board-pcb.pdf
-Parts that are not assembled: U6 (the chip goes in a QFN socket soldered by hand), the test points,
+Parts that are not assembled: U6 (the chip is soldered by hand, directly or in its test socket), the test points,
 the mounting holes.  Run after mcu_pcb.py and route.py:  python3 fab.py
+python3 fab.py --socket does the same for the socket variant (mcu_board_socket.kicad_pcb) into fab-socket/ with
+mcu_board_socket-* names.
 """
 
 import csv
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-FAB = HERE / "fab"
-PCB = HERE / "mcu_board.kicad_pcb"
+SOCKET = "--socket" in sys.argv                # the variant with the chip's test socket (mcu_pcb.py --socket)
+FAB = HERE / ("fab-socket" if SOCKET else "fab")
+PCB = HERE / ("mcu_board_socket.kicad_pcb" if SOCKET else "mcu_board.kicad_pcb")
+STEM = PCB.stem
 SCH = HERE / "mcu_board.kicad_sch"
 NOT_ASSEMBLED = ("U6",)                      # plus every TP and H
 
@@ -93,7 +98,7 @@ def main():
     cli("pcb", "export", "gerbers", "--layers", ",".join(LAYERS), "--subtract-soldermask", "-o", f"{gerber}/", PCB)
     cli("pcb", "export", "drill", "--format", "excellon", "--excellon-units", "mm", "--generate-map",
         "--map-format", "gerberx2", "-o", f"{gerber}/", PCB)
-    with zipfile.ZipFile(FAB / "mcu_board-gerber.zip", "w", zipfile.ZIP_DEFLATED) as z:
+    with zipfile.ZipFile(FAB / f"{STEM}-gerber.zip", "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(gerber.iterdir()):
             z.write(f, f.name)
 
@@ -108,7 +113,7 @@ def main():
             if assembled(ref):
                 key = (c.findtext("value"), c.findtext("footprint").split(":")[1])
                 groups.setdefault(key, []).append(ref)
-    with open(FAB / "mcu_board-bom.csv", "w", newline="") as f:
+    with open(FAB / f"{STEM}-bom.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #"])
         for (value, fp), refs in sorted(groups.items(), key=lambda kv: natural(sorted(kv[1], key=natural)[0])):
@@ -120,7 +125,7 @@ def main():
         cli("pcb", "export", "pos", "--format", "csv", "--units", "mm", "--side", "both",
             "-o", pos, PCB)
         rows = list(csv.DictReader(open(pos)))
-    with open(FAB / "mcu_board-cpl.csv", "w", newline="") as f:
+    with open(FAB / f"{STEM}-cpl.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
         for r in rows:
@@ -128,9 +133,9 @@ def main():
                 w.writerow([r["Ref"], f'{float(r["PosX"]):.3f}mm', f'{float(r["PosY"]):.3f}mm',
                             "Top" if r["Side"] == "top" else "Bottom", f'{float(r["Rot"]):.0f}'])
 
-    cli("sch", "export", "pdf", "-o", FAB / "mcu_board-schematic.pdf", SCH)
+    cli("sch", "export", "pdf", "-o", FAB / f"{STEM}-schematic.pdf", SCH)
     cli("pcb", "export", "pdf", "--layers", "F.Cu,In1.Cu,In2.Cu,B.Cu,F.Silkscreen,F.Fab",
-        "--common-layers", "Edge.Cuts", "--mode-multipage", "-o", FAB / "mcu_board-pcb.pdf", PCB)
+        "--common-layers", "Edge.Cuts", "--mode-multipage", "-o", FAB / f"{STEM}-pcb.pdf", PCB)
     parts = sum(len(v) for v in groups.values())
     print(f"{FAB}: gerbers ({len(list(gerber.iterdir()))} files, zipped), BOM {len(groups)} lines / {parts} parts, "
           f"CPL {parts} placements, schematic and PCB PDFs")

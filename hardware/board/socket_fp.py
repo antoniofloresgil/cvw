@@ -88,6 +88,13 @@ def pad(fp, number, x, y, size, drill, plated=True, mask=True):
         layers.AddLayer(pcbnew.F_Mask)
         layers.AddLayer(pcbnew.B_Mask)
     p.SetLayerSet(layers)
+    if plated:
+        # The 32 holes are 0.5-1.1 mm apart: with a ring on every inner layer their clearances would join into one void
+        # in the planes and cut the ground pins off.  A pad keeps its inner rings only where its net is on that layer,
+        # and the ground pins join the plane with a solid connection, not thermal spokes.
+        p.SetRemoveUnconnected(True)
+        p.SetKeepTopBottom(True)
+        p.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
     fp.Add(p)
     return p
 

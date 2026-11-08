@@ -72,9 +72,38 @@ What the drawing does not say, and the footprint assumes: that the tail of the c
 same position along its side as the pad (the 0.5 mm steps of the pattern say so, but there is no pin table). Check it
 with a multimeter on the first socket (a package pin against the hole of the same number) before ordering several boards.
 
-The footprint is not in the board yet. The body, 24.5 x 22 mm, covers where the chip's decoupling capacitors, the supply
-jumpers, the clock and the flash are now: using it means placing and routing the board again (see `mcu_pcb.py` and
-`route.py`, which also need to read footprints from `mcu_board.pretty`).
+## Two variants of the board
+
+The same schematic gives two boards, which differ in the footprint of U6 and in the placement around it:
+
+| | `mcu_board.kicad_pcb` (rev A) | `mcu_board_socket.kicad_pcb` (rev A-S) |
+|---|---|---|
+| The chip | QFN32 soldered directly (pads of 5 x 5 mm) | in the Yamaichi test socket (through-hole, 24.5 x 22 mm body), so it can be changed |
+| Make it | `python3 mcu_pcb.py && python3 route.py` | `python3 mcu_pcb.py --socket && python3 route.py --board mcu_board_socket.kicad_pcb` |
+| Manufacturing files | `python3 fab.py` into `fab/` | `python3 fab.py --socket` into `fab-socket/` (`mcu_board_socket-*`) |
+| Renders | `mcu_board_top.png`, `mcu_board_bottom.png` | `mcu_board_socket_top.png`, `mcu_board_socket_bottom.png` |
+
+Both have 123 assembled parts and the same BOM (U6 is not assembled in either). In the socket variant U6 is turned
+270 degrees so that each side of the package faces where it does in rev A (the socket's pin 1 is at the bottom left of its
+nest); the decoupling capacitors (C21-C23, C31-C33) are in a row above the body, the oscillator, the clock and reset parts
+and the LED buffer are on the bottom side, and the flash and the analogue part moved right to make room. `route.py` also
+fans the bottom-side parts out on the bottom copper.
+
+Things that are different in the socket variant, because of its 32 holes 0.5-1.1 mm apart:
+
+- The pads of U6 keep their inner-layer rings only on the layer of their own net, and the planes keep 0.2 mm (not 0.3 mm)
+  from them: with 0.3 mm the antipads join and cut the ground pins (12, 29 and 33) off the GND plane. The ground pins
+  join the plane with a solid connection.
+- The footprint's keep-out areas (the stand-off areas) keep tracks and vias off the top copper under the body's corners.
+- Freerouting leaves U11's pad 5 (+3V3) open: a pad of 0.35 mm between a signal and a ground via. This board has a via
+  beside it, joined with a 0.15 mm track, put by hand; routing again may need the same.
+- `kicad-cli pcb drc --schematic-parity` does not apply (it looks for `mcu_board_socket.kicad_sch`); the nets come from
+  the same netlist.
+- Routing result, as for rev A: DRC with 0 unconnected items and no electrical violation; the only warnings are the 18 of
+  the Pmod footprints' silkscreen past the board edge.
+
+The footprint of the socket, `mcu_board.pretty/Yamaichi_IC550-0324-007_QFN32.kicad_mod`, is described above (and `fp-lib-table`
+makes it available to KiCad's editor as `mcu_board`).
 
 `chip_qfn32_socket.png` shows the chip's real layout (final GDS) in the QFN32 with the bonding the
 schematic assumes: each pad of the ring to the nearest package pin, one pin free per side.
