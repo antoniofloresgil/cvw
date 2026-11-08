@@ -170,7 +170,7 @@ BOOTROM_RANGE           64'h1FF
 BOOTROM_PRELOAD         1'b1
 UNCORE_RAM_SUPPORTED    1
 UNCORE_RAM_BASE         64'h80000000
-UNCORE_RAM_RANGE        64'h7FFF
+UNCORE_RAM_RANGE        64'hFFFF
 GPIO_LOOPBACK_TEST      0
 SPI_LOOPBACK_TEST       0
 UART_PRESCALE           32'd0
@@ -178,6 +178,7 @@ DEBUG_SUPPORTED         1
 DEBUG_TRIGGERS          32'd4
 TRACE_SUPPORTED         1
 TRACE_RAM_WORDS         32'd2048
+TRACE_IN_RAM            1
 MCU_SUPPORTED           1
 PLIC_NUM_SRC            32'd18
 PLIC_MCU_ID             32'd15
@@ -1878,6 +1879,14 @@ TRACE_SUPPORTED    1
 # trace_rv32gc: the instruction trace without the Debug Module, in 32 bits (testbench/debug/etrace)
 deriv trace_rv32gc rv32gc
 TRACE_SUPPORTED    1
+
+# trace_inram_rv32gc: the trace sink buffers in the last 8 KiB of a 64 KiB uncore RAM (TRACE_IN_RAM), as the chip
+# does; the same test (testbench/debug/etrace) checks that the trace read back is the same
+deriv trace_inram_rv32gc rv32gc
+TRACE_SUPPORTED    1
+TRACE_IN_RAM       1
+TRACE_RAM_WORDS    32'd2048
+UNCORE_RAM_RANGE   64'h0000FFFF
 
 # debug_rv64gc_nocache: rv64gc without caches or bursts, because the multicore subsystem needs a
 # cacheless memory system for a SoC with several harts (NCORES > 1): it tests the Debug Module's

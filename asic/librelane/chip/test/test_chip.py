@@ -10,6 +10,7 @@ the hart at the program, then halts it again and reads the trace back, which etr
 ($WALLY/testbench/debug/etrace) decodes into the program's path.
 atomics runs atomics.S from the flash: the atomic memory operations and LR/SC on the RAM, and misa.A.
 pmp runs pmp.S: the PMP CSRs, User mode against three regions, and a locked entry in Machine mode.
+ram runs ram.S: the eight banks of the 64 KiB RAM, aliasing and byte and halfword stores.
 freertos runs the FreeRTOS demo (../freertos): tasks, a queue, a mutex and a software timer on the CLINT tick.
 mcu_peripherals boots mcu.S the same way and checks the timer, I2C, RTC and watchdog through the
 pads: PWM duty cycles on GPIO0 and GPIO1, a capture of an edge the test puts on GPIO2, an I2C slave
@@ -151,6 +152,16 @@ async def pmp(dut):
     await reset_chip(dut, flash=flash_image(program), ready="F")
     result = await uart_recv(dut)
     assert result == ord("P"), f"pmp.S failed check {chr(result)!r}"
+
+
+@cocotb.test()
+async def ram(dut):
+    """The 64 KiB RAM (eight 2048 x 32 macros): ram.S writes a different word to the first and last word of
+    every 8 KiB bank, reads them back, and checks byte and halfword stores; it sends 'P' if all held."""
+    program = (HERE / "build/ram.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    result = await uart_recv(dut)
+    assert result == ord("P"), f"ram.S failed check {chr(result)!r}"
 
 
 @cocotb.test()
@@ -477,6 +488,9 @@ def main():
     subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imac_zicsr", "-mabi=ilp32", "-nostdlib",
                     "-Wl,-Ttext=0x80000000", "-o", build / "atomics.elf", HERE / "atomics.S"], check=True)
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "atomics.elf", build / "atomics.bin"], check=True)
+    subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imc_zicsr", "-mabi=ilp32", "-nostdlib",
+                    "-Wl,-Ttext=0x80000000", "-o", build / "ram.elf", HERE / "ram.S"], check=True)
+    subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "ram.elf", build / "ram.bin"], check=True)
     subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imc_zicsr", "-mabi=ilp32", "-nostdlib",
                     "-Wl,-Ttext=0x80000000", "-o", build / "pmp.elf", HERE / "pmp.S"], check=True)
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "pmp.elf", build / "pmp.bin"], check=True)

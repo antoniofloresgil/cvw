@@ -47,7 +47,14 @@ module etracesink import cvw::*; #(parameter cvw_t P, parameter int NBYTES = 19,
   input  logic [31:0]         RegWData,
   output logic [31:0]         RegRData,
   output logic                DataRead,           // a read of trRamData (for the testbench)
-  output logic [31:0]         RamDout
+  output logic [31:0]         RamDout,
+  // TRACE_IN_RAM: the port to the last WORDS words of the uncore RAM, in place of a RAM of its own
+  output logic                ShReq, ShWe,
+  output logic [3:0]          ShBwe,
+  output logic [AW-1:0]       ShAddr,
+  output logic [31:0]         ShDin,
+  input  logic                ShGrant,            // a hart does not use the trace RAM's port this cycle
+  input  logic [31:0]         ShDout
 );
 
   localparam logic [AW-1:0] LIMIT = AW'(WORDS - 1);
@@ -57,6 +64,7 @@ module etracesink import cvw::*; #(parameter cvw_t P, parameter int NBYTES = 19,
   logic [AW-1:0]     WP, RP;                       // word pointers
   logic [1:0]        WB;                           // next byte in word WP
   logic              Empty, Busy;                  // Busy: the RAM was written last cycle
+  logic              Granted, Wr;                  // the RAM is the sink's this cycle; and it is written
 
   ///////////////////////////////////////////
   // The packet queue
@@ -86,8 +94,9 @@ module etracesink import cvw::*; #(parameter cvw_t P, parameter int NBYTES = 19,
   assign Pad      = QEmpty & ~Enable & WB != 2'd0;  // fill the last word when the sink is disabled
   assign N        = Pad ? Room : (Left < {2'b0, Room}) ? Left[2:0] : Room;
   assign WriteRam = Active & (~QEmpty | Pad);
-  assign WordDone = WriteRam & ({1'b0, WB} + N == 3'd4);
-  assign Pop      = WriteRam & ~Pad & Off + {2'b0, N} == HeadLen;
+  assign Wr       = WriteRam & Granted;             // with the RAM shared, a hart's access to it goes first
+  assign WordDone = Wr & ({1'b0, WB} + N == 3'd4);
+  assign Pop      = Wr & ~Pad & Off + {2'b0, N} == HeadLen;
 
   always_comb
     for (int i = 0; i < 4; i++) begin
@@ -128,8 +137,23 @@ module etracesink import cvw::*; #(parameter cvw_t P, parameter int NBYTES = 19,
     else               RPNext = RP;
   assign RamAdr = WriteRam ? WP : RPNext;
 
-  ram1p1rwbe #(.USE_SRAM(P.USE_SRAM), .DEPTH(WORDS), .WIDTH(32)) ram(.clk, .ce(1'b1), .addr(RamAdr),
-    .din(Din), .we(WriteRam), .bwe(Bwe), .dout(RamDout));
+  if (P.TRACE_IN_RAM) begin : shared
+    // The buffer is the last WORDS words of the uncore RAM (ram_ahb.sv): a hart that addresses them in a
+    // cycle takes the port, and the sink waits (a write) or reads the word again.  So that trRamData
+    // returns the word at trRamRP, harts must not load or store in that area while the sink is read.
+    assign ShReq     = 1'b1;
+    assign ShWe      = WriteRam;
+    assign ShBwe     = Bwe;
+    assign ShAddr    = RamAdr;
+    assign ShDin     = Din;
+    assign Granted   = ShGrant;
+    assign RamDout   = ShDout;
+  end else begin : own
+    assign {ShReq, ShWe, ShBwe, ShAddr, ShDin} = '0;
+    assign Granted = 1'b1;
+    ram1p1rwbe #(.USE_SRAM(P.USE_SRAM), .DEPTH(WORDS), .WIDTH(32)) ram(.clk, .ce(1'b1), .addr(RamAdr),
+      .din(Din), .we(WriteRam), .bwe(Bwe), .dout(RamDout));
+  end
 
   always_ff @(posedge clk)
     if (reset | WCtrl & ~RegWData[0]) begin         // trRamActive 0 resets the sink
@@ -148,7 +172,7 @@ module etracesink import cvw::*; #(parameter cvw_t P, parameter int NBYTES = 19,
       if (Pop) begin
         QHead <= QHead == QW'(QUEUE-1) ? '0 : QHead + 1'b1;
         Off <= '0;
-      end else if (WriteRam & ~Pad) Off <= Off + {2'b0, N};
+      end else if (Wr & ~Pad) Off <= Off + {2'b0, N};
       QCount <= QCount + (QW+1)'(Push) - (QW+1)'(Pop);
       // The write pointer, and the wrap at the end of the buffer
       if (WWP) begin
@@ -161,9 +185,9 @@ module etracesink import cvw::*; #(parameter cvw_t P, parameter int NBYTES = 19,
             Enable <= 1'b0; QHead <= '0; QTail <= '0; QCount <= '0; Off <= '0;
           end
         end else WP <= WP + 1'b1;
-      end else if (WriteRam) WB <= WB + N[1:0];
+      end else if (Wr) WB <= WB + N[1:0];
       RP <= RPNext;
-      Busy <= WriteRam;
+      Busy <= Wr;
     end
 
   // Empty: nothing queued, the last word complete, and the RAM free since the last write

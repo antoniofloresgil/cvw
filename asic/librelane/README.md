@@ -43,8 +43,8 @@ Configurations:
   reset, UART, SPI, 8 GPIOs, JTAG and 8 power pads), after IHP's
   [LibreLane template](https://github.com/IHP-GmbH/ihp-sg13-librelane-template); the bondpad comes
   from the template (`chip/ip/`), since the PDKs have none. The BOOTROM holds `chip/boot.S`
-  (built into `chip/boot.mem`), which loads a program into the 32 KiB RAM at 0x80000000 (four SRAM
-  macros) and runs it. It reads straps from the GPIOs at reset: the UART's baud divisor from
+  (built into `chip/boot.mem`), which loads a program into the 64 KiB RAM at 0x80000000 (eight SRAM
+  macros; the last 8 KiB, 0x8000E000-0x8000FFFF, are also the instruction trace's buffer: see below) and runs it. It reads straps from the GPIOs at reset: the UART's baud divisor from
   GPIO[4:0], and with GPIO[5] high it skips the flash. Otherwise it reads an SPI flash on the SPI
   pads (Read command 0x03 from address 0: `WALY`, a 4-byte length and the program); without that
   header (no flash, or an erased one) it falls back to the UART: it sends `W`, receives a 4-byte
@@ -78,7 +78,7 @@ Configurations:
   the pads, the RTC alarm and the watchdog's reset included.
 - `asic_soc_rv32imac` has the JTAG debug port with 4 triggers and the instruction trace
   (`DEBUG_SUPPORTED`, `DEBUG_TRIGGERS`, `TRACE_SUPPORTED`; `docs/debug.md`, `docs/trace.md`): the
-  trace buffer (2048 x 32, 8 KiB) is an SRAM macro of its own, of the same kind as the RAM's. Measured with Yosys and the SG13G2 library (memories as macros),
+  trace buffer (2048 x 32, 8 KiB) was an SRAM macro of its own, of the same kind as the RAM's, and is now the RAM's last 8 KiB (`TRACE_IN_RAM`, below). Measured with Yosys and the SG13G2 library (memories as macros),
   the debug port adds 5,064 cells to the SoC's 34,216, the triggers 3,617 and the trace 4,646;
   the die grew from 2.0 to 2.4 mm for them (70,185 cells, setup +2.17 ns at 40 ns).
 - The 32 KiB RAM grew the die to 2.6 mm: its four macros (417 x 627 um) fit in a row along the top
@@ -94,6 +94,13 @@ Configurations:
   cells, 1.20 mm² (55 % of the area outside the macros); setup +4.88 ns in the slow corner, hold
   +0.10 ns; 0 KLayout DRC, LVS, antenna and disconnected-pin errors; 21 mW. At 45 ns the PMP comparators
   missed setup by 0.12 ns. Magic's findings are the waived ones (see below).
+- The 64 KiB RAM, with the trace buffer in the RAM (`TRACE_IN_RAM`), has eight macros (four in a row
+  along the top, four in a row at the bottom right) in a 2.752 mm die, at 50 ns in SG13G2: 89,689
+  standard cells, 1.21 mm² (61 % of the area outside the macros); setup +7.38 ns in the slow corner,
+  hold +0.11 ns; 0 KLayout DRC, LVS, KLayout antenna and disconnected-pin errors; 19 mW; Magic's
+  findings are the waived ones (1,413 inside the macros). The die is the largest that passes the
+  KLayout antenna rule `Ant.e` at the input pads (19,706 of 20,000 at 2.752 mm; it grows with the pad
+  ring, 20,238 at 2.8 mm), which is why the trace shares the RAM instead of a ninth macro.
 
 Notes:
 

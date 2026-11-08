@@ -39,10 +39,19 @@ module etrace import cvw::*; #(parameter cvw_t P, parameter int unsigned NHARTS 
   input  logic                                 HWRITE, HREADY,
   input  logic [P.AHBW-1:0]                    HWDATA,
   output logic                                 TraceHSEL,   // data phase of a transfer to the window
-  output logic [P.AHBW-1:0]                    TraceHRDATA
+  output logic [P.AHBW-1:0]                    TraceHRDATA,
+  // TRACE_IN_RAM: the port of hart 0's sink to the last TRACE_RAM_WORDS words of the uncore RAM
+  output logic                                 TrReq, TrWe,
+  output logic [3:0]                           TrBwe,
+  output logic [$clog2(P.TRACE_RAM_WORDS)-1:0] TrAddr,
+  output logic [31:0]                          TrDin,
+  input  logic                                 TrGrant,
+  input  logic [31:0]                          TrDout
 );
 
   localparam int NBYTES = 1 + (2*P.XLEN + 13 + 7) / 8;
+
+  if (P.TRACE_IN_RAM & NHARTS != 1) $error("TRACE_IN_RAM supports one hart: the trace RAM is one area of the uncore RAM");
 
   // Address phase: a transfer to the window
   logic                   InWindow;
@@ -87,6 +96,10 @@ module etrace import cvw::*; #(parameter cvw_t P, parameter int unsigned NHARTS 
     logic [8*NBYTES-1:0] Packet;
     logic                DataRead;
     logic [31:0]         RamDout;
+    logic                ShReq, ShWe;
+    logic [3:0]          ShBwe;
+    logic [$clog2(P.TRACE_RAM_WORDS)-1:0] ShAddr;
+    logic [31:0]         ShDin;
 
     // Trace encoder control
     logic        Active, Enable, InstTracing, Overflow, Idle;
@@ -118,7 +131,10 @@ module etrace import cvw::*; #(parameter cvw_t P, parameter int unsigned NHARTS 
       .ResyncMax(SyncMax), .ITrace(ITrace[h]), .PacketValid, .PacketLen, .Packet, .LineTaken, .Idle);
     etracesink #(.P(P), .NBYTES(NBYTES)) sink(.clk, .reset, .PacketValid, .PacketLen, .Packet,
       .PacketReady, .RegSel(RamSel), .RegWrite(DWrite), .RegAdr(DAdr[11:2]), .RegWData(WData),
-      .RegRData(RamRData), .DataRead, .RamDout);
+      .RegRData(RamRData), .DataRead, .RamDout, .ShReq, .ShWe, .ShBwe, .ShAddr, .ShDin, .ShGrant(TrGrant), .ShDout(TrDout));
+    if (h == 0) begin : port
+      assign {TrReq, TrWe, TrBwe, TrAddr, TrDin} = {ShReq, ShWe, ShBwe, ShAddr, ShDin};
+    end
 
     assign HartRData[h] = ~Sel ? '0 : DAdr[12] ? RamRData : TeRData;
   end

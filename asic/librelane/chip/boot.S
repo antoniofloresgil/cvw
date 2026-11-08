@@ -11,16 +11,16 @@
 // SPI flash, on chip select 0, read with the standard Read command (0x03, 3 address bytes) from
 // address 0, at f_clk / 8 (the SPI's reset divisor):
 //   'W' 'A' 'L' 'Y'   magic
-//   size, 4 bytes, little endian (at most 32 KiB)
+//   size, 4 bytes, little endian (at most 64 KiB)
 //   size bytes of the program
 // With the magic and size right, the chip sends 'F' on the UART and runs the program; otherwise (no
 // flash, or an erased one) it falls back to the UART.
 //
 // UART (8 data bits, no parity, 1 stop bit):
 //   chip -> host  'W'                      ready
-//   host -> chip  size, 4 bytes, little endian (at most 32 KiB)
+//   host -> chip  size, 4 bytes, little endian (at most 64 KiB)
 //   host -> chip  size bytes of the program
-//   chip -> host  8-bit sum of those bytes; then the chip runs the program.  A size over 32 KiB
+//   chip -> host  8-bit sum of those bytes; then the chip runs the program.  A size over 64 KiB
 //                 sends back '!' and waits for a new size.
 
   .equ UART,     0x10000000      // PC16550D, one register per byte
@@ -37,7 +37,7 @@
   .equ SPI_TXDATA, 0x48
   .equ SPI_RXDATA, 0x4C          // bit 31: receive FIFO empty
   .equ RAM,      0x80000000
-  .equ RAMSIZE,  0x8000
+  .equ RAMSIZE,  0x10000
   .equ DIVISOR,  18
   .equ MAGIC,    0x594C4157      // "WALY"
 

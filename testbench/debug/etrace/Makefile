@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 # Instruction trace (docs/trace.md): the test program for RV32 and RV64, and its check.
 #   make                # build etracetest32_r0.elf and etracetest64_r0.elf
-#   make check          # run them on trace_rv32gc and debug_rv64gc, then check with etracecheck.py
+#   make check          # run them on trace_rv32gc, trace_inram_rv32gc (TRACE_IN_RAM) and debug_rv64gc, then check with etracecheck.py
 #                       # the packets that the program reads back from the RAM sink: decoded by
 #                       # etracedecode.py, they give the program counters that the hart retired
 #   make check ETRACE_SPEC=<riscv-trace-spec clone>   # also against the reference flow, byte for byte
@@ -44,6 +44,7 @@ endef
 
 check: all
 	$(call check,trace_rv32gc,32)
+	$(call check,trace_inram_rv32gc,32)
 	$(call check,debug_rv64gc,64)
 
 # Build etrace_tb for $(1) with NHARTS harts, run the program for XLEN $(2) on it, then check the

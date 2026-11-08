@@ -1,6 +1,6 @@
 # ADR 0022: the open-ASIC chip as a microcontroller
 
-Status: **accepted**; steps 1-3 (SPI-flash boot, 32 KiB RAM, debug and trace) are implemented,
+Status: **accepted**; steps 1-3 (SPI-flash boot, 64 KiB RAM, debug and trace) are implemented,
 step 4 (the MCU peripherals) is implemented and passes its tests, its silicon numbers are in the
 [experiment record](../experiments/2026-11-02-open-asic-flow.md). Applies to the chip of the
 [open ASIC flow](../experiments/2026-11-02-open-asic-flow.md) (`asic_soc_rv32imac`,
@@ -49,8 +49,8 @@ VDD 1.2 V). Low power is WFI plus clock gating.
 
 ## Step 4: the MCU peripherals (decided 2026-11-05)
 
-Steps 1-3 are done (SPI-flash boot with UART fallback, 32 KiB RAM, JTAG debug and trace, in
-a 2.6 mm die at 45 ns). Step 4 adds timers with PWM and input capture, a watchdog, an I2C
+Steps 1-3 are done (SPI-flash boot with UART fallback, JTAG debug and trace, in
+a 2.6 mm die at 45 ns with 32 KiB of RAM; 64 KiB since 2026-11-08, see below). Step 4 adds timers with PWM and input capture, a watchdog, an I2C
 master and an RTC/wake-up timer, and a pin multiplexer, keeping the QFN32 package.
 
 Structure, following how the PWM peripheral is wired into Wally:
@@ -88,5 +88,34 @@ Structure, following how the PWM peripheral is wired into Wally:
   multiplexing is what makes the peripherals fit.
 - More SRAM and peripherals grow the core area; the SRAM size and peripheral set
   decide whether the 2.0 x 2.0 mm die is enough, and must be fixed before the floorplan.
+  Whether and when the chip is fabricated is open, so the cost per mm² is not the limit: the
+  QFN 32's largest die, 3 x 3 mm, is (the die is 2.6 mm with 32 KiB of RAM, 2.752 mm with 64 KiB, see "The 64 KiB RAM").
 - Interrupt latency and nesting are below a Cortex-M3 NVIC (no hardware stacking)
   until a CLIC-like controller exists.
+
+## The 64 KiB RAM (2026-11-08)
+
+The RAM doubled to 64 KiB (eight 2048 x 32 macros) so that an RTOS with memory protection fits (Zephyr with
+User mode is about 42 KB of code and data in RAM, measured on `qemu_riscv32`, and the chip runs from RAM).
+Three decisions, in the order they were forced:
+
+- **The die limit is not the cost but the QFN 32** (3 x 3 mm), and nine macros (the eight of the RAM and one
+  for the instruction trace's buffer) need a 2.92 mm die: five macros in a row do not fit in less.
+- **The antenna rule Ant.e of IHP's KLayout deck** (cumulative metal of M1 to TopMetal1 over the gate area, 20000
+  at most) fails at the 15 input pads of a 2.92 mm die: 21,307. The cluster of each input pad (its receiver's
+  gate, 31 um²) includes the supply rails of the pad ring, which grow with the die, whatever the placement.
+  Measured on the pad ring alone, from the floorplan to the stream-out: 18,351 at 2.600 mm (the 32 KiB chip),
+  19,278 at 2.704, 19,706 at 2.752, 19,778 at 2.760, 20,238 at 2.800, 20,666 at 2.848, 21,307 at 2.920. The die
+  must be under about 2.78 mm.
+- **The trace buffer shares the RAM** (`TRACE_IN_RAM`, `docs/trace.md`): the sink writes the last 8 KiB of the RAM
+  (0x8000E000-0x8000FFFF) through a second port of `ram_ahb` that a hart's access to that area takes over, so the
+  chip has eight macros, in two rows of four, and a die of 2.752 mm (Ant.e 19,706, 1.5 % under the limit; the
+  die cannot grow more than about 20 um). Traces are rarely used, so the RAM is whole when they are off; the
+  alternative, a dedicated 8 KiB macro and a 56 KiB RAM, costs the same silicon. The software rule: while the
+  trace is on, do not load or store in that area.
+
+Flow notes (all in `gen_config.py`): the top row of macros sits 0 um from the edge, because at 1.89 um from it
+pdngen leaves a Metal1 rail with no strap above the macros' halos, which fails the power grid check (22 segments;
+with nine macros the same happened at 0, in another form, see `TOP_SHIFT`); detailed placement may move a cell 900 x
+700 um, because a buffer over a 627 um macro finds no row within the default 500 x 100; and the target density of
+global placement is 70 % (the default 0.85 leaves OpenROAD's antenna repair no room for 60 of its diodes).
