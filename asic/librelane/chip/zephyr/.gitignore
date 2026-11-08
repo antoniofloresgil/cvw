@@ -5,3 +5,5 @@ build-sim.log
 build-periph-sim/
 build-uart-irq-sim/
 build-periph-sim.log
+build-mcu-sim/
+build-mcu-sim.log

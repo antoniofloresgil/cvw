@@ -28,3 +28,11 @@
 &spi0 {
     status = "okay";
 };
+
+&wdt0 {
+    status = "okay";
+};
+
+&i2c0 {
+    status = "okay";
+};

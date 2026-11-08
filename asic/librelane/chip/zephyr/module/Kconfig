@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config I2C_WALLY
+    bool "Wally I2C master (src/uncore/mcu/i2c_apb.sv)"
+    default y
+    depends on I2C && DT_HAS_WALLY_I2C_ENABLED
+    select PINCTRL
+    help
+      Polled single-master driver for the chip's I2C controller.
+
+config WDT_WALLY
+    bool "Wally two-stage watchdog (src/uncore/mcu/wdt_apb.sv)"
+    default y
+    depends on WATCHDOG && DT_HAS_WALLY_WDT_ENABLED
+    help
+      Driver for the chip's watchdog: the first timeout is a flag, the second one resets the chip.

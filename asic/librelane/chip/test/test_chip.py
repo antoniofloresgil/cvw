@@ -341,6 +341,28 @@ async def zephyr_uart_irq(dut):
     assert lines == [b"ABC", b"UART IRQ OK"], f"{lines!r}"
 
 
+@cocotb.test()
+async def zephyr_mcu(dut):
+    """Zephyr's drivers for the I2C master and the watchdog (../zephyr/mcu): the demo writes 0x5A to an I2C device
+    at 0x50 (played on the pads by i2c_slave), reads 0xC3 back, gets a NACK from 0x51, then arms the watchdog, feeds it
+    three times and stops: its second timeout resets the chip and the bootloader sends 'F' again."""
+    image = HERE.parent / "zephyr/build-mcu-sim/zephyr/zephyr.bin"    # `make chipsim` builds it
+    assert image.exists(), f"{image} is missing: make -C {image.parents[3]} APP=mcu BUILD=build-mcu-sim OVERLAY=sim.overlay"
+    await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
+    await RisingEdge(dut.clk)
+    received = []
+    cocotb.start_soon(i2c_slave(dut, received))
+    lines = await read_lines(dut, b"i2c nack", timeout=4000000)
+    assert lines == [b"mcu start", b"i2c write ok", b"i2c read c3", b"i2c nack -5"], f"{lines!r}"
+    assert received == [0x5A], f"the I2C slave received {received}"
+    lines = await read_lines(dut, b"wdt fed", timeout=4000000)
+    assert lines == [b"wdt fed"], f"{lines!r}"
+    dut.gpio_in.value = DIVISOR                        # the bootloader reads its straps again after the reset
+    dut.gpio_drive.value = 0xFF
+    char = await uart_recv(dut, timeout=8000000)
+    assert char == ord("F"), f"after the watchdog's reset the bootloader sent {chr(char)!r}, not 'F'"
+
+
 ###########################################################################################
 # MCU peripherals: mcu.S drives them through GPIO alternate function 1
 ###########################################################################################

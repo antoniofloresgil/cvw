@@ -4,6 +4,7 @@
  * so the trace can be switched on without Zephyr or a user thread touching its area. */
 
 #include <freq.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
 
 / {
         #address-cells = <1>;
@@ -120,6 +121,26 @@
                         status = "disabled";
                 };
 
+                /* the MCU peripherals (MCU_BASE 0x10080000, one 4 KiB page each: timer, watchdog, I2C, RTC).  I2C is IOF1 of
+                 * GPIO6 (SCL) and GPIO7 (SDA), open drain with external pull-ups */
+                wdt0: watchdog@10081000 {
+                        compatible = "wally,wdt";
+                        reg = <0x10081000 0x1000>;
+                        clock-frequency = <DT_FREQ_K(18432)>;
+                        status = "disabled";
+                };
+
+                i2c0: i2c@10082000 {
+                        compatible = "wally,i2c";
+                        reg = <0x10082000 0x1000>;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                        clock-frequency = <I2C_BITRATE_STANDARD>;
+                        pinctrl-0 = <&i2c0_gpio6 &i2c0_gpio7>;
+                        pinctrl-names = "default";
+                        status = "disabled";
+                };
+
                 uart0: uart@10000000 {
                         compatible = "ns16550";
                         reg = <0x10000000 0x8>;
@@ -144,5 +165,11 @@
         };
         pwm0_gpio3: pwm0_gpio3 {
                 pinmux = <3 SIFIVE_PINMUX_IOF0>;
+        };
+        i2c0_gpio6: i2c0_gpio6 {
+                pinmux = <6 SIFIVE_PINMUX_IOF1>;
+        };
+        i2c0_gpio7: i2c0_gpio7 {
+                pinmux = <7 SIFIVE_PINMUX_IOF1>;
         };
 };

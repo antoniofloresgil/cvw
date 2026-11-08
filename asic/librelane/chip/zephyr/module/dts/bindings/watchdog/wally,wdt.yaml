@@ -1,0 +1,14 @@
+description: CORE-V-Wally two-stage watchdog (src/uncore/mcu/wdt_apb.sv)
+
+compatible: "wally,wdt"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  clock-frequency:
+    type: int
+    required: true
+    description: Frequency in Hz of the clock the watchdog's prescaler divides
