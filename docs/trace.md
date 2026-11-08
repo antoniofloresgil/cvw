@@ -118,6 +118,18 @@ is not changed.
   idle bytes 0 (never a header, whose `msg_type` is 2). `trRamRPLow` and `trRamData` read the
   buffer back, while the sink is disabled and empty. `trRamImpl` reads 0x00001091: version 1.0,
   RAM sink, SRAM mode.
+- **`TRACE_IN_RAM`** (default 0) puts the buffer in the last `TRACE_RAM_WORDS` words of the uncore RAM
+  instead of a RAM of the sink's own, so that a SoC with a small RAM macro budget (the open-ASIC chip: 64 KiB
+  in eight 8 KiB macros, the last of them the buffer) has the whole RAM when it does not trace. `ram_ahb`
+  then splits the RAM into power-of-two parts (the chip's memory adapter banks only those) and gives the
+  last part a second client: in a cycle in which a hart does not address that area, the port is the sink's
+  (`TrGrant`); when a hart does, it goes first and the sink waits, and the queue absorbs the delay (a full
+  queue drops a packet, as ever). Rules for software: while the sink is active (`trRamActive` 1), do not load
+  from or store to the area (the chip: 0x8000E000-0x8000FFFF), which holds the trace, and while `trRamData`
+  is read, no hart access to it may fall between two reads, or the word read is the hart's. One hart only
+  (`NHARTS` 1), `XLEN` 32, no preload, `RAM_LATENCY` 0 (elaboration errors otherwise). `trace_inram_rv32gc`
+  (`derivlist.txt`: 64 KiB RAM, 2048 words) runs the same program and check as `trace_rv32gc`
+  (`make -C testbench/debug/etrace check` runs them all), and the chip's cocotb test `trace` runs through it.
 
 Using it, in the order of the specification (offsets from hart h's block):
 

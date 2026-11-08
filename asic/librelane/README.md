@@ -43,8 +43,8 @@ Configurations:
   reset, UART, SPI, 8 GPIOs, JTAG and 8 power pads), after IHP's
   [LibreLane template](https://github.com/IHP-GmbH/ihp-sg13-librelane-template); the bondpad comes
   from the template (`chip/ip/`), since the PDKs have none. The BOOTROM holds `chip/boot.S`
-  (built into `chip/boot.mem`), which loads a program into the 32 KiB RAM at 0x80000000 (four SRAM
-  macros) and runs it. It reads straps from the GPIOs at reset: the UART's baud divisor from
+  (built into `chip/boot.mem`), which loads a program into the 64 KiB RAM at 0x80000000 (eight SRAM
+  macros; the last 8 KiB, 0x8000E000-0x8000FFFF, are also the instruction trace's buffer: see below) and runs it. It reads straps from the GPIOs at reset: the UART's baud divisor from
   GPIO[4:0], and with GPIO[5] high it skips the flash. Otherwise it reads an SPI flash on the SPI
   pads (Read command 0x03 from address 0: `WALY`, a 4-byte length and the program); without that
   header (no flash, or an erased one) it falls back to the UART: it sends `W`, receives a 4-byte
@@ -78,7 +78,7 @@ Configurations:
   the pads, the RTC alarm and the watchdog's reset included.
 - `asic_soc_rv32imac` has the JTAG debug port with 4 triggers and the instruction trace
   (`DEBUG_SUPPORTED`, `DEBUG_TRIGGERS`, `TRACE_SUPPORTED`; `docs/debug.md`, `docs/trace.md`): the
-  trace buffer (2048 x 32, 8 KiB) is an SRAM macro of its own, of the same kind as the RAM's. Measured with Yosys and the SG13G2 library (memories as macros),
+  trace buffer (2048 x 32, 8 KiB) was an SRAM macro of its own, of the same kind as the RAM's, and is now the RAM's last 8 KiB (`TRACE_IN_RAM`, below). Measured with Yosys and the SG13G2 library (memories as macros),
   the debug port adds 5,064 cells to the SoC's 34,216, the triggers 3,617 and the trace 4,646;
   the die grew from 2.0 to 2.4 mm for them (70,185 cells, setup +2.17 ns at 40 ns).
 - The 32 KiB RAM grew the die to 2.6 mm: its four macros (417 x 627 um) fit in a row along the top

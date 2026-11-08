@@ -104,12 +104,12 @@ SIZES = {"RM_IHPSG13_1P_1024x32_c2_bm_bist": (416.64, 336.46), "RM_IHPSG13_1P_20
 # (see chip/pdn_cfg.tcl): 5 um from the side and 4.54 um from the top or bottom of the core.  Side
 # by side, the halos of two macros touch, for the same reason.
 EDGE_X, EDGE_Y = 5, 4.54
-# With two rows of macros the top row sits 1.89 um (half a standard cell row) lower: at 4.54 um from the
-# core's top edge the TopMetal1 straps end 15 um short of the top macros' halos, and pdngen leaves on
-# the rails above them 28 stacks of vias to nothing, 8 um of Metal2 each, that detailed routing shorted
-# with signals (3 shorts, Checker.TrDRC) near the macros' pins.  Of the shifts tried (1.89, 3.78,
-# 5.67, 7.56, 9.45 and 15.12 um), 1.89, 5.67 and 9.45 leave none, the others leave them.
-TOP_SHIFT = 1.89
+# The top row of macros sits TOP_SHIFT um below its place against the core's top edge (EDGE_Y): at some distances from
+# the edge the TopMetal1 straps end short of the macros' halos, and pdngen leaves on the rails above them stacks of
+# vias to nothing (Metal2 stubs, or a Metal1 rail with no strap), that detailed routing shorted with signals
+# (Checker.TrDRC) or that fail the power grid check (PSM-0069).  It depends on the layout: with nine macros (five in
+# the top row, 2.92 mm die) 1.89, 5.67 and 9.45 um left none and 0, 3.78 and 7.56 left them; with eight (four, 2.752 mm
+# die) 0, 3.78 and 7.56 leave none, 1.89 and 5.67 leave them (checked with the floorplan-to-PDN steps alone).
 vh = (configdir / "config.vh").read_text()
 
 
@@ -134,6 +134,7 @@ trace_in_ram = trace and param("TRACE_IN_RAM") == 1
 # limit of 20000 at 2.92 mm, 19700 at 2.752 mm).
 DIE = 2600 if RAM_WORDS <= 8192 else 2752 if trace_in_ram else 2920
 CORE = (365, DIE - 365)
+TOP_SHIFT = 0 if trace_in_ram else 1.89   # see EDGE_Y above
 
 
 def sram_banks(prefix, words):
@@ -263,6 +264,11 @@ if chip:
         # Only with nine macros, so that the 32 KiB chip's flow stays as it was.  600 x 400 sufficed until the top
         # row moved 1.89 um; then 600 x 400 and 1200 x 500 failed and 900 x 700 passed: the vertical limit counts.
         **({"PL_MAX_DISPLACEMENT_X": 900, "PL_MAX_DISPLACEMENT_Y": 700} if RAM_WORDS > 8192 else {}),
+        # The default target density of global placement (0.85 here) packs cells so that the antenna repair after
+        # global routing finds no room for 60 of its diodes and jumpers (DPL-0036 in OpenROAD.RepairAntennas, which has
+        # no displacement option).  With 70 % it succeeds (checked from the floorplan to the repair); so does cell
+        # padding (GPL_CELL_PADDING 2, DPL_CELL_PADDING 1), and a 10 % margin in the repair does not.
+        **({"PL_TARGET_DENSITY_PCT": 70} if RAM_WORDS > 8192 else {}),
         "CORE_AREA": [CORE[0], CORE[0], CORE[1], CORE[1]],
         "PDN_CORE_RING": True,
         "PDN_CORE_RING_VWIDTH": 15,      # under 30 um, the widest metal without slotting
