@@ -6,3 +6,4 @@ fp-info-cache
 *.dsn
 *.ses
 fab/
+fab-socket/

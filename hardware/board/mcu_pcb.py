@@ -6,6 +6,8 @@ footprint from KiCad's libraries, gives each pad its net and places the parts by
 the left, the Pmod headers on top, the analog header on the right), each IC with its passives beside
 it, and a row along the bottom edge with a test point, an LED and a button for each GPIO.  Run with the Python that has KiCad's pcbnew
 module (the system Python):  python3 mcu_pcb.py   -> mcu_board.kicad_pcb, unrouted.
+python3 mcu_pcb.py --socket writes mcu_board_socket.kicad_pcb: the same board with the chip's QFN32 test socket
+(mcu_board.pretty) instead of the QFN32 pads for soldering the chip directly.
 """
 
 import json
@@ -22,6 +24,7 @@ FPDIR = Path("/usr/share/kicad/footprints")
 W, H = 110.0, 85.0                      # board, mm
 ORIGIN = (100.0, 60.0)                  # the board's top left corner on the page
 GAP = 1.6                               # between courtyards: room for the fanout vias
+GAP_BOTTOM = 0.9                        # on the bottom side, under the socket, where the room is short
 
 # Placement by function.  FIXED parts sit at (x, y, rotation) on the board (mm from its top left
 # corner); each GROUP is packed, in the order given, into its rectangle (x0, y0, x1, y1) beside the
@@ -81,6 +84,28 @@ GROUPS = [
     ("R20-R31", (73, 47, 88.2, 61.5)),                                                 # strap resistors
     ("U10 U11 U12 U13 RV1 C43-C46 R46 R47", (78, 12, 103, 40)),                      # I2C and analog
 ]
+# The socket variant (--socket): the chip's QFN32 test socket (mcu_board.pretty) instead of the QFN32 pads for soldering
+# the chip directly.  Its body, 22 x 24.5 mm, covers the chip's site, so the parts that sat around the chip move: the
+# decoupling capacitors go above it and the oscillator and the reset supervisor to the bottom side, under it.  U6 is turned
+# 270 degrees so that each side of the package faces where it did (the socket's pin 1 is at the bottom left of its
+# nest, the usual drawing turned 90 degrees counter-clockwise).  A group with a third item "B" goes on the bottom.
+SOCKET_FOOTPRINT = "mcu_board:Yamaichi_IC550-0324-007_QFN32"
+FIXED_SOCKET = {k: v for k, v in FIXED.items() if k != "X1"}
+FIXED_SOCKET.update({"U6": (60.0, 40.0, 270), "U8": (77.0, 30.0, 0)})
+GROUPS_SOCKET = [
+    ("F1 R1 R2 U2 C1-C4 U3 C5 C6 R3 D1 R4 D2 TP1-TP3 TP6 TP7", (8, 8, 37, 31)),     # power
+    ("JP1 JP2 TP4 TP5", (49, 12.8, 72, 21.2)),          # the chip's supplies: ammeter jumpers above the socket
+    ("Y1 C7 C8", (10, 31.6, 17.2, 43.2)),                                              # FT2232HL crystal
+    ("R9-R15", (31.5, 37, 42, 56)),                                                    # FT2232HL to the chip
+    ("C9-C19 FB1 R5 R6 U5 R7 R8", (8.5, 55, 42, 73)),                                 # FT2232HL supply, EEPROM
+    ("C21-C23 C31-C33", (49, 21.4, 78, 28.6)),                                         # chip decoupling, above the socket
+    ("X1 C40 R16 U7", (50.2, 51.2, 69.8, 57.5), "B"),                                  # oscillator, clock and reset, under it
+    ("TP10-TP15", (47.5, 55, 74.5, 61.8)),
+    ("C41 R17-R19", (72.5, 36.5, 86, 46)),                                             # flash
+    ("U9 C42", (36, 52, 49.5, 62), "B"),                                               # LED buffer
+    ("R20-R31", (73, 47, 88.2, 61.5)),                                                 # strap resistors
+    ("U10 U11 U12 U13 RV1 C43-C46 R46 R47", (84, 12, 103, 36)),                      # I2C and analog
+]
 POWER_NETS = ["GND", "VBUS", "+5V", "+3V3", "+1V2"]   # 0.3 mm tracks; the chip's and the FT2232HL's own supplies (tens of mA) take 0.2 mm, which fits between QFN pins
 RULES = {   # mm; the default net class and the board's minimums, written into mcu_board.kicad_pro
     "clearance": 0.15, "track_width": 0.2, "via_diameter": 0.6, "via_drill": 0.3,
@@ -106,11 +131,11 @@ def netlist():
 
 
 def courtyard(fp):
-    cy = fp.GetCourtyard(pcbnew.F_CrtYd)
+    cy = fp.GetCourtyard(pcbnew.B_CrtYd if fp.IsFlipped() else pcbnew.F_CrtYd)
     return cy.BBox() if cy.OutlineCount() else fp.GetBoundingBox(False)
 
 
-def pack(fps, regions):
+def pack(fps, regions, gap=GAP):
     """Shelf packing of footprints (by courtyard) into the regions, left to right, row by row."""
     queue = list(fps)
     for x0, y0, x1, y1 in regions:
@@ -118,7 +143,7 @@ def pack(fps, regions):
         while queue:
             fp = queue[0]
             bb = courtyard(fp)
-            w, h = pcbnew.ToMM(bb.GetWidth()) + GAP, pcbnew.ToMM(bb.GetHeight()) + GAP
+            w, h = pcbnew.ToMM(bb.GetWidth()) + gap, pcbnew.ToMM(bb.GetHeight()) + gap
             if cx + w > x1:
                 cx, cy, row = x0, cy + row, 0.0
             if cy + h > y1:
@@ -247,6 +272,9 @@ def silkscreen(board, fps):
     for ref, fp in sorted(fps.items(), key=lambda kv: -courtyard(kv[1]).GetArea()):
         field = fp.Reference()
         prefix = ref.rstrip("0123456789")
+        if fp.IsFlipped():                         # bottom-side parts carry no top silkscreen
+            field.SetVisible(False)
+            continue
         if prefix == "TP":                         # a test point shows its net
             field.SetVisible(False)
             val = fp.Value()
@@ -289,7 +317,10 @@ def silkscreen(board, fps):
     return unplaced
 
 
-def main():
+def main(socket=False, out=None):
+    global TITLE
+    if socket:
+        TITLE = TITLE.replace("rev A", "rev A-S")                  # the variant with the test socket
     root = netlist()
     board = pcbnew.BOARD()
     board.SetCopperLayerCount(4)
@@ -312,8 +343,8 @@ def main():
     fps = {}
     for c in root.iter("comp"):
         ref = c.get("ref")
-        lib, name = c.findtext("footprint").split(":")
-        fp = pcbnew.FootprintLoad(str(FPDIR / f"{lib}.pretty"), name)
+        lib, name = (SOCKET_FOOTPRINT if socket and ref == "U6" else c.findtext("footprint")).split(":")
+        fp = pcbnew.FootprintLoad(str((HERE if lib == "mcu_board" else FPDIR) / f"{lib}.pretty"), name)
         fp.SetFPID(pcbnew.LIB_ID(lib, name))
         fp.SetReference(ref)
         fp.SetValue(c.findtext("value"))
@@ -329,15 +360,23 @@ def main():
                     pad.SetNet(item)
 
     placed = []
-    for ref, (x, y, rot) in FIXED.items():
+    for ref, (x, y, rot) in (FIXED_SOCKET if socket else FIXED).items():
         fps[ref].SetOrientationDegrees(rot)
         fps[ref].SetPosition(at(x, y))
         placed.append(ref)
-    for spec, rect in GROUPS:
+    for group in GROUPS_SOCKET if socket else GROUPS:
+        spec, rect = group[:2]
         names = refs(spec)
-        left = pack([fps[r] for r in names], [rect])
+        if len(group) > 2 and group[2] == "B":                # the bottom side: flipped before it is packed
+            for r in names:
+                fps[r].Flip(fps[r].GetPosition(), pcbnew.FLIP_DIRECTION_LEFT_RIGHT)
+        bottom = len(group) > 2 and group[2] == "B"
+        regions = list(rect) if hasattr(rect[0], "__len__") else [rect]      # one rectangle or a list of them
+        left = pack([fps[r] for r in names], regions, GAP_BOTTOM if bottom else GAP)
         if left:
-            raise SystemExit(f"group {spec}: no room for {[f.GetReference() for f in left]}")
+            sizes = [(f.GetReference(), *(round(pcbnew.ToMM(v), 1) for v in (courtyard(f).GetWidth(), courtyard(f).GetHeight())))
+                     for f in left]
+            raise SystemExit(f"group {spec}: no room for {sizes} (courtyard width, height, plus the gap) in {rect}")
         placed += names
     missing = sorted(set(fps) - set(placed))
     twice = sorted({r for r in placed if placed.count(r) > 1})
@@ -359,7 +398,7 @@ def main():
         zone = pcbnew.ZONE(board)
         zone.SetLayer(layer)
         zone.SetNet(nets[net][0])
-        zone.SetLocalClearance(mm(0.3))
+        zone.SetLocalClearance(mm(0.2 if socket else 0.3))      # the socket's 32 holes leave webs of 0.17 mm in the planes
         poly = zone.Outline()
         poly.NewOutline()
         for x, y in ((0.5, 0.5), (W - 0.5, 0.5), (W - 0.5, H - 0.5), (0.5, H - 0.5)):
@@ -367,28 +406,30 @@ def main():
         board.Add(zone)
     # the zones are left unfilled (KiCad fills them on DRC with --refill-zones and when plotting)
 
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "mcu_board.kicad_pcb"
+    out = Path(out) if out else HERE / ("mcu_board_socket.kicad_pcb" if socket else "mcu_board.kicad_pcb")
     pcbnew.SaveBoard(str(out), board)
     project_rules(out.with_suffix(".kicad_pro"))
     print(f"{len(fps)} footprints, {len(nets)} nets -> {out}")
 
 
-def update_values():
+def update_values(board_file="mcu_board.kicad_pcb"):
     """Copy the schematic's values onto the footprints of the routed board, leaving the routing alone."""
     values = {c.get("ref"): c.findtext("value") for c in netlist().iter("comp")}
-    board = pcbnew.LoadBoard(str(HERE / "mcu_board.kicad_pcb"))
+    board = pcbnew.LoadBoard(str(HERE / board_file))
     changed = 0
     for fp in board.GetFootprints():
         v = values.get(fp.GetReference())
         if v is not None and fp.GetValue() != v and not fp.GetReference().startswith("TP"):
             fp.SetValue(v)
             changed += 1
-    pcbnew.SaveBoard(str(HERE / "mcu_board.kicad_pcb"), board)
+    pcbnew.SaveBoard(str(HERE / board_file), board)
     print(f"{changed} values updated")
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--update-values"]:
-        update_values()
+    flags = [a for a in sys.argv[1:] if a.startswith("--")]
+    paths = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if "--update-values" in flags:
+        update_values("mcu_board_socket.kicad_pcb" if "--socket" in flags else "mcu_board.kicad_pcb")
     else:
-        main()
+        main(socket="--socket" in flags, out=paths[0] if paths else None)

@@ -13,7 +13,8 @@ validate the board and the firmware before the silicon exists. KiCad 10.0.8 is i
 
 One board, in KiCad 10, under `hardware/board/`:
 
-- **Chip site.** The final QFN32 footprint (a QFN test socket once the package is known). Until silicon
+- **Chip site.** The final QFN32 footprint, in two variants of the board (2026-11-08): rev A to solder the chip
+  directly, and rev A-S with its test socket, the Yamaichi IC550-0324-007-G (through-hole, 24.5 x 22 mm). Until silicon
   arrives, three Pmod headers (J5: clock, reset, UART, SPI; J6: GPIO0-7; J7: JTAG) carry the same nets at
   3.3 V to an FPGA board (Nexys Video, Pmod cables) running `asic_soc_rv32imac` with the chip removed, so the
   board, the straps, the bootloader and the firmware are checked first. Their VCC pins are left open, so

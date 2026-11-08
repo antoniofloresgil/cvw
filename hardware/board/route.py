@@ -201,7 +201,7 @@ def fanout(board):
             track.SetStart(p)
             track.SetEnd(v)
             track.SetWidth(track_w)
-            track.SetLayer(pad.GetPrincipalLayer())
+            track.SetLayer(pcbnew.B_Cu if fp.IsFlipped() else pcbnew.F_Cu)      # the side of the part
             track.SetNet(nets[name])
             track.SetLocked(True)
             board.Add(track)
