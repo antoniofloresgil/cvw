@@ -94,6 +94,13 @@ Configurations:
   cells, 1.20 mm² (55 % of the area outside the macros); setup +4.88 ns in the slow corner, hold
   +0.10 ns; 0 KLayout DRC, LVS, antenna and disconnected-pin errors; 21 mW. At 45 ns the PMP comparators
   missed setup by 0.12 ns. Magic's findings are the waived ones (see below).
+- The 64 KiB RAM, with the trace buffer in the RAM (`TRACE_IN_RAM`), has eight macros (four in a row
+  along the top, four in a row at the bottom right) in a 2.752 mm die, at 50 ns in SG13G2: 89,689
+  standard cells, 1.21 mm² (61 % of the area outside the macros); setup +7.38 ns in the slow corner,
+  hold +0.11 ns; 0 KLayout DRC, LVS, KLayout antenna and disconnected-pin errors; 19 mW; Magic's
+  findings are the waived ones (1,413 inside the macros). The die is the largest that passes the
+  KLayout antenna rule `Ant.e` at the input pads (19,706 of 20,000 at 2.752 mm; it grows with the pad
+  ring, 20,238 at 2.8 mm), which is why the trace shares the RAM instead of a ninth macro.
 
 Notes:
 
