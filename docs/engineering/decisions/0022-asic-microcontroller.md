@@ -4,7 +4,7 @@ Status: **accepted**; steps 1-3 (SPI-flash boot, 64 KiB RAM, debug and trace) ar
 step 4 (the MCU peripherals) is implemented and passes its tests, its silicon numbers are in the
 [experiment record](../experiments/2026-11-02-open-asic-flow.md). Applies to the chip of the
 [open ASIC flow](../experiments/2026-11-02-open-asic-flow.md) (`asic_soc_rv32imac`,
-`asic/librelane/chip/`), on branch `open-asic-flow`.
+`asic/librelane/chip/`), merged into `main`.
 
 ## Context
 
@@ -119,3 +119,18 @@ pdngen leaves a Metal1 rail with no strap above the macros' halos, which fails t
 with nine macros the same happened at 0, in another form, see `TOP_SHIFT`); detailed placement may move a cell 900 x
 700 um, because a buffer over a 627 um macro finds no row within the default 500 x 100; and the target density of
 global placement is 70 % (the default 0.85 leaves OpenROAD's antenna repair no room for 60 of its diodes).
+
+## Software on the chip (2026-11-08)
+
+The firmware side is in `asic/librelane/chip/`, and each part is tested in `make chipsim` (12 tests) on the chip's RTL:
+
+- **FreeRTOS** (`chip/freertos/`) with static memory protection from locked PMP entries.
+- **Zephyr** (`chip/zephyr/`, v4.5.0 as a submodule, without `west`): an out-of-tree SoC and board, threads in User mode
+  isolated by the PMP through memory domains, and drivers for the chip's peripherals: UART with interrupts, GPIO, SPI and PWM
+  with Zephyr's SiFive drivers, and I2C and the watchdog with drivers of our own. Not done: the timer's capture and
+  the RTC as drivers, GPIO and I2C interrupts (the chip has one PLIC line for the eight GPIOs), and XIP.
+- **The bootloader's default divisor** is 10, for the test board's 18.432 MHz oscillator (it was 18, from a 33.3 MHz clock:
+  64,000 baud on the board); `boardsim` checks 115,200 baud with the straps open and with divisor 10 strapped.
+
+The chip's physical flow with this bootloader is clean (KLayout DRC 0, only the waived Magic findings, LVS 0, no
+antenna violations; setup +8.74 ns, hold +0.11 ns at 50 ns).

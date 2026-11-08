@@ -45,7 +45,7 @@ Configurations:
   from the template (`chip/ip/`), since the PDKs have none. The BOOTROM holds `chip/boot.S`
   (built into `chip/boot.mem`), which loads a program into the 64 KiB RAM at 0x80000000 (eight SRAM
   macros; the last 8 KiB, 0x8000E000-0x8000FFFF, are also the instruction trace's buffer: see below) and runs it. It reads straps from the GPIOs at reset: the UART's baud divisor from
-  GPIO[4:0], and with GPIO[5] high it skips the flash. Otherwise it reads an SPI flash on the SPI
+  GPIO[4:0] (all low selects 10: 115,200 baud with the test board's 18.432 MHz oscillator), and with GPIO[5] high it skips the flash. Otherwise it reads an SPI flash on the SPI
   pads (Read command 0x03 from address 0: `WALY`, a 4-byte length and the program); without that
   header (no flash, or an erased one) it falls back to the UART: it sends `W`, receives a 4-byte
   length and the program, and sends back its 8-bit sum. `chip/test/test_chip.py` plays the flash
