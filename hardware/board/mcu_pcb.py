@@ -371,7 +371,7 @@ def main(socket=False, out=None):
             for r in names:
                 fps[r].Flip(fps[r].GetPosition(), pcbnew.FLIP_DIRECTION_LEFT_RIGHT)
         bottom = len(group) > 2 and group[2] == "B"
-        regions = list(rect) if isinstance(rect[0], (tuple, list)) else [rect]      # one rectangle or a list of them
+        regions = list(rect) if hasattr(rect[0], "__len__") else [rect]      # one rectangle or a list of them
         left = pack([fps[r] for r in names], regions, GAP_BOTTOM if bottom else GAP)
         if left:
             sizes = [(f.GetReference(), *(round(pcbnew.ToMM(v), 1) for v in (courtyard(f).GetWidth(), courtyard(f).GetHeight())))
