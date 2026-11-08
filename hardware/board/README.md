@@ -47,6 +47,35 @@ the through-hole headers and jumpers have none and are soldered by hand.
     python3 mcu_pcb.py                                         # the system Python, which has pcbnew
     kicad-cli pcb drc --refill-zones --schematic-parity mcu_board.kicad_pcb
 
+## The chip's socket: footprint `mcu_board:Yamaichi_IC550-0324-007_QFN32`
+
+The chip (QFN32, 5 x 5 mm, 0.5 mm pitch) will sit in a Yamaichi IC550-0324-007-G test socket, hinged lid, about 92 USD.
+`socket_fp.py` writes its footprint, `mcu_board.pretty/Yamaichi_IC550-0324-007_QFN32.kicad_mod`, from Yamaichi's
+drawing A111332-001 (`socket_footprint.png` is its picture: `python3 socket_preview.py`). The socket is through-hole:
+
+- 32 holes of 0.5 mm (+0.1/0, drilled 0.55 mm, pads of 0.9 mm) in four groups. A side has 8 contacts at the
+  package's 0.5 mm pitch whose tails go to three rows 1 mm apart (squares of 7.5, 9.5 and 11.5 mm): contact k of a side
+  is in row k mod 3, so the holes of a row are 1.5 mm apart and the pads are 0.22 mm from each other at the least.
+- A ground pin at the centre, hole of 0.8 mm (+0.05/0, drilled 0.85 mm), pad 33, which presses on the package's exposed
+  pad. The drawing's note 1 says to mask the centre hole so that solder does not flow into it: the pad has no mask opening.
+- Two locating holes of 1.6 mm (+0.1/0, drilled 1.65 mm, not plated) at (+8, +7) and (-8, -7), and five stand-off areas
+  (four squares of 5 mm at (+-8.5, +-8.5) and a circle of 2.5 mm at the centre) where the footprint has rule areas
+  that keep tracks, vias and pours out of the top copper ("keep the board trace out of area").
+- The body is 24.5 x 22 mm, with the hinge on the right: courtyard 11 mm to the left of the package centre, 13.5 mm to the
+  right and 11 mm above and below.
+
+The package goes in with its pin 1 at the bottom left corner of the nest (the drawing's pin 1 indicator), which is the
+standard drawing turned 90 degrees counter-clockwise: pins 1-8 are on the bottom side from left to right, 9-16 up the
+right side, 17-24 along the top from right to left and 25-32 down the left side.
+
+What the drawing does not say, and the footprint assumes: that the tail of the contact under a package pad is at the
+same position along its side as the pad (the 0.5 mm steps of the pattern say so, but there is no pin table). Check it
+with a multimeter on the first socket (a package pin against the hole of the same number) before ordering several boards.
+
+The footprint is not in the board yet. The body, 24.5 x 22 mm, covers where the chip's decoupling capacitors, the supply
+jumpers, the clock and the flash are now: using it means placing and routing the board again (see `mcu_pcb.py` and
+`route.py`, which also need to read footprints from `mcu_board.pretty`).
+
 `chip_qfn32_socket.png` shows the chip's real layout (final GDS) in the QFN32 with the bonding the
 schematic assumes: each pad of the ring to the nearest package pin, one pin free per side.
 
