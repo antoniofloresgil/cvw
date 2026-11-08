@@ -1,0 +1,4 @@
+/* chipsim: the testbench's UART runs at one bit every 16 clocks (divisor 1) */
+&uart0 {
+        current-speed = <1152000>;
+};

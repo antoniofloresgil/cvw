@@ -1,0 +1,6 @@
+# Zephyr module with the board and SoC of asic_soc_rv32imac (used with -DZEPHYR_EXTRA_MODULES=<this directory>)
+build:
+  settings:
+    board_root: .
+    soc_root: .
+    dts_root: .

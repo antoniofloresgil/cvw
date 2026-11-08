@@ -1,0 +1,83 @@
+/* SPDX-License-Identifier: Apache-2.0
+ * asic_soc_rv32imac (config/derivlist.txt; the addresses are those of its config.vh).  The 64 KiB RAM at
+ * 0x80000000 ends with the 8 KiB the instruction trace buffer shares (TRACE_IN_RAM): Zephyr gets the first 56 KiB,
+ * so the trace can be switched on without Zephyr or a user thread touching its area. */
+
+#include <freq.h>
+
+/ {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        compatible = "openhwgroup,cvw-asic-soc-rv32imac";
+        model = "CORE-V-Wally asic_soc_rv32imac";
+
+        cpus {
+                #address-cells = <1>;
+                #size-cells = <0>;
+                timebase-frequency = <DT_FREQ_K(18432)>;
+                riscv,isa-base = "rv32i";
+                riscv,isa-extensions = "i", "m", "a", "c", "zicsr", "zifencei", "zicntr", "zihpm";
+
+                cpu0: cpu@0 {
+                        device_type = "cpu";
+                        reg = <0>;
+                        status = "okay";
+                        compatible = "riscv";
+                        clock-frequency = <DT_FREQ_K(18432)>;
+
+                        hlic0: interrupt-controller {
+                                compatible = "riscv,cpu-intc";
+                                #address-cells = <0>;
+                                #interrupt-cells = <1>;
+                                interrupt-controller;
+                        };
+                };
+        };
+
+        sram0: memory@80000000 {
+                compatible = "mmio-sram";
+                reg = <0x80000000 0xE000>;
+        };
+
+        soc {
+                #address-cells = <1>;
+                #size-cells = <1>;
+                compatible = "simple-bus";
+                ranges;
+
+                clint: clint@2000000 {
+                        compatible = "sifive,clint0";
+                        reg = <0x2000000 0x10000>;
+                        interrupts-extended = <&hlic0 3 &hlic0 7>;
+                };
+
+                mtimer: timer@200bff8 {
+                        compatible = "riscv,machine-timer";
+                        interrupts-extended = <&hlic0 7>;
+                        reg = <0x200bff8 0x8 0x2004000 0x8>;
+                        reg-names = "mtime", "mtimecmp";
+                };
+
+                plic: interrupt-controller@c000000 {
+                        compatible = "sifive,plic-1.0.0";
+                        reg = <0x0c000000 0x04000000>;
+                        riscv,max-priority = <7>;
+                        riscv,ndev = <18>;
+                        interrupts-extended = <&hlic0 11>;
+                        interrupt-controller;
+                        #address-cells = <0>;
+                        #interrupt-cells = <2>;
+                };
+
+                uart0: uart@10000000 {
+                        compatible = "ns16550";
+                        reg = <0x10000000 0x8>;
+                        reg-shift = <0>;
+                        clock-frequency = <DT_FREQ_K(18432)>;
+                        current-speed = <115200>;
+                        interrupt-parent = <&plic>;
+                        interrupts = <10 1>;
+                        status = "disabled";
+                };
+        };
+};
