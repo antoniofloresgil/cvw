@@ -1,9 +1,31 @@
 # Current work
 
-Checkpoint: 2026-10-23, branch `opensource-fpga-bitstream`.
-Integration inputs: feature `f950a775310e7613d22f409bcaaec81f8a8a646e`
-and `main:1d567764895321b64a9b8e28d0b77ca4b9eb0aac` (official upstream
-`89479dd09`). Use `git rev-parse HEAD` for the resulting merge revision.
+Checkpoint: 2026-11-09, `main` of the fork (`antoniofloresgil/cvw`). `main` holds the open FPGA flow, the PMU
+counters, the optional multicore RTL and the open ASIC flow with its microcontroller chip. The history of
+the first three is in the sections below; the chip is summarized here.
+
+## The chip `asic_soc_rv32imac` (2026-11)
+
+On `main` (PRs #51 to #65, in order of the work):
+
+- **Silicon flow.** RV32IMAC with 16 PMP entries, the JTAG debug port and instruction trace, and 64 KiB of RAM
+  in eight IHP SRAM macros, whose last 8 KiB are also the trace buffer (`TRACE_IN_RAM`), in a 2.752 mm die. The last
+  full flow run (after the Debug Mode PMP fix, `src/mmu/mmu.sv`) has 0 KLayout DRC, LVS, antenna and
+  disconnected-pin errors, setup +3.41 ns in the slow corner and hold +0.04 ns at 50 ns; the numbers are in the
+  [ASIC flow README](../../asic/librelane/README.md) and [ADR 0022](decisions/0022-asic-microcontroller.md). It has not
+  been fabricated.
+- **Firmware.** FreeRTOS with static PMP protection, and Zephyr v4.5.0 as an out-of-tree board with User-mode threads
+  isolated by memory domains. Zephyr has drivers for the UART (polled and by interrupt), GPIO (with interrupts), SPI, PWM, I2C
+  (by interrupt), the watchdog, the MCU timer (Counter with capture, PWM) and the RTC, and it can switch the
+  instruction trace on from the kernel. All of it is tested in the RTL by `make chipsim`, 15 tests
+  ([Zephyr README](../../asic/librelane/chip/zephyr/README.md), [FreeRTOS README](../../asic/librelane/chip/freertos/README.md)).
+- **Test board.** KiCad rev A (chip soldered) and rev A-S (QFN 32 test socket)
+  ([ADR 0023](decisions/0023-mcu-test-board.md), [board README](../../hardware/board/README.md)). Neither has been
+  fabricated, and the socket's contact-to-pin map is unverified.
+
+Not on `main` yet: the branch `fpga-chip-nexysvideo` builds the chip for the Nexys Video with the open flow
+(`make nexysvideochip`, about 5 minutes, 7 % of the LUTs). The bitstream has been loaded on the board, but no program has run
+on it: the bootloader's first message needs the CPU RESET button pressed by hand.
 
 The `opensource-fpga-bitstream` branch was merged into `main` (PR #22, then
 continued by `wally-ddr3-init`, PR #23) and deleted (local and `origin`) on
@@ -15,7 +37,10 @@ The `adding-mpu-support` branch (PMU counters) was merged into `main` (PR #25,
 `da9e9c21c`) and deleted (local and `origin`) on 2026-11-01. Its commits are
 all reachable from `main`, and its last commit `d0d11792c` can recreate it.
 
-## Current integration
+## Open FPGA integration (2026-10-23, merged)
+
+Inputs of that integration: feature `f950a775310e7613d22f409bcaaec81f8a8a646e` and
+`main:1d567764895321b64a9b8e28d0b77ca4b9eb0aac` (official upstream `89479dd09`).
 
 Merge main into the open FPGA branch to reduce future integration work.
 Retain LiteDRAM, the service CPU, DDR reset gating, AHB/Wishbone bridge and
