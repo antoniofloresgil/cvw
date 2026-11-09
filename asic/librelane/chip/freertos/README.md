@@ -41,3 +41,6 @@ of handlers that validate the pointers and handles. The static entries above wou
 tasks the whole data region, so the NX-for-data entry would be dropped and the User entries put first.
 
 Not done: that isolation, interrupt-driven peripherals, and the other tick rates.
+
+The image loads through the UART bootloader (`chip/uart_load.py`) on the chip and on the FPGA build of the chip
+([docs/fpga-chip.md](../../../../docs/fpga-chip.md)); it has not been run on the FPGA yet.

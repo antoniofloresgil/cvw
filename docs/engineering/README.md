@@ -42,6 +42,7 @@ hardware bring-up.
 | Open-ASIC chip as a microcontroller (flash boot, peripherals, pins) | [ADR 0022](decisions/0022-asic-microcontroller.md), [open ASIC flow record](experiments/2026-11-02-open-asic-flow.md) |
 | JTAG debug port and instruction trace of the chip and the core | [Debug](../debug.md), [Trace](../trace.md), `testbench/debug/` |
 | Firmware of the chip (FreeRTOS, Zephyr, the UART/SPI bootloader) and its `chipsim` tests | [FreeRTOS](../../asic/librelane/chip/freertos/README.md), [Zephyr](../../asic/librelane/chip/zephyr/README.md), [ASIC flow README](../../asic/librelane/README.md) |
+| The chip on a Nexys Video with the open FPGA flow | [The chip on the FPGA](../fpga-chip.md) |
 | Test board for that chip (rev A soldered, rev A-S with the QFN 32 test socket) | [ADR 0023](decisions/0023-mcu-test-board.md), [board README](../../hardware/board/README.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 

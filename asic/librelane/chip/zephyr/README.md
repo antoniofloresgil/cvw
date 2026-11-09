@@ -126,5 +126,12 @@ instructions that pass through `traced_work`, `z_impl_k_sem_give`/`z_impl_k_sem_
 times) and `timer_isr` after the third round trip. The image does not use `CONFIG_USERSPACE`; access to the registers
 under the PMP of a user-mode image has not been tried.
 
+## On the FPGA
+
+The same images run on the chip built for the Nexys Video ([docs/fpga-chip.md](../../../../docs/fpga-chip.md)): its clock is
+18.4375 MHz, 0.03 % from the 18.432 MHz of the devicetree, so no overlay is needed, and `chip/uart_load.py` loads
+`build/zephyr/zephyr.bin` through the bootloader. The demos that need something at the pads (the I2C device, the SPI
+flash, an edge for the capture) have nothing there on the board. It has not been run yet.
+
 Not done: XIP from the SPI flash, which needs a hardware block the chip does not have (a memory-mapped flash reader,
 ADR 0022 lists it as optional by area).

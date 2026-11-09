@@ -17,6 +17,8 @@ make boardsim                            # the same chip on the KiCad test board
 make PDK=ihp-sg13cmos5l CONFIG=asic_rv32imc   # the same in SG13CMOS5L, in work/asic_rv32imc-sg13cmos5l
 ```
 
+The same chip builds for a Xilinx FPGA, to try firmware on hardware before silicon: [docs/fpga-chip.md](../../docs/fpga-chip.md).
+
 Requirements: [Nix](https://nixos.org/download) (tested with Determinate Nix 3.24.1, which is Nix 2.35.3) with flakes and the FOSSi cache
 (`extra-substituters = https://nix-cache.fossi-foundation.org` and its key, in
 `/etc/nix/nix.custom.conf`; LibreLane's documentation gives both). LibreLane is not
