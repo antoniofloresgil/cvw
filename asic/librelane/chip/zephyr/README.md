@@ -68,7 +68,7 @@ Six demo images, each with a `chipsim` test that plays the other side on the pad
 
 The FE310-compatible blocks (SPI, PWM, the IOF pin muxing) use Zephyr's own SiFive drivers: the SoC only provides
 `SIFIVE_PERIPHERAL_CLOCK_FREQUENCY` (`soc.h`), the pin state type (`pinctrl_soc.h`) and the devicetree nodes. The I2C
-master and the two-stage watchdog are the chip's own (`src/uncore/mcu/`) and have drivers here: the I2C one is polled,
+master and the two-stage watchdog are the chip's own (`src/uncore/mcu/`) and have drivers here: the I2C one is interrupt-driven (it polls if its node has no `interrupts`),
 the watchdog supports only the reset action (the first timeout is half of Zephyr's window, the second resets), and it
 cannot be disabled once on, as the hardware cannot.
 

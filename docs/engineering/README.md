@@ -2,15 +2,16 @@
 
 Start with [AGENTS.md](../../AGENTS.md), then this index and
 [current-work.md](current-work.md). Read the remaining documents only when
-relevant to the task. Snapshot: 2026-10-23, `opensource-fpga-bitstream`
-integrates `main:1d5677648` (official upstream `89479dd09`) over open-flow
-`f950a7753`. The open LiteDRAM flow and optional multicore implementation now
-coexist; the FPGA wrapper retains the default single-hart topology.
-See the [branch integration record](experiments/2026-10-23-open-fpga-main-integration.md)
-for validation and the [DDR3 record](experiments/open-ddr3-bringup.md) for
-the open-flow hardware bring-up, which has since reached DDR3 and Linux on the
-board (see [current work](current-work.md)). Earlier records retain their original
-revision and branch scopes, including the successful Vivado Linux boot.
+relevant to the task. Snapshot: 2026-11-09, `main` of the fork. It has the open
+FPGA flow (DDR3 and Linux on the Nexys Video), the optional multicore RTL, the PMU
+counters and the open ASIC flow with the `asic_soc_rv32imac` microcontroller
+chip, its debug port and instruction trace, its test board and the Zephyr and
+FreeRTOS firmware; [current work](current-work.md) says what is open. Earlier
+records retain their original revision and branch scopes, including the
+successful Vivado Linux boot and the
+[branch integration record](experiments/2026-10-23-open-fpga-main-integration.md),
+and the [DDR3 record](experiments/open-ddr3-bringup.md) for the open-flow
+hardware bring-up.
 
 ## Find the authoritative information
 
@@ -39,6 +40,8 @@ revision and branch scopes, including the successful Vivado Linux boot.
 | Independent multicore option combinations | [Additional recommendation 10](experiments/2026-10-21-multicore-post-refactor-review.md#10-high-verify-option-independence-beyond-named-deployment-profiles), [coverage execution record](experiments/2026-10-22-multicore-option-interactions.md) |
 | Shared downstream AHB test fixture | [Additional recommendation 12](experiments/2026-10-21-multicore-post-refactor-review.md#12-medium-share-downstream-test-infrastructure-across-topologies), [extraction record](experiments/2026-10-22-multicore-downstream-fixture.md) |
 | Open-ASIC chip as a microcontroller (flash boot, peripherals, pins) | [ADR 0022](decisions/0022-asic-microcontroller.md), [open ASIC flow record](experiments/2026-11-02-open-asic-flow.md) |
+| JTAG debug port and instruction trace of the chip and the core | [Debug](../debug.md), [Trace](../trace.md), `testbench/debug/` |
+| Firmware of the chip (FreeRTOS, Zephyr, the UART/SPI bootloader) and its `chipsim` tests | [FreeRTOS](../../asic/librelane/chip/freertos/README.md), [Zephyr](../../asic/librelane/chip/zephyr/README.md), [ASIC flow README](../../asic/librelane/README.md) |
 | Test board for that chip (rev A soldered, rev A-S with the QFN 32 test socket) | [ADR 0023](decisions/0023-mcu-test-board.md), [board README](../../hardware/board/README.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
