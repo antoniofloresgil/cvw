@@ -230,6 +230,8 @@ each). `debug_tb.sv` also reads `trTeImpl` and `trRamImpl` of every hart through
 2. The encoder, compared with the reference packet by packet (done).
 3. The sink and its control registers, read through System Bus Access or by the harts (done).
 4. Several harts traced at once, each against the reference (done).
+5. Under an RTOS: Zephyr switches the trace on itself and the sink's buffer is read back over System Bus Access with the
+   hart running and decoded against Zephyr's ELF (`asic/librelane/chip/zephyr/trace`, chipsim's `zephyr_trace`; done).
 
 ## To do
 

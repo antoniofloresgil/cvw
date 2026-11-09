@@ -68,6 +68,7 @@ chipsim: $(IHP_PDK)
 	$(MAKE) -C chip/zephyr APP=uart_irq BUILD=build-uart-irq-sim OVERLAY=sim.overlay
 	$(MAKE) -C chip/zephyr APP=mcu BUILD=build-mcu-sim OVERLAY=sim.overlay
 	$(MAKE) -C chip/zephyr APP=timer BUILD=build-timer-sim OVERLAY=sim.overlay
+	$(MAKE) -C chip/zephyr APP=trace BUILD=build-trace-sim OVERLAY=sim.overlay
 	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imac$(SUFFIX) \
 	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_chip.py
 

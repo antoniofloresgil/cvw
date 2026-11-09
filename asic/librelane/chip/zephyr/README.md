@@ -54,7 +54,7 @@ reports how many; a partition that does not fit makes only its thread fault, nev
 
 ## Peripheral drivers
 
-Five demo images, each with a `chipsim` test that plays the other side on the pads (`make chipsim` builds them with
+Six demo images, each with a `chipsim` test that plays the other side on the pads (`make chipsim` builds them with
 `sim.overlay`):
 
 | App | Driver | What the test checks |
@@ -63,6 +63,7 @@ Five demo images, each with a `chipsim` test that plays the other side on the pa
 | `periph` | UART (`ns16550`, polled), GPIO (`wally,gpio`), SPI (`sifive,spi0`), PWM (`sifive,pwm0`), pinctrl (`sifive,pinctrl`) | three letters echoed, GPIO4 read and GPIO5 driven, three edge interrupts and a level interrupt on GPIO4, the flash's first bytes read over SPI, the duty cycles on GPIO1 and GPIO2 |
 | `uart_irq` | UART in interrupt mode | the PLIC's source 10 reaches the callback and wakes the main thread |
 | `mcu` | I2C (`wally,i2c`, interrupt-driven), watchdog (`wally,wdt`), the two drivers of `module/drivers/` | a write and a read with an I2C device at 0x50, a NACK from 0x51, and the chip reset the watchdog causes |
+| `trace` | the instruction trace (E-Trace, `docs/trace.md`) switched on by the kernel itself | the packets in the RAM sink decoded against Zephyr's ELF: the workload, the semaphore calls, six context switches and the timer's interrupt handler |
 | `timer` | the MCU timer as a Counter with capture (`wally,timer`) and as a PWM (`wally,timer-pwm`), the RTC (`wally,rtc`) | the top value, four kinds of alarm, edges captured from GPIO2 (rising, then both), the duty cycles on GPIO0 and GPIO1, the RTC's time and an alarm that wakes the idle thread |
 
 The FE310-compatible blocks (SPI, PWM, the IOF pin muxing) use Zephyr's own SiFive drivers: the SoC only provides
@@ -110,4 +111,20 @@ Things that are not obvious:
 - **Without west**, CMake reads Zephyr modules only from `ZEPHYR_MODULES`, which the Makefile sets to `module/`; its
   `zephyr/module.yml` supplies the board, SoC and devicetree roots and the drivers' CMake and Kconfig.
 
-Not done: XIP from the SPI flash and the trace buffer under Zephyr.
+## Instruction trace
+
+`trace/` switches the chip's E-Trace encoder on from the kernel: the hart reaches the Trace Control Interface registers
+(`TRACE_BASE` 0x04000000, `docs/trace.md`) with ordinary loads and stores, in the order the specification gives (RAM sink
+active and enabled, write pointer 0, encoder active, then trace on). It traces `traced_work()`, in which a thread of higher
+priority is woken three times (six context switches) and the main thread sleeps 1 ms (the machine timer's interrupt),
+switches the encoder off, waits for it and the sink to empty (`trTeEmpty`, `trRamEmpty`) and checks that no packet was
+dropped (`trTeInstStallOrOverflow`). Do not print while tracing: the UART loops would overflow the sink. The sink's buffer is the
+last 8 KiB of the RAM, outside Zephyr's 56 KiB, so the kernel never touches it. `chipsim`'s `zephyr_trace` test reads it
+over JTAG System Bus Access **with the hart running** (it sleeps in `wfi`) and decodes it with
+`testbench/debug/etrace/etracedecode.py` against `build-trace-sim/zephyr/zephyr.elf`: 988 bytes decode into 5,952
+instructions that pass through `traced_work`, `z_impl_k_sem_give`/`z_impl_k_sem_take`, `z_riscv_switch` (at least six
+times) and `timer_isr` after the third round trip. With `CONFIG_USERSPACE` the kernel is the only code that may touch
+the registers (they are above the RAM and outside every user domain).
+
+Not done: XIP from the SPI flash, which needs a hardware block the chip does not have (a memory-mapped flash reader,
+ADR 0022 lists it as optional by area).

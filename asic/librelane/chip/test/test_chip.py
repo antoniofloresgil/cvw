@@ -657,6 +657,14 @@ class Jtag:
         raise AssertionError("the hart did not resume")
 
 
+async def read_trace_ram(jtag, wp):
+    """The wp bytes the RAM sink holds (it must be disabled and empty), read through trRamData over System Bus Access."""
+    await jtag.sb_write(TRACE_RAM + 0x28, [0])                            # trRamRPLow
+    await jtag.write(SBCS, (1 << 20) | (2 << 17) | (1 << 15))             # read on address and data, no increment
+    await jtag.write(SBADDRESS0, TRACE_RAM + 0x40)                        # trRamData
+    return b"".join([(await jtag.read(SBDATA0)).to_bytes(4, "little") for _ in range(wp // 4)])
+
+
 @cocotb.test()
 async def debug_over_jtag(dut):
     from etracedecode import decode, read_program
@@ -708,10 +716,7 @@ async def debug_over_jtag(dut):
     assert not te & (1 << 12), "trTeInstStallOrOverflow: a packet was dropped"
     wp = (await jtag.sb_read(TRACE_RAM + 0x20))[0]
     assert not wp & 1 and 0 < wp <= 0x2000, f"trRamWPLow 0x{wp:x}"
-    await jtag.sb_write(TRACE_RAM + 0x28, [0])                            # trRamRPLow
-    await jtag.write(SBCS, (1 << 20) | (2 << 17) | (1 << 15))             # read on address and data, no increment
-    await jtag.write(SBADDRESS0, TRACE_RAM + 0x40)                        # trRamData
-    trace = b"".join([(await jtag.read(SBDATA0)).to_bytes(4, "little") for _ in range(wp // 4)])
+    trace = await read_trace_ram(jtag, wp)
     assert trace[:2] == b"\x41\x1f", f"the trace starts with {trace[:2].hex()}, not a support packet"
     elf = read_program(HERE / "build/hello.elf", 32)
     pcs = decode(trace, elf, 32)
@@ -719,6 +724,58 @@ async def debug_over_jtag(dut):
     assert pcs[0] == RAM, f"the trace starts at 0x{pcs[0]:x}, not at the program"
     loop = [a for a, i in elf.items() if i.kind == "jal" and i.imm == 0]     # 1: j 1b
     assert pcs[-1] in loop, f"the trace ends at 0x{pcs[-1]:x}, not in the last loop {[hex(a) for a in loop]}"
+
+
+@cocotb.test()
+async def zephyr_trace(dut):
+    """The instruction trace under Zephyr (../zephyr/trace): the kernel switches the trace on through the Trace
+    Control Interface registers, runs three context switches and a timer interrupt, switches it off and the test reads
+    the sink's buffer (the last 8 KiB of the RAM) over JTAG System Bus Access, with the hart running, and decodes it
+    against Zephyr's ELF: the path must go through the workload, the semaphore calls, the context switch and the timer's
+    interrupt handler."""
+    from etracedecode import decode, read_program
+
+    build = HERE.parent / "zephyr/build-trace-sim/zephyr"                # `make chipsim` builds it
+    assert (build / "zephyr.bin").exists(), f"{build}/zephyr.bin is missing: make -C {build.parents[1]} APP=trace BUILD=build-trace-sim OVERLAY=sim.overlay"
+    await reset_chip(dut, flash=flash_image((build / "zephyr.bin").read_bytes()), ready="F")
+    await RisingEdge(dut.clk)
+    lines = await read_lines(dut, b"trace ready", timeout=6000000)
+    assert lines[:2] == [b"trace start", b"trace ok"] and re.fullmatch(rb"trace bytes \d+", lines[2]), f"{lines!r}"
+    printed = int(lines[2].split()[2])
+
+    jtag = Jtag(dut)
+    await jtag.reset()
+    await jtag.write(DMCONTROL, 1)                                        # dmactive: System Bus Access, the hart runs on
+    assert (await jtag.sb_read(TRACE_TE))[0] & 8, "trTeEmpty"
+    assert (await jtag.sb_read(TRACE_RAM))[0] & 8, "trRamEmpty"
+    wp = (await jtag.sb_read(TRACE_RAM + 0x20))[0]
+    assert wp & ~1 == printed and 0 < wp <= 0x2000, f"trRamWPLow 0x{wp:x}, the program printed {printed}"
+    trace = await read_trace_ram(jtag, wp)
+    assert trace[:2] == b"\x41\x1f", f"the trace starts with {trace[:2].hex()}, not a support packet"
+    elf = build / "zephyr.elf"
+    pcs = decode(trace, read_program(elf, 32), 32)
+    dut._log.info(f"trace: {wp} bytes, {len(pcs)} instructions")
+
+    symbols = {}
+    for line in subprocess.run(["riscv64-unknown-elf-nm", "-S", elf], check=True, capture_output=True, text=True).stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 4:
+            symbols[fields[3]] = (int(fields[0], 16), int(fields[1], 16))
+        elif len(fields) == 3:
+            symbols[fields[2]] = (int(fields[0], 16), 0)
+
+    def entered(name):
+        start, size = symbols[name]
+        return [i for i, pc in enumerate(pcs) if start <= pc < start + max(size, 1)]
+
+    assert entered("traced_work"), "the workload is not in the trace"
+    assert entered("worker"), "the worker thread did not run"
+    assert entered("z_impl_k_sem_give") and entered("z_impl_k_sem_take"), "the semaphore calls are not in the trace"
+    switches = [i for i, pc in enumerate(pcs) if pc == symbols["z_riscv_switch"][0]]
+    assert len(switches) >= 6, f"{len(switches)} context switches in the trace, at least 6 expected"
+    isr = entered("timer_isr")
+    assert isr, "the timer's interrupt handler is not in the trace"
+    assert isr[0] > switches[5], "the timer interrupt came before the three round trips"
 
 
 def main():

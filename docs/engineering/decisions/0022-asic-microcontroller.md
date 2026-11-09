@@ -122,7 +122,7 @@ global placement is 70 % (the default 0.85 leaves OpenROAD's antenna repair no r
 
 ## Software on the chip (2026-11-08)
 
-The firmware side is in `asic/librelane/chip/`, and each part is tested in `make chipsim` (14 tests) on the chip's RTL:
+The firmware side is in `asic/librelane/chip/`, and each part is tested in `make chipsim` (15 tests) on the chip's RTL:
 
 - **FreeRTOS** (`chip/freertos/`) with static memory protection from locked PMP entries.
 - **Zephyr** (`chip/zephyr/`, v4.5.0 as a submodule, without `west`): an out-of-tree SoC and board, threads in User mode
@@ -130,7 +130,8 @@ The firmware side is in `asic/librelane/chip/`, and each part is tested in `make
   with Zephyr's SiFive drivers, and GPIO, I2C, the watchdog, the timer (Counter API with edge capture, and a PWM on the same four
   channels) and the RTC (RTC API, one full-date alarm) with drivers of our own. The GPIO is ours because the chip has one PLIC
   line for the eight pins where Zephyr's SiFive driver expects one per pin; I2C sleeps on the controller's interrupt.
-  Not done: XIP.
+  The kernel can switch the instruction trace on and the test decodes it against Zephyr's ELF. Not done: XIP, which needs a
+  memory-mapped flash reader that the chip does not have.
 - **The bootloader's default divisor** is 10, for the test board's 18.432 MHz oscillator (it was 18, from a 33.3 MHz clock:
   64,000 baud on the board); `boardsim` checks 115,200 baud with the straps open and with divisor 10 strapped.
 
