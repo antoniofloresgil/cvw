@@ -12,6 +12,9 @@ atomics runs atomics.S from the flash: the atomic memory operations and LR/SC on
 pmp runs pmp.S: the PMP CSRs, User mode against three regions, and a locked entry in Machine mode.
 ram runs ram.S: the eight banks of the 64 KiB RAM, aliasing and byte and halfword stores.
 freertos runs the FreeRTOS demo (../freertos): tasks, a queue, a mutex and a software timer on the CLINT tick.
+zephyr runs the Zephyr demo (../zephyr/app): threads in User mode isolated by memory domains and the PMP.  zephyr_peripherals,
+zephyr_uart_irq, zephyr_mcu, zephyr_timer and zephyr_trace each boot one more Zephyr image (../zephyr/periph, uart_irq, mcu,
+timer, trace), play the other side on the pads and, for the trace, read the sink over JTAG; their docstrings say what each checks.
 zephyr_halt_idle halts Zephyr's sleeping idle thread through JTAG three times: the locked PMP entries of an RTOS must not
 stop the Debug Module's ROM, and the demo must still answer after each resume.
 mcu_peripherals boots mcu.S the same way and checks the timer, I2C, RTC and watchdog through the
