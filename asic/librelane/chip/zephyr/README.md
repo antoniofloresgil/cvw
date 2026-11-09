@@ -123,8 +123,8 @@ last 8 KiB of the RAM, outside Zephyr's 56 KiB, so the kernel never touches it. 
 over JTAG System Bus Access **with the hart running** (it sleeps in `wfi`) and decodes it with
 `testbench/debug/etrace/etracedecode.py` against `build-trace-sim/zephyr/zephyr.elf`: 988 bytes decode into 5,952
 instructions that pass through `traced_work`, `z_impl_k_sem_give`/`z_impl_k_sem_take`, `z_riscv_switch` (at least six
-times) and `timer_isr` after the third round trip. With `CONFIG_USERSPACE` the kernel is the only code that may touch
-the registers (they are above the RAM and outside every user domain).
+times) and `timer_isr` after the third round trip. The image does not use `CONFIG_USERSPACE`; access to the registers
+under the PMP of a user-mode image has not been tried.
 
 Not done: XIP from the SPI flash, which needs a hardware block the chip does not have (a memory-mapped flash reader,
 ADR 0022 lists it as optional by area).
