@@ -153,6 +153,25 @@ choice of shuttle, a test of the chip's sockets and board (the contact-to-pin ma
 checked on a real one, [ADR 0023](decisions/0023-mcu-test-board.md)), a review of the maximum slew and capacitance
 findings, FreeRTOS in User mode (the Debug Module halt under Zephyr's idle thread was a PMP fault of the
 Debug ROM fetch, fixed in `src/mmu/mmu.sv`).
+PMP partition budget test, to be done together with FreeRTOS in User mode (the port needs to know how many regions
+a task can have). The chip has 16 PMP entries and `pmp.S` exercises only a few. A new `pmp_budget.S`, run by `chipsim`
+as `pmp_budget` like `pmp` (sends `P`, or the digit of the first check that failed), would check:
+
+1. All 16 entries at once: 16 disjoint NAPOT regions of at least 1 KiB with different permissions (R, R+W, R+X, none),
+   read back through every `pmpaddr` and `pmpcfg` (four entries per `pmpcfg` CSR), then a User mode access to each
+   region and to the gaps, with the exact `mcause` of every refusal (5, 7 or 1).
+2. What each kind of region costs: NAPOT and NA4 take one entry, TOR takes two (the previous `pmpaddr` is its lower
+   bound; entry 0 starts at address 0). From that, how many regions a task has once the three locked entries that
+   `crt0.S` sets are taken out (13), for a stack, data, code and peripherals.
+3. Priority: with overlapping entries the lowest number wins, in both orders (a small R+W region before and after a large
+   read-only one).
+4. Reloading the task's entries on a context switch, as `traceTASK_SWITCHED_IN` would: rewrite entries 3 to 15, check the
+   access that was allowed is refused and the other way round, and measure the cycles of the reload with `mcycle`.
+5. Last, a locked entry in the middle: writes to its `pmpcfg` and `pmpaddr` (and to the `pmpaddr` below it if it is a TOR)
+   are ignored, and it binds Machine mode too.
+
+It runs in Machine mode and User mode on the RTL, with no change to it or to the physical flow.
+
 Execute in place from the SPI flash (XIP) is a next-revision improvement, not firmware work: the chip has no
 memory-mapped flash reader, so it needs a new RTL block and a new physical flow (about 9 h; the die is at the
 `Ant.e` antenna limit and cannot grow). Until then the bootloader copies the image into RAM.
