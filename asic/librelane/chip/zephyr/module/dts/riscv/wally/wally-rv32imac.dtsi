@@ -70,12 +70,11 @@
                         #interrupt-cells = <2>;
                 };
 
-                /* FE310-compatible GPIO with one interrupt line (PLIC source 3) for all 8 pins, not one per pin as
-                 * the Zephyr driver assumes: use the pins without GPIO interrupts.  Its IOF registers (IOF_EN,
-                 * IOF_SEL) pick a pad's alternate function: the PWM comparators on GPIO0-3 (IOF0), the MCU
-                 * timer on GPIO0-3 and I2C on GPIO6-7 (IOF1) */
+                /* GPIO with the register map of the FE310's and one interrupt line (PLIC source 3) for all 8 pins:
+                 * wally,gpio has one handler for them.  Its IOF registers (IOF_EN, IOF_SEL) pick a pad's alternate
+                 * function: the PWM comparators on GPIO0-3 (IOF0), the MCU timer on GPIO0-3 and I2C on GPIO6-7 (IOF1) */
                 gpio0: gpio@10060000 {
-                        compatible = "sifive,gpio0";
+                        compatible = "wally,gpio";
                         reg = <0x10060000 0x100>;
                         interrupt-parent = <&plic>;
                         interrupts = <3 1>;
@@ -153,6 +152,8 @@
                 i2c0: i2c@10082000 {
                         compatible = "wally,i2c";
                         reg = <0x10082000 0x1000>;
+                        interrupt-parent = <&plic>;
+                        interrupts = <17 1>;
                         #address-cells = <1>;
                         #size-cells = <0>;
                         clock-frequency = <I2C_BITRATE_STANDARD>;

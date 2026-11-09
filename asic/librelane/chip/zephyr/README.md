@@ -54,18 +54,19 @@ reports how many; a partition that does not fit makes only its thread fault, nev
 
 ## Peripheral drivers
 
-Five demo images, each with a `chipsim` test that plays the other side on the pads (`make chipsim` builds them with
+Six demo images, each with a `chipsim` test that plays the other side on the pads (`make chipsim` builds them with
 `sim.overlay`):
 
 | App | Driver | What the test checks |
 |---|---|---|
 | `app` | (the PMP demo above) | threads isolated by memory domains |
-| `periph` | UART (`ns16550`, polled), GPIO (`sifive,gpio0`), SPI (`sifive,spi0`), PWM (`sifive,pwm0`), pinctrl (`sifive,pinctrl`) | three letters echoed, GPIO4 read and GPIO5 driven, the flash's first bytes read over SPI, the duty cycles on GPIO1 and GPIO2 |
+| `periph` | UART (`ns16550`, polled), GPIO (`wally,gpio`), SPI (`sifive,spi0`), PWM (`sifive,pwm0`), pinctrl (`sifive,pinctrl`) | three letters echoed, GPIO4 read and GPIO5 driven, three edge interrupts and a level interrupt on GPIO4, the flash's first bytes read over SPI, the duty cycles on GPIO1 and GPIO2 |
 | `uart_irq` | UART in interrupt mode | the PLIC's source 10 reaches the callback and wakes the main thread |
-| `mcu` | I2C (`wally,i2c`), watchdog (`wally,wdt`), the two drivers of `module/drivers/` | a write and a read with an I2C device at 0x50, a NACK from 0x51, and the chip reset the watchdog causes |
+| `mcu` | I2C (`wally,i2c`, interrupt-driven), watchdog (`wally,wdt`), the two drivers of `module/drivers/` | a write and a read with an I2C device at 0x50, a NACK from 0x51, and the chip reset the watchdog causes |
+| `trace` | the instruction trace (E-Trace, `docs/trace.md`) switched on by the kernel itself | the packets in the RAM sink decoded against Zephyr's ELF: the workload, the semaphore calls, six context switches and the timer's interrupt handler |
 | `timer` | the MCU timer as a Counter with capture (`wally,timer`) and as a PWM (`wally,timer-pwm`), the RTC (`wally,rtc`) | the top value, four kinds of alarm, edges captured from GPIO2 (rising, then both), the duty cycles on GPIO0 and GPIO1, the RTC's time and an alarm that wakes the idle thread |
 
-The FE310-compatible blocks (GPIO, SPI, PWM, the IOF pin muxing) use Zephyr's own SiFive drivers: the SoC only provides
+The FE310-compatible blocks (SPI, PWM, the IOF pin muxing) use Zephyr's own SiFive drivers: the SoC only provides
 `SIFIVE_PERIPHERAL_CLOCK_FREQUENCY` (`soc.h`), the pin state type (`pinctrl_soc.h`) and the devicetree nodes. The I2C
 master and the two-stage watchdog are the chip's own (`src/uncore/mcu/`) and have drivers here: the I2C one is polled,
 the watchdog supports only the reset action (the first timeout is half of Zephyr's window, the second resets), and it
@@ -73,8 +74,14 @@ cannot be disabled once on, as the hardware cannot.
 
 Things that are not obvious:
 
-- **GPIO interrupts are not supported.** The chip has one interrupt line for the 8 pins (PLIC source 3), the Zephyr
-  driver expects one per pin. Use the pins as inputs and outputs only.
+- **GPIO: one interrupt line for eight pins.** The chip raises PLIC source 3 for any pin with a pending condition, but
+  Zephyr's `sifive,gpio0` driver expects one line per pin, so the GPIO is `wally,gpio` (`module/drivers/gpio_wally.c`):
+  the same registers, one handler that reads which pins are pending and runs their callbacks once. Edge and level
+  interrupts work on every pin; a level interrupt fires again at once while the level holds, so the callback disables
+  it (as with any controller) and the interrupt wakes a `wfi`.
+- **I2C by interrupt.** With `interrupts` in the node (PLIC source 17) `wally,i2c` starts a command and sleeps on a
+  semaphore that the controller's interrupt gives when the command finishes; without the property it polls. A mutex
+  serialises the threads, and a command that does not finish in 100 ms returns `-ETIMEDOUT`.
 - **PWM polarity.** The PWM follows the SiFive FU540: the output is high from the compare match to the end of the period
   and Zephyr's driver writes the pulse into the comparator, so a pulse of 25 % gives a pad that is high 75 % of the
   time. Channel 0 sets the period and channels 1-3 are on GPIO1-3. The pins must also be outputs (`gpio_pin_configure`):
@@ -104,4 +111,20 @@ Things that are not obvious:
 - **Without west**, CMake reads Zephyr modules only from `ZEPHYR_MODULES`, which the Makefile sets to `module/`; its
   `zephyr/module.yml` supplies the board, SoC and devicetree roots and the drivers' CMake and Kconfig.
 
-Not done: GPIO and I2C interrupts, XIP from the SPI flash, and the trace buffer under Zephyr.
+## Instruction trace
+
+`trace/` switches the chip's E-Trace encoder on from the kernel: the hart reaches the Trace Control Interface registers
+(`TRACE_BASE` 0x04000000, `docs/trace.md`) with ordinary loads and stores, in the order the specification gives (RAM sink
+active and enabled, write pointer 0, encoder active, then trace on). It traces `traced_work()`, in which a thread of higher
+priority is woken three times (six context switches) and the main thread sleeps 1 ms (the machine timer's interrupt),
+switches the encoder off, waits for it and the sink to empty (`trTeEmpty`, `trRamEmpty`) and checks that no packet was
+dropped (`trTeInstStallOrOverflow`). Do not print while tracing: the UART loops would overflow the sink. The sink's buffer is the
+last 8 KiB of the RAM, outside Zephyr's 56 KiB, so the kernel never touches it. `chipsim`'s `zephyr_trace` test reads it
+over JTAG System Bus Access **with the hart running** (it sleeps in `wfi`) and decodes it with
+`testbench/debug/etrace/etracedecode.py` against `build-trace-sim/zephyr/zephyr.elf`: 988 bytes decode into 5,952
+instructions that pass through `traced_work`, `z_impl_k_sem_give`/`z_impl_k_sem_take`, `z_riscv_switch` (at least six
+times) and `timer_isr` after the third round trip. The image does not use `CONFIG_USERSPACE`; access to the registers
+under the PMP of a user-mode image has not been tried.
+
+Not done: XIP from the SPI flash, which needs a hardware block the chip does not have (a memory-mapped flash reader,
+ADR 0022 lists it as optional by area).

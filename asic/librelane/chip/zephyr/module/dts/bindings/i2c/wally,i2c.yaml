@@ -7,3 +7,8 @@ include: [i2c-controller.yaml, pinctrl-device.yaml]
 properties:
   reg:
     required: true
+
+  interrupts:
+    description: |
+      The controller's interrupt (PLIC source 17).  With it the driver sleeps while a command runs; without it,
+      it polls.

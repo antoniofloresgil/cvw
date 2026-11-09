@@ -9,3 +9,5 @@ build-mcu-sim/
 build-mcu-sim.log
 build-timer-sim/
 build-timer-sim.log
+build-trace-sim/
+build-trace-sim.log

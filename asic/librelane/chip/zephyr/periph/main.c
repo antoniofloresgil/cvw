@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
- * Peripheral demo for asic_soc_rv32imac under Zephyr: the console UART (polled), the GPIO, the SPI flash and
- * the PWM, each through its Zephyr driver.  chipsim's zephyr_peripherals test plays the other side on the pads,
+ * Peripheral demo for asic_soc_rv32imac under Zephyr: the console UART (polled), the GPIO (with interrupts), the SPI
+ * flash and the PWM, each through its Zephyr driver.  chipsim's zephyr_peripherals test plays the other side on the pads,
  * and the demo prints one line per step (see test_chip.py). */
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -17,6 +17,24 @@ static const struct device *const spi = DEVICE_DT_GET(DT_NODELABEL(spi0));
 static const struct device *const pwm = DEVICE_DT_GET(DT_NODELABEL(pwm0));
 
 static uint8_t rx_buf[3];
+
+/* GPIO interrupts: every pin shares one PLIC line, the driver finds the pin */
+static struct gpio_callback gpio_cb_data;
+static K_SEM_DEFINE(gpio_sem, 0, 4);
+static volatile int gpio_levels[4], gpio_calls;
+static volatile bool gpio_level_mode;
+
+static void gpio_cb(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+{
+        if (gpio_calls < 4) {
+                gpio_levels[gpio_calls] = gpio_pin_get(dev, 4);
+        }
+        gpio_calls++;
+        if (gpio_level_mode) {                 /* a level interrupt fires again at once while the level holds */
+                gpio_pin_interrupt_configure(dev, 4, GPIO_INT_DISABLE);
+        }
+        k_sem_give(&gpio_sem);
+}
 
 static int fail(const char *what, int v)
 {
@@ -67,6 +85,30 @@ int main(void)
                 return fail("spi", rc);
         }
         printk("spi %c%c%c%c\n", rx[4], rx[5], rx[6], rx[7]);
+
+        /* GPIO interrupts on pin 4: three edges the test drives (falling, rising, falling), each wakes the sleeping main
+         * thread, then a level interrupt that the callback disables so that it fires once */
+        gpio_init_callback(&gpio_cb_data, gpio_cb, BIT(4));
+        gpio_add_callback(gpio, &gpio_cb_data);
+        gpio_pin_interrupt_configure(gpio, 4, GPIO_INT_EDGE_BOTH);
+        printk("gpio irq ready\n");
+        for (int i = 0; i < 3; i++) {
+                if (k_sem_take(&gpio_sem, K_MSEC(100)) != 0) {
+                        return fail("gpio edge", i);
+                }
+        }
+        gpio_pin_interrupt_configure(gpio, 4, GPIO_INT_DISABLE);
+        printk("gpio edges %d%d%d\n", gpio_levels[0], gpio_levels[1], gpio_levels[2]);
+        gpio_calls = 0;
+        gpio_level_mode = true;
+        k_sem_reset(&gpio_sem);
+        gpio_pin_interrupt_configure(gpio, 4, GPIO_INT_LEVEL_HIGH);    /* the pin is low: nothing yet */
+        printk("gpio level ready\n");
+        if (k_sem_take(&gpio_sem, K_MSEC(100)) != 0) {
+                return fail("gpio level", 0);
+        }
+        k_msleep(2);
+        printk("gpio level %d %s\n", gpio_levels[0], gpio_calls == 1 ? "once" : "FAIL");
 
         /* PWM: on GPIO0-3 the PWM is IOF0, whose output enable is still the GPIO's (the pinctrl state selected the
          * function at start-up, the pins must be outputs too) */

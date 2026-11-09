@@ -1,0 +1,21 @@
+description: |
+  CORE-V-Wally GPIO (src/uncore/gpio_apb.sv), the register map of the SiFive FE310's.  Unlike the FE310 it has one
+  interrupt line for the eight pins, not one per pin.
+
+compatible: "wally,gpio"
+
+include: [gpio-controller.yaml, base.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  "#gpio-cells":
+    const: 2
+
+gpio-cells:
+  - pin
+  - flags
