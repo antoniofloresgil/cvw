@@ -14,3 +14,27 @@ config WDT_WALLY
     depends on WATCHDOG && DT_HAS_WALLY_WDT_ENABLED
     help
       Driver for the chip's watchdog: the first timeout is a flag, the second one resets the chip.
+
+config COUNTER_WALLY
+    bool "Wally timer as a counter, with capture (src/uncore/mcu/timer_apb.sv)"
+    default y
+    depends on COUNTER && DT_HAS_WALLY_TIMER_ENABLED
+    select COUNTER_SUPPORTS_CAPTURE
+    help
+      Counter API on the chip's general-purpose timer: top value, four alarms and, with COUNTER_CAPTURE, edge capture
+      on GPIO0-3.  The PWM API of the same timer is PWM_WALLY.
+
+config PWM_WALLY
+    bool "Wally timer as a PWM (src/uncore/mcu/timer_apb.sv)"
+    default y
+    depends on PWM && COUNTER_WALLY && DT_HAS_WALLY_TIMER_PWM_ENABLED
+    select PINCTRL
+    help
+      PWM outputs on GPIO0-3, a child node of the timer.  Shares its counter and channels with COUNTER_WALLY.
+
+config RTC_WALLY
+    bool "Wally real-time counter (src/uncore/mcu/rtc_apb.sv)"
+    default y
+    depends on RTC && DT_HAS_WALLY_RTC_ENABLED
+    help
+      RTC API on the chip's real-time counter: seconds since 1970 and one alarm that matches a full date and time.

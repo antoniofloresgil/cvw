@@ -15,7 +15,7 @@ runs a bit every 16 clocks, divisor 1; the real board's is 115200 baud at 18.432
 
 | Path | What it is |
 |---|---|
-| `module/dts/riscv/wally/wally-rv32imac.dtsi` | the SoC from its `config.vh`: one hart (`riscv,cpu-intc`), the CLINT's machine timer at 18.432 MHz, the PLIC (18 sources), the UART (`ns16550`, PLIC source 10) and the RAM, **56 KiB** at 0x80000000 |
+| `module/dts/riscv/wally/wally-rv32imac.dtsi` | the SoC from its `config.vh`: one hart (`riscv,cpu-intc`), the CLINT's machine timer at 18.432 MHz, the PLIC (18 sources), the UART (`ns16550`, PLIC source 10), the MCU peripherals and the RAM, **56 KiB** at 0x80000000 |
 | `module/soc/wally/` | `SOC_WALLY_RV32IMAC` (Machine mode only kernel, no S mode), the PLIC as second-level interrupt controller (32 sources at most), `PMP_SLOTS` 16 |
 | `module/boards/openhwgroup/wally_chip/` | the board: console on the UART, no XIP (the bootloader copies the image to the RAM, as for FreeRTOS), PMP |
 | `app/` | the demo (`main.c`) and its `prj.conf` (`CONFIG_USERSPACE`) |
@@ -54,7 +54,7 @@ reports how many; a partition that does not fit makes only its thread fault, nev
 
 ## Peripheral drivers
 
-Four demo images, each with a `chipsim` test that plays the other side on the pads (`make chipsim` builds them with
+Five demo images, each with a `chipsim` test that plays the other side on the pads (`make chipsim` builds them with
 `sim.overlay`):
 
 | App | Driver | What the test checks |
@@ -63,6 +63,7 @@ Four demo images, each with a `chipsim` test that plays the other side on the pa
 | `periph` | UART (`ns16550`, polled), GPIO (`sifive,gpio0`), SPI (`sifive,spi0`), PWM (`sifive,pwm0`), pinctrl (`sifive,pinctrl`) | three letters echoed, GPIO4 read and GPIO5 driven, the flash's first bytes read over SPI, the duty cycles on GPIO1 and GPIO2 |
 | `uart_irq` | UART in interrupt mode | the PLIC's source 10 reaches the callback and wakes the main thread |
 | `mcu` | I2C (`wally,i2c`), watchdog (`wally,wdt`), the two drivers of `module/drivers/` | a write and a read with an I2C device at 0x50, a NACK from 0x51, and the chip reset the watchdog causes |
+| `timer` | the MCU timer as a Counter with capture (`wally,timer`) and as a PWM (`wally,timer-pwm`), the RTC (`wally,rtc`) | the top value, four kinds of alarm, edges captured from GPIO2 (rising, then both), the duty cycles on GPIO0 and GPIO1, the RTC's time and an alarm that wakes the idle thread |
 
 The FE310-compatible blocks (GPIO, SPI, PWM, the IOF pin muxing) use Zephyr's own SiFive drivers: the SoC only provides
 `SIFIVE_PERIPHERAL_CLOCK_FREQUENCY` (`soc.h`), the pin state type (`pinctrl_soc.h`) and the devicetree nodes. The I2C
@@ -78,6 +79,24 @@ Things that are not obvious:
   and Zephyr's driver writes the pulse into the comparator, so a pulse of 25 % gives a pad that is high 75 % of the
   time. Channel 0 sets the period and channels 1-3 are on GPIO1-3. The pins must also be outputs (`gpio_pin_configure`):
   for IOF0 the output enable is still the GPIO's.
+- **Timer: one counter, four channels.** `wally,timer` implements the Counter API (start/stop, `counter_set_top_value()`
+  with a callback at each wrap, one alarm per channel, and `counter_capture_configure()`/`counter_enable_capture()`
+  with rising, falling or both edges, single shot or continuous) on GPIO0-3 (IOF1). Its child node `wally,timer-pwm`
+  is the PWM API on the same channels: the output is high while the counter is below the pulse, the period is the top
+  value plus one and is the same for the four channels, `PWM_POLARITY_INVERTED` inverts one channel. They share the
+  counter and the channels, so a channel serves one use at a time and the period or top value can only change while no
+  other channel is in use (`-EBUSY`); `counter_stop()` stops the PWM. Only one of `pwm0` (the FU540 PWM, IOF0 on
+  GPIO1-3) and `timer0_pwm` can be enabled, since both set the pads' alternate function: `timer/app.overlay` does it.
+  A channel that is not a capture drives its pad whenever the PWM's pin state is applied, also as an alarm. An alarm
+  late by the time it is set returns `-ETIME`, or expires at once with `COUNTER_ALARM_CFG_EXPIRE_WHEN_LATE`; the
+  counter capture API is experimental in Zephyr 4.5 (`COUNTER_CAPTURE` selects `EXPERIMENTAL`). The capture register
+  is read in the interrupt and the next edge overwrites it, so edges closer than the interrupt's latency (several hundred
+  clocks) are lost or read late; the capture does not report which edge it was.
+- **RTC.** `wally,rtc` implements the RTC API on a counter of seconds since 1970 that starts at 0 on every reset
+  (set the time first). Its one alarm matches the whole counter, so `rtc_alarm_set_time()` takes a full mask (second to
+  year) and refuses an alarm in the past (`-EINVAL`); the alarm interrupt (PLIC source 18) wakes a `wfi`. The chip's
+  periodic wake-up (`PERIOD`) has no place in the RTC API and is not used. `tick-frequency` in the devicetree sets the
+  ticks per second (1 on a board; `sim.overlay` makes it 1000 to see seconds go by in a short simulation).
 - **UART callback.** `uart_irq_update()` refreshes the cached IIR that `uart_irq_is_pending()` reads, so call it in
   every turn of the loop of the callback; once only, a pending interrupt makes the loop endless inside the ISR (the
   kernel stays in `nested = 1` and never reschedules).
@@ -85,5 +104,4 @@ Things that are not obvious:
 - **Without west**, CMake reads Zephyr modules only from `ZEPHYR_MODULES`, which the Makefile sets to `module/`; its
   `zephyr/module.yml` supplies the board, SoC and devicetree roots and the drivers' CMake and Kconfig.
 
-Not done: the MCU timer (PWM and capture) and the RTC as drivers, GPIO and I2C interrupts, XIP from the SPI flash, and the
-trace buffer under Zephyr.
+Not done: GPIO and I2C interrupts, XIP from the SPI flash, and the trace buffer under Zephyr.

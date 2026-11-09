@@ -392,6 +392,53 @@ async def zephyr_mcu(dut):
     assert char == ord("F"), f"after the watchdog's reset the bootloader sent {chr(char)!r}, not 'F'"
 
 
+@cocotb.test()
+async def zephyr_timer(dut):
+    """Zephyr's drivers for the MCU timer (Counter API with capture, PWM API) and the RTC (../zephyr/timer): the
+    demo checks the top value and its callback, relative, absolute, cancelled and late alarms, then captures edges that
+    this test drives into GPIO2 (rising edges 6000 clocks apart, then a rising and a falling edge 4000 apart: the capture
+    register is read in the interrupt, so edges closer than its latency of several hundred clocks overwrite each other), sets two
+    PWM outputs whose duty cycles this test measures on GPIO0 and GPIO1, and sets the RTC and an alarm that wakes the
+    idle thread (the RTC runs 1000 times faster in this image, see sim.overlay)."""
+    image = HERE.parent / "zephyr/build-timer-sim/zephyr/zephyr.bin"      # `make chipsim` builds it
+    assert image.exists(), f"{image} is missing: make -C {image.parents[3]} APP=timer BUILD=build-timer-sim OVERLAY=sim.overlay"
+    await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
+    await RisingEdge(dut.clk)
+    pad_drive(dut, 2, 0)                               # channel 2 captures on GPIO2: hold it low first
+
+    async def edges(steps):
+        for wait, value in steps:
+            await ClockCycles(dut.clk, wait)
+            pad_drive(dut, 2, value)
+
+    lines = await read_lines(dut, b"capture ready", timeout=6000000)
+    assert len(lines) == 10 and lines[0] == b"timer start", f"{lines!r}"
+    assert lines[1] == b"count ok" and lines[2] == b"freq 18432000", f"{lines!r}"
+    assert lines[3] in (b"top ok 3", b"top ok 4"), f"{lines!r}"
+    assert lines[4:9] == [b"alarm relative ok", b"alarm absolute ok", b"alarm cancel ok", b"alarm late etime",
+                          b"alarm expire ok"], f"{lines!r}"
+    await edges([(1, 1), (2000, 0), (4000, 1), (2000, 0), (4000, 1), (2000, 0)])
+    lines = await read_lines(dut, b"capture ready", timeout=4000000)
+    assert lines == [b"capture rising 6000 6000", b"capture ready"], f"{lines!r}"
+    await edges([(1, 1), (4000, 0), (6000, 1), (2000, 0)])
+    lines = await read_lines(dut, b"pwm on", timeout=4000000)
+    assert lines == [b"capture both 4000 6000", b"pwm on"], f"{lines!r}"
+    highs = [0, 0]
+    for _ in range(10000):                             # ten periods of 1000 clocks
+        await FallingEdge(dut.clk)
+        pads = int(dut.gpio_out.value)
+        highs[0] += pads & 1
+        highs[1] += (pads >> 1) & 1
+    assert 2400 <= highs[0] <= 2600, f"GPIO0 was high {highs[0]} of 10000 clocks, not about 2500"
+    assert 7400 <= highs[1] <= 7600, f"GPIO1 was high {highs[1]} of 10000 clocks, not about 7500"
+    lines = await read_lines(dut, b"TIMER ", timeout=6000000)
+    assert lines[:3] == [b"pwm period busy", b"pwm channel invalid", b"pwm alarm busy"], f"{lines!r}"
+    assert lines[3] == b"rtc 2026-11-09 12:00:00 wday 1 yday 312", f"{lines!r}"
+    assert lines[4] == b"rtc advanced ok", f"{lines!r}"
+    assert re.fullmatch(rb"rtc alarm ok at 12:00:\d\d", lines[5]), f"{lines!r}"
+    assert lines[6:] == [b"rtc pending 0", b"rtc past refused", b"rtc mask refused", b"TIMER OK"], f"{lines!r}"
+
+
 ###########################################################################################
 # MCU peripherals: mcu.S drives them through GPIO alternate function 1
 ###########################################################################################

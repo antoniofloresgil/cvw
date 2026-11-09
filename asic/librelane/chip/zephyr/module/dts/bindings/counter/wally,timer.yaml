@@ -1,0 +1,26 @@
+description: |
+  CORE-V-Wally general-purpose timer (src/uncore/mcu/timer_apb.sv): one 32-bit up counter with a 16-bit prescaler and
+  an auto-reload (top) value, and four channels, each a compare (alarm or PWM output) or an input capture.  The
+  channels' pads are GPIO0-3 (alternate function IOF1).  The PWM outputs are a child node (compatible
+  "wally,timer-pwm"): the counter, its top value and the four channels are shared.
+
+compatible: "wally,timer"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  clock-frequency:
+    type: int
+    required: true
+    description: Frequency in Hz of the clock the prescaler divides
+
+  prescaler:
+    type: int
+    default: 0
+    description: The counter ticks once every prescaler+1 clocks (0 to 65535)

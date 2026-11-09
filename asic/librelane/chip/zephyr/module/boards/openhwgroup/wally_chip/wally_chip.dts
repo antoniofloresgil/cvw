@@ -36,3 +36,11 @@
 &i2c0 {
     status = "okay";
 };
+
+&timer0 {
+    status = "okay";
+};
+
+&rtc0 {
+    status = "okay";
+};

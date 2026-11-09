@@ -2,3 +2,8 @@
 &uart0 {
         current-speed = <1152000>;
 };
+
+/* chipsim: the RTC counts a thousand ticks per second, to see its seconds go by in a short simulation */
+&rtc0 {
+        tick-frequency = <1000>;
+};
