@@ -1,0 +1,26 @@
+description: |
+  CORE-V-Wally real-time counter (src/uncore/mcu/rtc_apb.sv): a 32-bit counter of seconds since 1970-01-01 with one
+  alarm that matches all its fields (and ends a wfi).
+
+compatible: "wally,rtc"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  clock-frequency:
+    type: int
+    required: true
+    description: Frequency in Hz of the clock the divider counts
+
+  tick-frequency:
+    type: int
+    default: 1
+    description: |
+      Ticks of the counter per second (1 for a real clock).  A simulation raises it to run the RTC faster than
+      real time.

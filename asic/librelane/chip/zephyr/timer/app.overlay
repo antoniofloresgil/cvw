@@ -1,0 +1,8 @@
+/* the timer's PWM takes GPIO0-3 on IOF1: the FU540 PWM (IOF0 on GPIO1-3) is off in this image */
+&pwm0 {
+        status = "disabled";
+};
+
+&timer0_pwm {
+        status = "okay";
+};

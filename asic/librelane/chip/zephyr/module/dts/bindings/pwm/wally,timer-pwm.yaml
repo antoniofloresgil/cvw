@@ -1,0 +1,17 @@
+description: |
+  PWM outputs of the CORE-V-Wally timer, a child node of the timer (wally,timer): channel x drives GPIO x (IOF1),
+  high while the counter is below the pulse.  The period is the timer's top value plus one, the same for the four
+  channels, so it can only change while no other channel (alarm, capture or PWM) is in use.
+
+compatible: "wally,timer-pwm"
+
+include: [pwm-controller.yaml, pinctrl-device.yaml, base.yaml]
+
+properties:
+  "#pwm-cells":
+    const: 3
+
+pwm-cells:
+  - channel
+  - period
+  - flags
