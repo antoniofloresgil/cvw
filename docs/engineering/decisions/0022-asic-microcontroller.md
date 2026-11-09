@@ -132,5 +132,7 @@ The firmware side is in `asic/librelane/chip/`, and each part is tested in `make
 - **The bootloader's default divisor** is 10, for the test board's 18.432 MHz oscillator (it was 18, from a 33.3 MHz clock:
   64,000 baud on the board); `boardsim` checks 115,200 baud with the straps open and with divisor 10 strapped.
 
-The chip's physical flow with this bootloader is clean (KLayout DRC 0, only the waived Magic findings, LVS 0, no
-antenna violations; setup +8.74 ns, hold +0.11 ns at 50 ns).
+The chip's physical flow with this bootloader and the Debug Mode PMP exemption (`mmu.sv`, `docs/debug.md`) is clean (KLayout DRC 0,
+only the waived Magic findings, LVS 0, no antenna violations; setup +3.41 ns, hold +0.04 ns at 50 ns). The slack was
++8.74 ns before the exemption; the critical path is in the integer unit, not the MMU, so it looks like synthesis and
+placement variance, but it was not shown.
