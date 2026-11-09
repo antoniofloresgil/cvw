@@ -153,6 +153,9 @@ choice of shuttle, a test of the chip's sockets and board (the contact-to-pin ma
 checked on a real one, [ADR 0023](decisions/0023-mcu-test-board.md)), a review of the maximum slew and capacitance
 findings, FreeRTOS in User mode (the Debug Module halt under Zephyr's idle thread was a PMP fault of the
 Debug ROM fetch, fixed in `src/mmu/mmu.sv`).
+Execute in place from the SPI flash (XIP) is a next-revision improvement, not firmware work: the chip has no
+memory-mapped flash reader, so it needs a new RTL block and a new physical flow (about 9 h; the die is at the
+`Ant.e` antenna limit and cannot grow). Until then the bootloader copies the image into RAM.
 
 ## Inherited main checkpoint
 
