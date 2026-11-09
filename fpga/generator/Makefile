@@ -17,7 +17,7 @@ else
 $(error FLOW must be vivado or opensource)
 endif
 
-.PHONY: ArtyA7 vcu118 vcu108 genesys2 nexysa7 nexysvideo qmtechk7
+.PHONY: ArtyA7 vcu118 vcu108 genesys2 nexysvideo nexysvideochip qmtechk7
 
 ArtyA7: export XILINX_PART := xc7a100tcsg324-1
 ArtyA7: export XILINX_BOARD := digilentinc.com:arty-a7-100:part0:1.1
@@ -87,6 +87,11 @@ endif
 else
 nexysvideo: FPGA_NEXYSVIDEO
 endif
+
+# The chip asic_soc_rv32imac on the Nexys Video, open-source flow only (fpga/src/fpgaChip.sv): 64 KiB of block RAM,
+# no DDR3, 18.4375 MHz from the PLL, the chip's bootloader in the boot ROM.  Zephyr and FreeRTOS run on it as on the chip.
+nexysvideochip: PreProcessChip
+	./build-opensource.sh "nexysvideochip"
 
 qmtechk7: export XILINX_PART := xc7k325tffg676-1
 qmtechk7: export XILINX_BOARD := qmtechk7
@@ -229,6 +234,22 @@ ifeq ($(OPENCONFIG),fpganexysvideoopen)
 	sed -i 's/  rom1p1r #(/  rom1p1r_tim #(/' ../src/CopiedFiles_do_not_add_to_repo/ifu/irom.sv
 	sed -i 's/  ram1p1rwbe #(/  ram1p1rwbe_tim #(/' ../src/CopiedFiles_do_not_add_to_repo/lsu/dtim.sv
 endif
+
+# The chip's configuration with the bootloader of asic/librelane/chip as the preloaded BOOTROM (boot.mem is a build
+# product of its Makefile, not the ZSBL's fpga/src/boot.mem)
+.PHONY: PreProcessChip
+PreProcessChip:
+	$(MAKE) -C ../../sim deriv
+	$(MAKE) -C ../../asic/librelane/chip boot.mem
+	rm -rf ../src/CopiedFiles_do_not_add_to_repo
+	cp -r ../../src/ ../src/CopiedFiles_do_not_add_to_repo/
+	mkdir -p ../src/CopiedFiles_do_not_add_to_repo/config
+	cp ../../config/deriv/asic_soc_rv32imac/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
+	cp ../../config/shared/*.vh ../src/CopiedFiles_do_not_add_to_repo/config/
+	cp ../../fpga/src/fpgaChip.sv ../../fpga/src/fpgaChipClk.v ../src/CopiedFiles_do_not_add_to_repo/
+	sed -i "s/bit \[DATA_WIDTH-1:0\].*ROM.*/(\* rom_style=\"block\" \*) &/g" ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
+	sed -i 's|\$$WALLY/fpga/src/boot.mem|$(WALLY)/asic/librelane/chip/boot.mem|' ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
+	sed -i '/write("%c", *Din);/d' ../src/CopiedFiles_do_not_add_to_repo/uncore/uartPC16550D.sv
 
 # Generate the LiteDRAM DDR3 controller/PHY Verilog for the open-source flow
 .PHONY: litedram

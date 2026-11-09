@@ -19,6 +19,12 @@ case "$board" in
         part="xc7a200tsbg484-1"
         chipdb="${NEXTPNR_XILINX_CHIPDB_XC7A200T:?NEXTPNR_XILINX_CHIPDB_XC7A200T is not set}"
         ;;
+    nexysvideochip)
+        # the chip asic_soc_rv32imac (fpga/src/fpgaChip.sv): no DDR3, no LiteDRAM
+        constraints="../constraints/opensource-NexysVideoChip.xdc"
+        part="xc7a200tsbg484-1"
+        chipdb="${NEXTPNR_XILINX_CHIPDB_XC7A200T:?NEXTPNR_XILINX_CHIPDB_XC7A200T is not set}"
+        ;;
     *) echo "Unsupported open-source board: $board" >&2; exit 1 ;;
 esac
 
@@ -58,22 +64,25 @@ if [ "$board" = "nexysvideo" ]; then
     constraints="$merged"
 fi
 
+top=fpgaOpenSource
+[ "$board" = "nexysvideochip" ] && top=fpgaChip
 source_list="$out/sources.txt"
-# fpgaOpenSource.sv includes cvw.sv, whose macros (e.g. CVW_MULTICORE_PARAMS)
+# The top includes cvw.sv, whose macros (e.g. CVW_MULTICORE_PARAMS)
 # the other sources use, so it goes first and slang reads one compilation unit.
 {
-    echo "$source_dir/fpgaOpenSource.sv"
-    find "$source_dir" -type f -name '*.sv' -print | sort | grep -vE '/(cvw|fpgaOpenSource)\.sv$'
+    echo "$source_dir/$top.sv"
+    find "$source_dir" -type f -name '*.sv' -print | sort | grep -vE "/(cvw|$top)\\.sv\$"
 } > "$source_list"
 
 {
-    if [ "$board" = "nexysvideo" ]; then
+    if [ "$board" = "nexysvideo" ] || [ "$board" = "nexysvideochip" ]; then
         echo "read_verilog -lib $yosys_xilinx/cells_sim.v"
         echo "read_verilog -lib $yosys_xilinx/cells_xtra.v"
-        echo "read_verilog $ddr_dir/*.v"
     fi
-    echo "read_slang --std 1800-2017 --single-unit --ignore-timing --ignore-assertions -I $config_dir -I $source_dir -I ../../config/shared -I ../../src --top fpgaOpenSource $(tr '\n' ' ' < "$source_list")"
-    echo "hierarchy -top fpgaOpenSource"
+    [ "$board" = "nexysvideo" ] && echo "read_verilog $ddr_dir/*.v"
+    [ "$board" = "nexysvideochip" ] && echo "read_verilog $source_dir/fpgaChipClk.v"
+    echo "read_slang --std 1800-2017 --single-unit --ignore-timing --ignore-assertions -I $config_dir -I $source_dir -I ../../config/shared -I ../../src --top $top $(tr '\n' ' ' < "$source_list")"
+    echo "hierarchy -top $top"
     # ABC9's final &verify equivalence check does not finish in hours on the
     # RV64GC design (450k AND gates); mapping itself takes about two minutes.
     echo "scratchpad -set abc9.verify 0"
@@ -88,6 +97,7 @@ python3 fix-carry4-outputs.py "$out/$board.json" "$out/$board.json"
 
 freq=25
 [ "$board" = "nexysvideo" ] && freq=40
+[ "$board" = "nexysvideochip" ] && freq=18.4375
 # The RV64GC netlist does not route with nextpnr's default seed (router2 stalls
 # at about 30 overused wires); seed 2 converges. NEXTPNR_SEED overrides it.
 seed="${NEXTPNR_SEED:-}"

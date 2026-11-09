@@ -165,6 +165,13 @@ Things that are not obvious from the scripts:
 - DDR3 initialization: on RV32 (`fpgaopensource`) Wally runs it from its IROM (`fpga/ddrinit`, LiteX's `sdram_init()` through the LiteDRAM CSRs at `0x48000000`), so any RV32 IROM program must do the initialization before touching DDR3. On RV64 use `OPENCONFIG=fpganexysvideoopen`: a stage 0 (`fpga/ddrinit`, built by `build-opensource.sh` into `fpga/src/ddrinit.mem` for a 16 KiB IROM/DTIM at `0x4000`) initializes the DDR3 through the uncached `EXT_IO` window at `0xA0000000` and jumps to the ZSBL. With `fpganexysvideo` (also the Vivado configuration) a VexRiscv service CPU inside the LiteDRAM core does it and Wally is held in reset until `init_done`; its BIOS output is on the same UART until Wally takes over. The default follows `EXT_IO_SUPPORTED`; `INIT_CPU=vexriscv|none` overrides it.
 - `EXT_IO_SUPPORTED/BASE/RANGE` (all configurations, default off) mark an uncached, non-idempotent, non-atomic and non-executable I/O window inside `EXT_MEM` in the PMA (`src/mmu/pmachecker.sv`); bus decoding is unchanged, the FPGA top splits it off. `testbench/common/riscvassertions_wally.sv` stops a simulation at time 0 for a window that is not a naturally aligned power-of-two block inside `EXT_MEM` at least one cache line long, and for any window without `ZICSR_SUPPORTED` (no PMA checker); lint, synthesis and the FPGA flows do not run these assertions, so `bin/check-extio [config ...]` evaluates the same rules on `config.vh` without simulating, and `lint-wally` runs it on every generated configuration (this fork only: keep it out of upstream PRs). `tests/coverage64gc/extIOWindow.S` runs on `extio_rv64gc` (nightly).
 
+The chip itself on the Nexys Video (open flow, no DDR3; `docs/fpga-chip.md`):
+```bash
+make nexysvideochip                                                # in fpga/generator, about 5 minutes
+asic/librelane/chip/uart_load.py <the board's FT232R> zephyr.bin   # through the chip's UART bootloader (docs/fpga-chip.md)
+```
+`fpga/src/fpgaChip.sv` is `chip_top.sv` without the pads; its PLL (`fpgaChipClk.v`) gives 18.4375 MHz, so the images of the chip run unchanged. Zephyr's isolation demo has run on a Nexys Video (2026-11-09).
+
 ### Test Infrastructure
 
 There is no central test list; tests are ELF files passed to `wsim` by path or directory:
