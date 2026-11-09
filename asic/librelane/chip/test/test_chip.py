@@ -247,7 +247,7 @@ async def zephyr_peripherals(dut):
     """Zephyr's drivers for the chip's peripherals (../zephyr/periph): the console UART in interrupt mode, the GPIO,
     the SPI and the PWM.  The demo prints a line per step and the test plays the other side on the pads: it sends
     three letters on the UART and gets them back in capitals, drives GPIO4 and sees GPIO5 follow it, serves the
-    flash's first bytes ("WALY") to an SPI read, and measures the duty cycles of the PWM on GPIO1 and GPIO2 (high for period - pulse, as the FU540's PWM)."""
+    flash's first bytes ("WALY") to an SPI read, toggles GPIO4 for the edge and level interrupts, and measures the duty cycles of the PWM on GPIO1 and GPIO2 (high for period - pulse, as the FU540's PWM)."""
     image = HERE.parent / "zephyr/build-periph-sim/zephyr/zephyr.bin"    # `make chipsim` builds it
     assert image.exists(), f"{image} is missing: make -C {image.parents[3]} APP=periph BUILD=build-periph-sim OVERLAY=sim.overlay"
     await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
@@ -267,6 +267,17 @@ async def zephyr_peripherals(dut):
     assert (pads >> 5) & 1 == 1 and pads & 1 == 1, f"GPIO pads 0x{pads:02x}: GPIO5 and GPIO0 should be high"
     lines = await read_lines(dut, b"spi", timeout=2000000)
     assert lines == [b"spi WALY"], f"SPI read of the flash: {lines!r}"
+    lines = await read_lines(dut, b"gpio irq ready", timeout=2000000)
+    assert lines == [b"gpio irq ready"], f"{lines!r}"
+    for level in (0, 1, 0):                           # three edges on GPIO4, each waking the sleeping main thread
+        await ClockCycles(dut.clk, 3000)
+        pad_drive(dut, 4, level)
+    lines = await read_lines(dut, b"gpio level ready", timeout=2000000)
+    assert lines == [b"gpio edges 010", b"gpio level ready"], f"GPIO edge interrupts: {lines!r}"
+    await ClockCycles(dut.clk, 3000)
+    pad_drive(dut, 4, 1)
+    lines = await read_lines(dut, b"gpio level", timeout=2000000)
+    assert lines == [b"gpio level 1 once"], f"GPIO level interrupt: {lines!r}"
     lines = await read_lines(dut, b"pwm set", timeout=2000000)
     assert len(lines) == 2 and lines[1] == b"pwm set", f"{lines!r}"
     dut._log.info(lines[0].decode())

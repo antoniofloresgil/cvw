@@ -151,8 +151,8 @@ Open ASIC flow beyond the first chip: the open flow exists (LibreLane on IHP SG1
 last full run is clean, but the chip has not been fabricated. Open points: a shuttle precheck of the GDS and the
 choice of shuttle, a test of the chip's sockets and board (the contact-to-pin map of the Yamaichi socket must be
 checked on a real one, [ADR 0023](decisions/0023-mcu-test-board.md)), a review of the maximum slew and capacitance
-findings, a Debug Module halt while the hart waits in `WFI` (it failed under Zephyr's idle thread and is not
-yet isolated), FreeRTOS in User mode, Zephyr drivers for the MCU timer and RTC, and GPIO and I2C interrupts.
+findings, FreeRTOS in User mode (the Debug Module halt under Zephyr's idle thread was a PMP fault of the
+Debug ROM fetch, fixed in `src/mmu/mmu.sv`).
 
 ## Inherited main checkpoint
 

@@ -60,12 +60,12 @@ Five demo images, each with a `chipsim` test that plays the other side on the pa
 | App | Driver | What the test checks |
 |---|---|---|
 | `app` | (the PMP demo above) | threads isolated by memory domains |
-| `periph` | UART (`ns16550`, polled), GPIO (`sifive,gpio0`), SPI (`sifive,spi0`), PWM (`sifive,pwm0`), pinctrl (`sifive,pinctrl`) | three letters echoed, GPIO4 read and GPIO5 driven, the flash's first bytes read over SPI, the duty cycles on GPIO1 and GPIO2 |
+| `periph` | UART (`ns16550`, polled), GPIO (`wally,gpio`), SPI (`sifive,spi0`), PWM (`sifive,pwm0`), pinctrl (`sifive,pinctrl`) | three letters echoed, GPIO4 read and GPIO5 driven, three edge interrupts and a level interrupt on GPIO4, the flash's first bytes read over SPI, the duty cycles on GPIO1 and GPIO2 |
 | `uart_irq` | UART in interrupt mode | the PLIC's source 10 reaches the callback and wakes the main thread |
-| `mcu` | I2C (`wally,i2c`), watchdog (`wally,wdt`), the two drivers of `module/drivers/` | a write and a read with an I2C device at 0x50, a NACK from 0x51, and the chip reset the watchdog causes |
+| `mcu` | I2C (`wally,i2c`, interrupt-driven), watchdog (`wally,wdt`), the two drivers of `module/drivers/` | a write and a read with an I2C device at 0x50, a NACK from 0x51, and the chip reset the watchdog causes |
 | `timer` | the MCU timer as a Counter with capture (`wally,timer`) and as a PWM (`wally,timer-pwm`), the RTC (`wally,rtc`) | the top value, four kinds of alarm, edges captured from GPIO2 (rising, then both), the duty cycles on GPIO0 and GPIO1, the RTC's time and an alarm that wakes the idle thread |
 
-The FE310-compatible blocks (GPIO, SPI, PWM, the IOF pin muxing) use Zephyr's own SiFive drivers: the SoC only provides
+The FE310-compatible blocks (SPI, PWM, the IOF pin muxing) use Zephyr's own SiFive drivers: the SoC only provides
 `SIFIVE_PERIPHERAL_CLOCK_FREQUENCY` (`soc.h`), the pin state type (`pinctrl_soc.h`) and the devicetree nodes. The I2C
 master and the two-stage watchdog are the chip's own (`src/uncore/mcu/`) and have drivers here: the I2C one is polled,
 the watchdog supports only the reset action (the first timeout is half of Zephyr's window, the second resets), and it
@@ -73,8 +73,14 @@ cannot be disabled once on, as the hardware cannot.
 
 Things that are not obvious:
 
-- **GPIO interrupts are not supported.** The chip has one interrupt line for the 8 pins (PLIC source 3), the Zephyr
-  driver expects one per pin. Use the pins as inputs and outputs only.
+- **GPIO: one interrupt line for eight pins.** The chip raises PLIC source 3 for any pin with a pending condition, but
+  Zephyr's `sifive,gpio0` driver expects one line per pin, so the GPIO is `wally,gpio` (`module/drivers/gpio_wally.c`):
+  the same registers, one handler that reads which pins are pending and runs their callbacks once. Edge and level
+  interrupts work on every pin; a level interrupt fires again at once while the level holds, so the callback disables
+  it (as with any controller) and the interrupt wakes a `wfi`.
+- **I2C by interrupt.** With `interrupts` in the node (PLIC source 17) `wally,i2c` starts a command and sleeps on a
+  semaphore that the controller's interrupt gives when the command finishes; without the property it polls. A mutex
+  serialises the threads, and a command that does not finish in 100 ms returns `-ETIMEDOUT`.
 - **PWM polarity.** The PWM follows the SiFive FU540: the output is high from the compare match to the end of the period
   and Zephyr's driver writes the pulse into the comparator, so a pulse of 25 % gives a pad that is high 75 % of the
   time. Channel 0 sets the period and channels 1-3 are on GPIO1-3. The pins must also be outputs (`gpio_pin_configure`):
@@ -104,4 +110,4 @@ Things that are not obvious:
 - **Without west**, CMake reads Zephyr modules only from `ZEPHYR_MODULES`, which the Makefile sets to `module/`; its
   `zephyr/module.yml` supplies the board, SoC and devicetree roots and the drivers' CMake and Kconfig.
 
-Not done: GPIO and I2C interrupts, XIP from the SPI flash, and the trace buffer under Zephyr.
+Not done: XIP from the SPI flash and the trace buffer under Zephyr.
