@@ -131,7 +131,7 @@ under the PMP of a user-mode image has not been tried.
 The same images run on the chip built for the Nexys Video ([docs/fpga-chip.md](../../../../docs/fpga-chip.md)): its clock is
 18.4375 MHz, 0.03 % from the 18.432 MHz of the devicetree, so no overlay is needed, and `chip/uart_load.py` loads
 `build/zephyr/zephyr.bin` through the bootloader. The demos that need something at the pads (the I2C device, the SPI
-flash, an edge for the capture) have nothing there on the board. It has not been run yet.
+flash, an edge for the capture) have nothing there on the board. The `app` image has run there to `ZEPHYR OK`.
 
 Not done: XIP from the SPI flash, which needs a hardware block the chip does not have (a memory-mapped flash reader,
 ADR 0022 lists it as optional by area).

@@ -168,9 +168,9 @@ Things that are not obvious from the scripts:
 The chip itself on the Nexys Video (open flow, no DDR3; `docs/fpga-chip.md`):
 ```bash
 make nexysvideochip                                                # in fpga/generator, about 5 minutes
-asic/librelane/chip/uart_load.py /dev/ttyUSBn zephyr.bin           # through the chip's UART bootloader (SW5 up)
+asic/librelane/chip/uart_load.py <the board's FT232R> zephyr.bin   # through the chip's UART bootloader (docs/fpga-chip.md)
 ```
-`fpga/src/fpgaChip.sv` is `chip_top.sv` without the pads; its PLL (`fpgaChipClk.v`) gives 18.4375 MHz, so the images of the chip run unchanged. Not loaded on a board yet.
+`fpga/src/fpgaChip.sv` is `chip_top.sv` without the pads; its PLL (`fpgaChipClk.v`) gives 18.4375 MHz, so the images of the chip run unchanged. Zephyr's isolation demo has run on a Nexys Video (2026-11-09).
 
 ### Test Infrastructure
 

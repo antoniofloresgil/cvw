@@ -24,8 +24,8 @@ On `main` (PRs #51 to #65, in order of the work):
   fabricated, and the socket's contact-to-pin map is unverified.
 
 Not on `main` yet: the branch `fpga-chip-nexysvideo` builds the chip for the Nexys Video with the open flow
-(`make nexysvideochip`, about 5 minutes, 7 % of the LUTs). The bitstream has been loaded on the board, but no program has run
-on it: the bootloader's first message needs the CPU RESET button pressed by hand.
+(`make nexysvideochip`, about 5 minutes, 7 % of the LUTs). The bitstream is loaded on the board and Zephyr's isolation demo
+runs on it to `ZEPHYR OK` (2026-11-09, [docs/fpga-chip.md](../fpga-chip.md) on that branch); the other images have not been tried.
 
 The `opensource-fpga-bitstream` branch was merged into `main` (PR #22, then
 continued by `wally-ddr3-init`, PR #23) and deleted (local and `origin`) on

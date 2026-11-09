@@ -51,6 +51,11 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
         unsigned long cause;
 
         __asm__ volatile("csrr %0, mcause" : "=r"(cause));
+        /* A refused system call is an oops that runs with interrupts on, and the console is slow on a board: the timer's
+         * tick can arrive before this read and leave its own cause in mcause (an interrupt, bit 31); the oops is an ecall. */
+        if (reason == K_ERR_KERNEL_OOPS && (cause >> (sizeof(cause) * 8 - 1)) != 0) {
+                cause = 8;
+        }
         fault_cause = cause;
         fault_reason = reason;
         fault_count++;
