@@ -90,10 +90,18 @@ Later the same day, two more images ran on the board, loaded by `uart_load.py`:
   and the watchdog's reset work on the board; the data (0x5A out, a byte back) and the ACK/NACK difference between addresses need a real I2C
   device on GPIO6/GPIO7, which is the test board's job, and were not checked.
 
+* `zephyr/trace`, built with `make APP=trace BUILD=build-fpga-trace FPGA_DUMP=1`: the instruction trace (E-Trace) of the chip on the board. The FPGA
+  has no JTAG, which is how `chipsim` reads the sink's buffer, so with `FPGA_DUMP` the hart reads the buffer itself through `trRamData`
+  after `trace ready` and prints it, a word per line. `asic/librelane/chip/trace_decode.py trace.log zephyr.elf` decodes it against the ELF
+  with `testbench/debug/etrace/etracedecode.py` and checks what `chipsim`'s `zephyr_trace` checks. On the board: 988 bytes of packets, 5,952
+  instructions, the workload, the worker thread, the semaphore calls, 8 context switches (at least 6 are needed) and the timer's interrupt
+  handler after the three round trips. So the encoder, the RAM sink and the Trace Control Interface work in the FPGA build.
+  Without `FPGA_DUMP` the image is byte for byte the one of `chipsim`.
+
 To run one of these, reset the chip only after `uart_load.py` is waiting, and close the previous run first: a loader that is still
 running keeps the port and takes the bootloader's `W`.
 
 ## Not checked yet
 
-* `zephyr/mcu` with an I2C device on the pads (see above), `zephyr/trace`, `zephyr/periph` (it needs a host that plays the pads), FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
+* `zephyr/mcu` with an I2C device on the pads (see above), `zephyr/periph` (it needs a host that plays the pads), FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
 * No JTAG (Debug Module, instruction trace): the pads to a Pmod are the next step.
