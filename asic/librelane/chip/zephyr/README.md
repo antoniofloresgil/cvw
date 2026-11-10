@@ -132,7 +132,8 @@ The same images run on the chip built for the Nexys Video ([docs/fpga-chip.md](.
 18.4375 MHz, 0.03 % from the 18.432 MHz of the devicetree, so no overlay is needed, and `chip/uart_load.py` loads
 `build/zephyr/zephyr.bin` through the bootloader. The demos that need something at the pads (the I2C device, the SPI
 flash, an edge for the capture) have nothing there on the board. The `app` image has run there to `ZEPHYR OK`, and `gpio_demo` (LEDs in turn, then the switches printed; `make APP=gpio_demo
-BUILD=build-fpga-gpio`) checked the 8 switches and 8 LEDs.
+BUILD=build-fpga-gpio`) checked the 8 switches and 8 LEDs; `uart_irq` (with `uart_load.py --send`) and `timer` (`make APP=timer FPGA_TIMING=1`, the timings of a
+person at the board) have run there too.
 
 Not done: XIP from the SPI flash, which needs a hardware block the chip does not have (a memory-mapped flash reader,
 ADR 0022 lists it as optional by area).

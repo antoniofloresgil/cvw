@@ -68,7 +68,24 @@ one at a time, with the others down, gave `00000001`, `00000010`, ... `10000000`
 GPIO. That includes SW4-7 and LD5-7, whose pins came from memory of Digilent's master constraints. (A first run lost lines of the
 console because an older `uart_load.py` still had the port open: close the previous loader before starting another.)
 
+Later the same day, two more images ran on the board, loaded by `uart_load.py`:
+
+* `zephyr/uart_irq`, with `--send abc --send-after "uart ready"`: the three letters come back as `ABC`, then `UART IRQ OK`: the
+  console UART's receive interrupt through the PLIC.
+* `zephyr/timer`, built with `make APP=timer BUILD=build-fpga-timer FPGA_TIMING=1`, to `TIMER OK`: the counter, its top value and
+  callback, five kinds of alarm, the capture, the PWM and the RTC. `FPGA_TIMING` gives the demo the timings of a person at the board
+  instead of the simulation's (`timer/main.c`): the capture waits 40 s for edges, which come from raising and lowering SW2 (GPIO2) by hand,
+  the RTC counts real seconds (the simulation's overlay makes it count a thousand per second), and the PWM period is 0.5 s. The
+  capture measured the switch's own bounce (an interval of 2,584 clocks, 0.14 ms, among others of seconds); the exact intervals of
+  chipsim's test (6000 and 4000 clocks) cannot be made by hand and were not checked. LD0 (25 %) and LD1 (75 %, inverted) blink in
+  opposite phase, as the duty cycles say. LD3 gives a brief flash every period and LD2 was off on one run and on in another: those two channels are not
+  configured by the demo, and what they show is what the alarm and capture tests left in their registers (`PWMOut = (Cnt < Ccr) ^ invert`
+  in `src/uncore/mcu/timer_apb.sv`); chipsim does not look at them.
+
+To run one of these, reset the chip only after `uart_load.py` is waiting, and close the previous run first: a loader that is still
+running keeps the port and takes the bootloader's `W`.
+
 ## Not checked yet
 
-* The other Zephyr images, FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
+* `zephyr/mcu` (I2C and the watchdog, which resets the chip), `zephyr/trace`, `zephyr/periph` (it needs a host that plays the pads), FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
 * No JTAG (Debug Module, instruction trace): the pads to a Pmod are the next step.
