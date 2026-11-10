@@ -23,9 +23,10 @@ On `main` (PRs #51 to #65, in order of the work):
   ([ADR 0023](decisions/0023-mcu-test-board.md), [board README](../../hardware/board/README.md)). Neither has been
   fabricated, and the socket's contact-to-pin map is unverified.
 
-Not on `main` yet: the branch `fpga-chip-nexysvideo` builds the chip for the Nexys Video with the open flow
-(`make nexysvideochip`, about 5 minutes, 7 % of the LUTs). The bitstream is loaded on the board and Zephyr's isolation demo
-runs on it to `ZEPHYR OK` (2026-11-09, [docs/fpga-chip.md](../fpga-chip.md) on that branch); the other images have not been tried.
+`make nexysvideochip` builds the chip for the Nexys Video with the open flow (about 5 minutes, 7 % of the LUTs; merged in PR #68).
+The bitstream is loaded on the board and Zephyr's isolation demo runs on it to `ZEPHYR OK` (2026-11-09); on 2026-11-10 the
+8 switches and 8 LEDs were checked one by one with the `gpio_demo` image ([docs/fpga-chip.md](../fpga-chip.md)). The other
+images and FreeRTOS have not been tried.
 
 The `opensource-fpga-bitstream` branch was merged into `main` (PR #22, then
 continued by `wally-ddr3-init`, PR #23) and deleted (local and `origin`) on

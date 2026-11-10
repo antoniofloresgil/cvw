@@ -61,10 +61,14 @@ call 8). One check failed the first time, for a reason that only a board shows: 
 interrupts on, the console is slow, and the timer's tick arrived before the handler read `mcause`; the demo now treats an
 interrupt cause there as the `ecall`.
 
+2026-11-10, same bitstream, all of SW[4:0] down (bootloader at 115200 baud, no `--boot-baud` needed): the `app` image ran to
+`ZEPHYR OK` again. The `gpio_demo` image (`asic/librelane/chip/zephyr/gpio_demo`, built with `make APP=gpio_demo BUILD=build-fpga-gpio`)
+lights LD0 to LD7 in turn, which was seen in order, and then prints the eight switches every half second: raising SW0, SW1, ... SW7
+one at a time, with the others down, gave `00000001`, `00000010`, ... `10000000`, so every switch and every LED is on the pin of its
+GPIO. That includes SW4-7 and LD5-7, whose pins came from memory of Digilent's master constraints. (A first run lost lines of the
+console because an older `uart_load.py` still had the port open: close the previous loader before starting another.)
+
 ## Not checked yet
 
-* The pins of SW4-7 and LD5-7 in `fpga/constraints/opensource-NexysVideoChip.xdc` come from memory of Digilent's master constraints, not from
-  the board's reference manual; the others are those of the existing Nexys Video constraints. Their effect has not been seen (the
-  switches were left in some position, and the LEDs not watched).
 * The other Zephyr images, FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
 * No JTAG (Debug Module, instruction trace): the pads to a Pmod are the next step.
