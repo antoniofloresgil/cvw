@@ -36,6 +36,14 @@ static void gpio_cb(const struct device *dev, struct gpio_callback *cb, uint32_t
         k_sem_give(&gpio_sem);
 }
 
+/* FPGA_TIMING (make APP=periph FPGA_TIMING=1, docs/fpga-chip.md): the chip on the Nexys Video, where GPIO4 is SW4 and a person makes
+ * the edges, so the interrupt checks wait 30 s instead of 100 ms.  There is no SPI flash on the board: its read returns zeros. */
+#ifdef FPGA_TIMING
+#define GPIO_WAIT K_SECONDS(30)
+#else
+#define GPIO_WAIT K_MSEC(100)
+#endif
+
 static int fail(const char *what, int v)
 {
         printk("PERIPH FAIL %s %d\n", what, v);
@@ -93,7 +101,7 @@ int main(void)
         gpio_pin_interrupt_configure(gpio, 4, GPIO_INT_EDGE_BOTH);
         printk("gpio irq ready\n");
         for (int i = 0; i < 3; i++) {
-                if (k_sem_take(&gpio_sem, K_MSEC(100)) != 0) {
+                if (k_sem_take(&gpio_sem, GPIO_WAIT) != 0) {
                         return fail("gpio edge", i);
                 }
         }
@@ -104,7 +112,7 @@ int main(void)
         k_sem_reset(&gpio_sem);
         gpio_pin_interrupt_configure(gpio, 4, GPIO_INT_LEVEL_HIGH);    /* the pin is low: nothing yet */
         printk("gpio level ready\n");
-        if (k_sem_take(&gpio_sem, K_MSEC(100)) != 0) {
+        if (k_sem_take(&gpio_sem, GPIO_WAIT) != 0) {
                 return fail("gpio level", 0);
         }
         k_msleep(2);
