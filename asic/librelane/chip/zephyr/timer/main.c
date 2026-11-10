@@ -2,7 +2,12 @@
  * The chip's timer and real-time counter under Zephyr: the Counter API (top value with a callback, alarms,
  * capture on a pad), the PWM API on the same four channels, and the RTC API (time, an alarm that wakes the idle
  * thread).  chipsim's zephyr_timer test plays the other side on the pads: it drives edges into GPIO2 for the
- * capture and measures the duty cycles on GPIO0 and GPIO1.  Every check prints one line. */
+ * capture and measures the duty cycles on GPIO0 and GPIO1.  Every check prints one line.
+ *
+ * FPGA_TIMING (make ... FPGA_TIMING=1, for the chip on the Nexys Video, docs/fpga-chip.md): the timings of a person and a
+ * board instead of the simulation's.  Edges come from SW2 by hand, so the capture waits 40 s; the RTC runs at real seconds
+ * (chipsim's tick-frequency overlay makes it count 1000 per second); and the PWM period is 0.5 s (9218750 clocks of
+ * 18.4375 MHz) so that LD0 (25 %) and LD1 (75 %, inverted) are seen to blink in opposite phase. */
 #include <errno.h>
 #include <time.h>
 #include <zephyr/kernel.h>
@@ -21,6 +26,22 @@ static const struct device *const rtc = DEVICE_DT_GET(DT_NODELABEL(rtc0));
 static K_SEM_DEFINE(event, 0, 8);
 static volatile uint32_t top_count, alarm_ticks, captured[3];
 static volatile int captures;
+
+#ifdef FPGA_TIMING
+#define CAPTURE_WAIT     K_SECONDS(40)
+#define RTC_SLEEP_MS     2000
+#define RTC_ADVANCED_OK  (rtc_s >= 1 && rtc_s <= 3)
+#define RTC_ALARM_WAIT   K_SECONDS(6)
+#define PWM_PERIOD       9218750U
+#define PWM_HIGH         2304687U
+#else
+#define CAPTURE_WAIT     K_MSEC(50)
+#define RTC_SLEEP_MS     5
+#define RTC_ADVANCED_OK  (rtc_s >= 5 && rtc_s - up_ms >= -1 && rtc_s - up_ms <= 1)
+#define RTC_ALARM_WAIT   K_MSEC(50)
+#define PWM_PERIOD       1000U
+#define PWM_HIGH         250U
+#endif
 
 static int fail(const char *what, int v)
 {
@@ -71,7 +92,7 @@ static int capture_run(counter_capture_flags_t flags, uint32_t *d0, uint32_t *d1
         return rc;
     }
     printk("capture ready\n");
-    if (k_sem_take(&event, K_MSEC(50)) != 0) {
+    if (k_sem_take(&event, CAPTURE_WAIT) != 0) {
         counter_disable_capture(timer, 2);
         return -ETIMEDOUT;
     }
@@ -161,11 +182,11 @@ int main(void)
     if (rc) {
         return fail("top pwm", rc);
     }
-    rc = pwm_set_cycles(pwm, 0, 1000, 250, 0);
+    rc = pwm_set_cycles(pwm, 0, PWM_PERIOD, PWM_HIGH, 0);
     if (rc) {
         return fail("pwm 0", rc);
     }
-    rc = pwm_set_cycles(pwm, 1, 1000, 250, PWM_POLARITY_INVERTED);
+    rc = pwm_set_cycles(pwm, 1, PWM_PERIOD, PWM_HIGH, PWM_POLARITY_INVERTED);
     if (rc) {
         return fail("pwm 1", rc);
     }
@@ -190,13 +211,13 @@ int main(void)
     rtc_get_time(rtc, &now);
     printk("rtc %04d-%02d-%02d %02d:%02d:%02d wday %d yday %d\n", now.tm_year + 1900, now.tm_mon + 1, now.tm_mday,
            now.tm_hour, now.tm_min, now.tm_sec, now.tm_wday, now.tm_yday);
-    k_msleep(5);
+    k_msleep(RTC_SLEEP_MS);
     rtc_get_time(rtc, &later);
     /* the RTC counts a thousand ticks per second here and Zephyr's tick is 1 ms: the same number, give or take one */
     int64_t rtc_s = timeutil_timegm64(rtc_time_to_tm(&later)) - timeutil_timegm64(rtc_time_to_tm(&now));
     int64_t up_ms = k_uptime_get() - up0;
 
-    printk("rtc advanced %s\n", (rtc_s >= 5 && rtc_s - up_ms >= -1 && rtc_s - up_ms <= 1) ? "ok" : "FAIL");
+    printk("rtc advanced %s\n", RTC_ADVANCED_OK ? "ok" : "FAIL");
     rtc_get_time(rtc, &now);
 
     time_t s = timeutil_timegm64(rtc_time_to_tm(&now)) + 3;
@@ -211,7 +232,7 @@ int main(void)
         return fail("rtc alarm set", rc);
     }
     /* the main thread sleeps, the idle thread executes wfi, and the alarm interrupt through the PLIC wakes it */
-    rc = k_sem_take(&event, K_MSEC(50));
+    rc = k_sem_take(&event, RTC_ALARM_WAIT);
     rtc_get_time(rtc, &now);
     printk("rtc alarm %s at %02d:%02d:%02d\n", rc == 0 ? "ok" : "FAIL", now.tm_hour, now.tm_min, now.tm_sec);
     printk("rtc pending %d\n", rtc_alarm_is_pending(rtc, 0));

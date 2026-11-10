@@ -13,6 +13,8 @@ BUILD       ?= build
 CROSS       ?= $(if $(RISCV),$(RISCV)/bin/)riscv64-unknown-elf-
 # a devicetree overlay for simulation: the chip's UART in chipsim runs at one bit per 16 clocks
 OVERLAY     ?=
+# FPGA_TIMING=1: the timer demo with the timings of a person at the board (timer/main.c)
+FPGA_TIMING ?=
 
 export ZEPHYR_BASE
 export ZEPHYR_TOOLCHAIN_VARIANT := cross-compile
@@ -25,7 +27,7 @@ all: $(BUILD)/zephyr/zephyr.bin
 $(BUILD)/zephyr/zephyr.bin: FORCE
 	PATH=$(ZEPHYR_VENV)/bin:$$PATH cmake -GNinja -S $(APP) -B $(BUILD) -DBOARD=wally_chip \
 	  -DZEPHYR_MODULES=$(abspath module) -DPython3_EXECUTABLE=$(ZEPHYR_VENV)/bin/python3 \
-	  $(if $(OVERLAY),-DEXTRA_DTC_OVERLAY_FILE=$(abspath $(OVERLAY))) >$(BUILD).log 2>&1 || { cat $(BUILD).log; exit 1; }
+	  $(if $(OVERLAY),-DEXTRA_DTC_OVERLAY_FILE=$(abspath $(OVERLAY))) $(if $(FPGA_TIMING),-DFPGA_TIMING=ON) >$(BUILD).log 2>&1 || { cat $(BUILD).log; exit 1; }
 	PATH=$(ZEPHYR_VENV)/bin:$$PATH ninja -C $(BUILD)
 	test $$(stat -c %s $@) -le 57344
 

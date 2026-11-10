@@ -10,6 +10,14 @@ the bytes and runs the program.  Reset the chip (the CPU RESET button of the FPG
 The bootloader's baud rate is f_clk / (16 * divisor), the divisor being what GPIO[4:0] read at reset (10 if 0): on the
 FPGA build, with its 18.4375 MHz, SW[4:0] = 01000 is divisor 8, 144043 baud, which --boot-baud 144043 matches; the program
 then runs at its own rate (--baud, 115200).  Standard library only (termios; any baud rate needs Linux).  Ctrl-C ends the console.
+
+A program that waits for input on the UART (zephyr/uart_irq) gets it with --send TEXT --send-after MARKER: the characters go out
+one at a time, 0.1 s apart, once the console has printed MARKER.
+
+    uart_load.py /dev/ttyUSB1 zephyr/build-uart-irq/zephyr/zephyr.bin --send abc --send-after "uart ready"
+
+Close the previous run of this script before starting another: while it holds the port, it takes the bootloader's 'W' and the
+console's lines.
 """
 
 import argparse
@@ -72,7 +80,8 @@ def load(fd, image, wait):
         left = end - time.monotonic()
         if left <= 0:
             sys.exit("no 'W' from the bootloader: is GPIO[5] up (SW5 on the FPGA), the port right, and was the chip reset?")
-        if read_byte(fd, min(left, 0.5)) == ord("W"):
+        # the bootloader's 'W' is followed by silence (it waits for the size); the 'W' of a program's output is not
+        if read_byte(fd, min(left, 0.5)) == ord("W") and read_byte(fd, 0.3) is None:
             break
     os.write(fd, len(image).to_bytes(4, "little"))
     for i in range(0, len(image), 256):              # in blocks: the bootloader has no flow control
@@ -89,13 +98,20 @@ def load(fd, image, wait):
     print(f"loaded {len(image)} bytes, checksum {got:#04x}", file=sys.stderr)
 
 
-def console(fd):
+def console(fd, send="", after=""):
+    seen = b""
     try:
         while True:
             if select.select([fd], [], [], 0.5)[0]:
                 data = os.read(fd, 256)
                 sys.stdout.buffer.write(data)
                 sys.stdout.buffer.flush()
+                seen += data
+                if send and after.encode() in seen:
+                    for c in send.encode():
+                        os.write(fd, bytes([c]))
+                        time.sleep(0.1)
+                    send = ""
     except KeyboardInterrupt:
         pass
 
@@ -109,6 +125,8 @@ def main():
                         help="the bootloader's: 115200 with all of GPIO[4:0] low at reset, else f_clk / (16 * divisor)")
     parser.add_argument("--wait", type=float, default=60, help="seconds to wait for the bootloader (default 60)")
     parser.add_argument("--no-console", action="store_true", help="exit after loading")
+    parser.add_argument("--send", default="", help="characters to send, one at a time, once the console has printed --send-after")
+    parser.add_argument("--send-after", default="", help="the console text that --send waits for (default: send at once)")
     args = parser.parse_args()
     image = open(args.image, "rb").read()
     if not 0 < len(image) <= MAX_SIZE:
@@ -117,7 +135,7 @@ def main():
     load(fd, image, args.wait)
     set_baud(fd, args.baud)
     if not args.no_console:
-        console(fd)
+        console(fd, args.send, args.send_after)
 
 
 if __name__ == "__main__":
