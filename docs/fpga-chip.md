@@ -82,10 +82,18 @@ Later the same day, two more images ran on the board, loaded by `uart_load.py`:
   configured by the demo, and what they show is what the alarm and capture tests left in their registers (`PWMOut = (Cnt < Ccr) ^ invert`
   in `src/uncore/mcu/timer_apb.sv`); chipsim does not look at them.
 
+* `zephyr/mcu` (the I2C master and the watchdog), with no I2C device on the board: SCL and SDA are GPIO6 and GPIO7, so SW6 and SW7 are
+  the lines (up reads high, as a pull-up; down reads low, a line held low). With both up the bus is free and nobody answers: the demo stops at
+  `MCU FAIL i2c write -5` (`EIO`, a NACK at 0x50), as it should. With SW6 up and SW7 down, SDA is held low and every address is
+  acknowledged: `i2c write ok`, `i2c read 00`, `i2c nack 0` (the address 0x51 is acknowledged too), `wdt fed`, and then a `W` on the
+  UART: the watchdog, armed at 200 ms and fed three times, reset the SoC and the bootloader started again. So the master's transactions
+  and the watchdog's reset work on the board; the data (0x5A out, a byte back) and the ACK/NACK difference between addresses need a real I2C
+  device on GPIO6/GPIO7, which is the test board's job, and were not checked.
+
 To run one of these, reset the chip only after `uart_load.py` is waiting, and close the previous run first: a loader that is still
 running keeps the port and takes the bootloader's `W`.
 
 ## Not checked yet
 
-* `zephyr/mcu` (I2C and the watchdog, which resets the chip), `zephyr/trace`, `zephyr/periph` (it needs a host that plays the pads), FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
+* `zephyr/mcu` with an I2C device on the pads (see above), `zephyr/trace`, `zephyr/periph` (it needs a host that plays the pads), FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
 * No JTAG (Debug Module, instruction trace): the pads to a Pmod are the next step.
