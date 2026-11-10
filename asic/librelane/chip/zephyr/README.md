@@ -133,7 +133,8 @@ The same images run on the chip built for the Nexys Video ([docs/fpga-chip.md](.
 `build/zephyr/zephyr.bin` through the bootloader. The demos that need something at the pads (the I2C device, the SPI
 flash, an edge for the capture) have nothing there on the board. The `app` image has run there to `ZEPHYR OK`, and `gpio_demo` (LEDs in turn, then the switches printed; `make APP=gpio_demo
 BUILD=build-fpga-gpio`) checked the 8 switches and 8 LEDs; `uart_irq` (with `uart_load.py --send`) and `timer` (`make APP=timer FPGA_TIMING=1`, the timings of a
-person at the board) have run there too.
+person at the board) have run there too; `mcu` ran with SW6/SW7 as the I2C lines (no device: NACK, or ACK with SDA held low) and its watchdog
+reset the SoC.
 
 Not done: XIP from the SPI flash, which needs a hardware block the chip does not have (a memory-mapped flash reader,
 ADR 0022 lists it as optional by area).

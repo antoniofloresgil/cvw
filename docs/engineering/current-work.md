@@ -25,8 +25,8 @@ On `main` (PRs #51 to #65, in order of the work):
 
 `make nexysvideochip` builds the chip for the Nexys Video with the open flow (about 5 minutes, 7 % of the LUTs; merged in PR #68).
 The bitstream is loaded on the board and Zephyr's isolation demo runs on it to `ZEPHYR OK` (2026-11-09); on 2026-11-10 the
-8 switches and 8 LEDs were checked one by one with the `gpio_demo` image ([docs/fpga-chip.md](../fpga-chip.md)). `uart_irq` and `timer` (with `FPGA_TIMING=1`) ran there on the same day.
-The other images (`mcu`, `trace`, `periph`) and FreeRTOS have not been tried.
+8 switches and 8 LEDs were checked one by one with the `gpio_demo` image ([docs/fpga-chip.md](../fpga-chip.md)). `uart_irq`, `timer` (with `FPGA_TIMING=1`) and `mcu` (its watchdog resets the SoC; the I2C has no device on the board) ran
+there on the same day. The other images (`trace`, `periph`) and FreeRTOS have not been tried.
 
 The `opensource-fpga-bitstream` branch was merged into `main` (PR #22, then
 continued by `wally-ddr3-init`, PR #23) and deleted (local and `origin`) on
