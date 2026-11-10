@@ -43,4 +43,4 @@ tasks the whole data region, so the NX-for-data entry would be dropped and the U
 Not done: that isolation, interrupt-driven peripherals, and the other tick rates.
 
 The image loads through the UART bootloader (`chip/uart_load.py`) on the chip and on the FPGA build of the chip
-([docs/fpga-chip.md](../../../../docs/fpga-chip.md)); it has not been run on the FPGA yet (Zephyr's demo has).
+([docs/fpga-chip.md](../../../../docs/fpga-chip.md)); its demo ran there to `FREERTOS OK` on 2026-11-10, with the PMP causes of the simulation (the switches all down).

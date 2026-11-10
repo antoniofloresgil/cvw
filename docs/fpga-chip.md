@@ -108,10 +108,19 @@ Later the same day, two more images ran on the board, loaded by `uart_load.py`:
   cycles were not checked on the board (the `timer` image's slow PWM was: see above). With SW4 up at the reset the bootloader's divisor is
   16, 72,021 baud: start the loader with `--boot-baud 72021` (the first line of the program's console is then garbled when the loader changes speed).
 
+* FreeRTOS (`asic/librelane/chip/freertos`, `make`; its image is 12,100 bytes), to `FREERTOS OK` with the switches all down: the producer's five
+  messages through the queue (`rx 1` to `rx 5`) under the UART mutex, the software timer, the busy task that proves the tick preempts, and
+  the demo's own checks of the tick count, the timer and the stack, although the board's clock is 18.4375 MHz and the configuration
+  assumes 18.432 MHz (0.03 %). The static PMP protection gives the causes of the simulation: a store to data allowed (0), a store to the code
+  7, an instruction fetch from the heap 1 and from a stack 1.
+
+A leftover switch makes a later load fail without any message: after `periph`, SW4 stayed up and the bootloader (divisor 16, 72,021 baud)
+no longer matched the loader's 115200, which waits for a `W` that never arrives. Put SW0-SW7 down before a reset, or use `--boot-baud`.
+
 To run one of these, reset the chip only after `uart_load.py` is waiting, and close the previous run first: a loader that is still
 running keeps the port and takes the bootloader's `W`.
 
 ## Not checked yet
 
-* `zephyr/mcu` with an I2C device on the pads (see above), the contents of an SPI flash read by `zephyr/periph`, FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
+* `zephyr/mcu` with an I2C device on the pads (see above), the contents of an SPI flash read by `zephyr/periph`, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
 * No JTAG (Debug Module, instruction trace): the pads to a Pmod are the next step.
