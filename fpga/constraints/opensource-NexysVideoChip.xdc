@@ -1,6 +1,6 @@
 # Nexys Video pins of fpgaChip (asic_soc_rv32imac, open-source flow).  The pin numbers of the clock, reset, SW0-3, LD0-4 and the UART
-# are those of opensource-NexysVideo.xdc; SW4-7 and LD5-7 are from Digilent's Nexys Video master constraints and must be checked
-# against the board's reference manual before the first bitstream is loaded.
+# are those of opensource-NexysVideo.xdc; SW4-7 and LD5-7 are from Digilent's Nexys Video master constraints.  All 8 switches and
+# 8 LEDs were checked on the board (2026-11-10, asic/librelane/chip/zephyr/gpio_demo).
 set_property -dict {PACKAGE_PIN R4 IOSTANDARD LVCMOS33} [get_ports default_100mhz_clk]
 create_clock -name default_100mhz_clk -period 10.000 [get_ports default_100mhz_clk]
 set_property -dict {PACKAGE_PIN G4 IOSTANDARD LVCMOS15} [get_ports resetn]
