@@ -135,7 +135,8 @@ flash, an edge for the capture) have nothing there on the board. The `app` image
 BUILD=build-fpga-gpio`) checked the 8 switches and 8 LEDs; `uart_irq` (with `uart_load.py --send`) and `timer` (`make APP=timer FPGA_TIMING=1`, the timings of a
 person at the board) have run there too; `mcu` ran with SW6/SW7 as the I2C lines (no device: NACK, or ACK with SDA held low) and its watchdog
 reset the SoC; `trace` (`make APP=trace FPGA_DUMP=1`, decoded by `chip/trace_decode.py`) gave a trace that
-checks out against the ELF.
+checks out against the ELF; `periph` (`make APP=periph FPGA_TIMING=1`, with SW4 as the GPIO the test drives) ran to `PERIPH OK` except for the
+flash's contents and the PWM's duty cycles, which the board cannot show.
 
 Not done: XIP from the SPI flash, which needs a hardware block the chip does not have (a memory-mapped flash reader,
 ADR 0022 lists it as optional by area).

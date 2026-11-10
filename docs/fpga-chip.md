@@ -98,10 +98,20 @@ Later the same day, two more images ran on the board, loaded by `uart_load.py`:
   handler after the three round trips. So the encoder, the RAM sink and the Trace Control Interface work in the FPGA build.
   Without `FPGA_DUMP` the image is byte for byte the one of `chipsim`.
 
+* `zephyr/periph`, built with `make APP=periph BUILD=build-fpga-periph FPGA_TIMING=1`, to `PERIPH OK`. The demo is written for chipsim's testbench,
+  which plays the pads, and `FPGA_TIMING` only widens the two interrupt waits (100 ms to 30 s) so that a person can make the edges with SW4
+  (GPIO4). The UART's polled receiver echoed `abc` as `ABC` (`uart_load.py --send`); GPIO5 followed GPIO4 (SW4 up before the reset: LD5 on);
+  the SPI transfer completed and returned zeros, because the board has no flash (chipsim's flash answers `WALY`: that content was not
+  checked); the edge interrupts through the PLIC gave `gpio edges 010` (SW4 down, up, down), and the level interrupt fired once
+  (`gpio level 1 once`) when SW4 went up. The PWM's registers were programmed (`pwm set`; the output enables are GPIO0, 1, 2 and 5);
+  with a period of 10 us only the mean brightness shows, and LD1 (25 % high, as the demo's note explains) and LD2 (75 %) looked alike, so the duty
+  cycles were not checked on the board (the `timer` image's slow PWM was: see above). With SW4 up at the reset the bootloader's divisor is
+  16, 72,021 baud: start the loader with `--boot-baud 72021` (the first line of the program's console is then garbled when the loader changes speed).
+
 To run one of these, reset the chip only after `uart_load.py` is waiting, and close the previous run first: a loader that is still
 running keeps the port and takes the bootloader's `W`.
 
 ## Not checked yet
 
-* `zephyr/mcu` with an I2C device on the pads (see above), `zephyr/periph` (it needs a host that plays the pads), FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
+* `zephyr/mcu` with an I2C device on the pads (see above), the contents of an SPI flash read by `zephyr/periph`, FreeRTOS, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
 * No JTAG (Debug Module, instruction trace): the pads to a Pmod are the next step.
