@@ -15,6 +15,8 @@ CROSS       ?= $(if $(RISCV),$(RISCV)/bin/)riscv64-unknown-elf-
 OVERLAY     ?=
 # FPGA_TIMING=1: the timer demo with the timings of a person at the board (timer/main.c)
 FPGA_TIMING ?=
+# FPGA_DUMP=1: the trace demo prints the sink's buffer on the UART, for the chip on the FPGA, which has no JTAG (trace/main.c)
+FPGA_DUMP ?=
 
 export ZEPHYR_BASE
 export ZEPHYR_TOOLCHAIN_VARIANT := cross-compile
@@ -27,7 +29,7 @@ all: $(BUILD)/zephyr/zephyr.bin
 $(BUILD)/zephyr/zephyr.bin: FORCE
 	PATH=$(ZEPHYR_VENV)/bin:$$PATH cmake -GNinja -S $(APP) -B $(BUILD) -DBOARD=wally_chip \
 	  -DZEPHYR_MODULES=$(abspath module) -DPython3_EXECUTABLE=$(ZEPHYR_VENV)/bin/python3 \
-	  $(if $(OVERLAY),-DEXTRA_DTC_OVERLAY_FILE=$(abspath $(OVERLAY))) $(if $(FPGA_TIMING),-DFPGA_TIMING=ON) >$(BUILD).log 2>&1 || { cat $(BUILD).log; exit 1; }
+	  $(if $(OVERLAY),-DEXTRA_DTC_OVERLAY_FILE=$(abspath $(OVERLAY))) $(if $(FPGA_TIMING),-DFPGA_TIMING=ON) $(if $(FPGA_DUMP),-DFPGA_DUMP=ON) >$(BUILD).log 2>&1 || { cat $(BUILD).log; exit 1; }
 	PATH=$(ZEPHYR_VENV)/bin:$$PATH ninja -C $(BUILD)
 	test $$(stat -c %s $@) -le 57344
 

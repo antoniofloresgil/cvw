@@ -5,7 +5,11 @@
  * higher-priority thread is woken by a semaphore three times (three context switches) and the main thread sleeps
  * for a millisecond (the machine timer's interrupt).  The sink's buffer is the last 8 KiB of the RAM, outside
  * Zephyr's 56 KiB, and the test reads it back over JTAG System Bus Access and decodes it against this ELF
- * (testbench/debug/etrace/etracedecode.py). */
+ * (testbench/debug/etrace/etracedecode.py).
+ *
+ * FPGA_DUMP (make APP=trace FPGA_DUMP=1, docs/fpga-chip.md): the chip on the Nexys Video has no JTAG, so after "trace ready"
+ * the hart reads the buffer itself through trRamData and prints it, one word per line ("T 0123abcd"), for
+ * asic/librelane/chip/trace_decode.py. */
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/sys_io.h>
@@ -72,6 +76,15 @@ int main(void)
     printk("trace %s\n", (rc == 0 && !(te & TE_OVERFLOW) && wp != 0 && wp <= 0x2000) ? "ok" : "FAIL");
     printk("trace bytes %u\n", wp & ~1U);
     printk("trace ready\n");
+#ifdef FPGA_DUMP
+    if (rc == 0) {
+        sys_write32(0, TRACE_RAM + 0x28);      /* trRamRPLow */
+        for (uint32_t i = 0; i < wp / 4; i++) {
+            printk("T %08x\n", sys_read32(TRACE_RAM + 0x40));   /* each read of trRamData moves the read pointer on */
+        }
+        printk("trace dumped\n");
+    }
+#endif
     k_sleep(K_FOREVER);                        /* the idle thread executes wfi while the test reads the buffer */
     return 0;
 }
