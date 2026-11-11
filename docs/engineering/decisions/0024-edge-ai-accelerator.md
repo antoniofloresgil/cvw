@@ -116,6 +116,25 @@ Data to collect before the decision:
 4. What the project gives up by moving: the Wally core (this repository's reason to exist), the chip's boot and debug work,
    the test board.
 
+## ISA extensions for this (state on 2026-11-11, from web searches; the specifications themselves were not read)
+
+None of the extensions that would implement this in instructions is ratified. Their status moves quickly: check the RISC-V Tech Hub
+before relying on this table.
+
+| Extension | What it does | State found |
+| --- | --- | --- |
+| RVV 1.0 (`Zve32x`) | Standard vectors, with widening integer multiply-accumulate (int8 to int16) | Ratified; what the Coral NPU's vector variant uses |
+| `Zvdot4a8i` (formerly `Zvqdotq`) | Vector dot product: four int8 pairs accumulated into an int32 per element (`vqdot`, `vqdotu`, `vqdotsu`) | Draft; a January 2026 emulator patch set still calls it experimental; listed as RVS-1971 on the [Tech Hub](https://lf-riscv.atlassian.net/wiki/display/TECH/RISC-V+Vote+Status), ratification not confirmed |
+| P (packed SIMD in the integer registers) | Operations on four bytes or two halves of a 32-bit register | [v0.6](https://github.com/riscv/riscv-p-spec/releases/tag/v0.6) development milestone approved 2026-09-28; in stabilization, changes still expected |
+| IME, VME, AME (matrix) | Matrix multiply on the vector registers (IME, VME) or on a register bank of its own (AME) | Not ratified: plans for [VME](https://riscv.atlassian.net/wiki/spaces/VMEX/pages/663617995/Ratification+Plan) (TSC 2026-11-04, Board 2026-11-18), [IME](https://riscv.atlassian.net/wiki/spaces/IMEX/pages/598867969/IME+Ratification+Plan) (target 2026-08-27, apparently slipped) and [AME](https://riscv.atlassian.net/wiki/spaces/AMEX/pages/55083420/AME+Ratification+Plan) (2027). The Coral NPU's `Zvt` is the VME draft |
+| Vendor: Xpulp / CORE-V `XCVsimd`, SiFive `Xsfvqdotq`, T-Head, Andes | SIMD int8 and dot products | Not standard; their current state was not checked |
+
+What it means here: a lane of the unit computes four int8 products accumulated into an int32, which is what `Zvdot4a8i`
+specifies, so the unit's semantics would carry over to the standard instruction if it is ratified. An instruction extension is
+option C, and the only fitting one for a 32-bit core without vectors, P, is still moving and would touch the decoder, the ALU and the
+hazards of Wally; the vector extensions do not fit (the Coral NPU's vector variant needs 282 % of the Artix-7 of the Nexys Video).
+The unit with its bus master (B) is the accelerator: it removes the data movement that an instruction cannot.
+
 ## The bus master of B
 
 The chip's bus is one AHB-Lite bus: `ebu.sv` arbitrates the core's instruction fetch and load/store onto it, and `uncore.sv`
