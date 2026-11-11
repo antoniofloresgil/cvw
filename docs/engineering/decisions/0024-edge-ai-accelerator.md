@@ -81,6 +81,39 @@ Peak throughput of `LANES` MACs per clock is 147 MMAC/s for 8 lanes at the FPGA'
 ceiling, since the transfers through the APB set what is reached. That number is the one the prototype
 measures.
 
+## Open question: bring pieces here, or move to Google's repository (stated 2026-11-11)
+
+Two ways to use the Coral NPU, to be decided with data, not now:
+
+- **Here.** Keep this chip and Wally, and take what is useful from the Coral NPU repository (the unit's design, its
+  compiler and simulator, its tests), as options A/F above.
+- **There.** Take the Coral NPU repository as the base of the design and add an open ASIC flow for IHP SG13G2 to it
+  (RTL generation from Chisel with Bazel, LibreLane, memory macros, a boot and debug story).
+
+What is known so far, and from where:
+
+| Fact | Source |
+| --- | --- |
+| The repository already has an open physical flow: OpenROAD (ORFS in a container) on **ASAP7**, a predictive 7 nm PDK, for `RvvCoreMiniAxi` at about 200 MHz (work in progress): about 1.43 million standard cells, a die of 441.5 um x 441.5 um, 38 % placement density, with fake RAMs. | `synthesis/BUILDING_CORALNPU_WITH_OPENROAD.md` of the repository |
+| Our chip in IHP SG13G2 (130 nm): 90,429 cells, 1.21 mm2 of core, 40 ns, a die that cannot grow. | [experiment record](../experiments/2026-11-02-open-asic-flow.md) |
+| The scalar `CoreMini` alone, on the Nexys Video's Artix-7 200T (Vivado 2024.2, out of context, 50 MHz target): 48,771 LUTs, 11,795 registers, 10 RAMB36, 6 DSPs, a 27.8 ns critical path with a latch-based clock gate. | measured 2026-11-11, `/datos/tmp/coral-synth` (the variants with the vector and matrix units follow) |
+
+A first reading, to be confirmed: 1.43 million cells against our 90,429 is sixteen times more, and a 130 nm cell is much larger than
+a 7 nm one, so the vector variant would not fit the die of this chip, and the scalar one is a large part of it. The Coral NPU in
+IHP SG13G2 would be a different, bigger chip (a larger shuttle slot, a different package), not this microcontroller with an
+accelerator. That would make "move there" a change of project, and "bring pieces here" the reading of the idea at the scale of
+this chip (a small int8 unit, option A) with the Coral NPU as the reference.
+
+Data to collect before the decision:
+
+1. The resource use and clock of the three variants (`CoreMini`, `RvvCoreMini`, `VmeCoreMini`) on the Artix-7, and Wally's chip
+   with the same Vivado script, so that the comparison uses one tool.
+2. One Coral NPU example running in its simulator, and a small model through its compiler (IREE) to see what the toolchain gives.
+3. What an open flow for IHP SG13G2 needs from Google's repository: the SRAM macros behind its `Sram` module, the
+   clock-gate cells, the generated Verilog (Bazel and Chisel stay outside the flow), and a first area estimate with Yosys.
+4. What the project gives up by moving: the Wally core (this repository's reason to exist), the chip's boot and debug work,
+   the test board.
+
 ## What it does not decide
 
 - **Silicon.** No ASIC change until the prototype shows a gain that compensates one more run of the
