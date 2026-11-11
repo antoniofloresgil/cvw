@@ -3,7 +3,7 @@
 # (build-opensource.sh nexysvideochip) on the same sources, clock and pins.  Run through `make nexysvideochip-vivado`, which first
 # prepares ../src/CopiedFiles_do_not_add_to_repo; everything it writes goes to vivado-nexysvideochip/, nothing of the open flow's output.
 set part xc7a200tsbg484-1
-set out vivado-nexysvideochip
+set out [expr {[info exists ::env(VIVADO_OUT)] ? $::env(VIVADO_OUT) : "vivado-nexysvideochip"}]
 set src ../src/CopiedFiles_do_not_add_to_repo
 file mkdir $out
 

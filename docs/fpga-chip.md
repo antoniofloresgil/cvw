@@ -43,6 +43,10 @@ flow, default strategies, no timing push) into `vivado-nexysvideochip/`, to comp
 | RAMB36 / RAMB18 | 16 / 2 | 16 / 2 |
 | Timing at 18.44 MHz | Fmax 19.88 MHz (router's model) | WNS +14.4 ns (Fmax about 25 MHz); worst path is the reset to the register file |
 
+The AI unit alone in Vivado (`report_utilization -hierarchical` on the routed design): 1,161 LUTs, 561 flip-flops, 1 RAMB18 (the x memory) and 4 DSP48. The
+slowest path that ends in it (`XMem` to `Acc`, 21 logic levels) takes 19.0 ns against the 54.2 ns period, a slack of 35.1 ns. The open flow's difference
+with and without the unit was +1,842 LUTs, +535 flip-flops and +7 DSP48. `VIVADO_OUT=<dir>` changes the output directory of `chip-vivado.tcl`.
+
 Neither bitstream has been run on the board.
 
 ## Run
