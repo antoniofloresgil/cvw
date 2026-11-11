@@ -205,6 +205,19 @@ async def freertos(dut):
         b"prot store data 0", b"prot store code 7", b"prot exec heap 1", b"prot exec stack 1", b"FREERTOS OK"], f"the demo printed {lines!r}"
 
 
+@cocotb.test()
+async def ai_baseline(dut):
+    """The software reference of the AI unit (../ai/baseline): int8 dot products and a 64 x 64 layer on the RV32IMAC core, as plain C.
+    The four kernels must agree; the cycles per MAC it prints are the numbers the unit has to beat (they also go to the log)."""
+    program = (HERE.parent / "ai/baseline/build/baseline.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    lines = await read_lines(dut, b"AI BASELINE", timeout=4000000)
+    for line in lines:
+        dut._log.info(line.decode())
+    assert lines[1] == b"kernels agree: yes", f"{lines!r}"
+    assert lines[-1] == b"AI BASELINE OK", f"{lines!r}"
+
+
 async def read_lines(dut, last, timeout=400000):
     """The lines the program prints on the UART, up to the first one that starts with last."""
     lines, line = [], b""
@@ -805,6 +818,7 @@ def main():
     subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32imc_zicsr", "-mabi=ilp32", "-nostdlib",
                     "-Wl,-Ttext=0x80000000", "-o", build / "pmp.elf", HERE / "pmp.S"], check=True)
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "pmp.elf", build / "pmp.bin"], check=True)
+    subprocess.run(["make", "-C", HERE.parent / "ai/baseline"], check=True)
     subprocess.run(["make", "-C", HERE.parent / "freertos"], check=True)     # needs addins/FreeRTOS-Kernel
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "mcu.elf", build / "mcu.bin"], check=True)
 
