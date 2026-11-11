@@ -54,7 +54,7 @@ reports how many; a partition that does not fit makes only its thread fault, nev
 
 ## Peripheral drivers
 
-Six demo images, each with a `chipsim` test that plays the other side on the pads (`make chipsim` builds them with
+Seven demo images (the last one only on the chip with the AI unit), each with a `chipsim` test that plays the other side on the pads (`make chipsim` builds them with
 `sim.overlay`):
 
 | App | Driver | What the test checks |
@@ -65,6 +65,7 @@ Six demo images, each with a `chipsim` test that plays the other side on the pad
 | `mcu` | I2C (`wally,i2c`, interrupt-driven), watchdog (`wally,wdt`), the two drivers of `module/drivers/` | a write and a read with an I2C device at 0x50, a NACK from 0x51, and the chip reset the watchdog causes |
 | `trace` | the instruction trace (E-Trace, `docs/trace.md`) switched on by the kernel itself | the packets in the RAM sink decoded against Zephyr's ELF: the workload, the semaphore calls, six context switches and the timer's interrupt handler |
 | `timer` | the MCU timer as a Counter with capture (`wally,timer`) and as a PWM (`wally,timer-pwm`), the RTC (`wally,rtc`) | the top value, four kinds of alarm, edges captured from GPIO2 (rising, then both), the duty cycles on GPIO0 and GPIO1, the RTC's time and an alarm that wakes the idle thread |
+| `ai` | the int8 matrix-vector unit of `asic_soc_rv32imac_ai` (`wally,ai`, `module/drivers/ai_wally.c`, `wally_ai_run()` in `module/include/wally_ai.h`; polled; the node is disabled until `ai.overlay` enables it) | a 64 x 64 layer on the unit and in C with the same bytes, a second layer without bias or ReLU, and a job the unit refuses (`-EINVAL`); `make chipsim-ai` (uses `ai-sim.overlay`) |
 
 The FE310-compatible blocks (SPI, PWM, the IOF pin muxing) use Zephyr's own SiFive drivers: the SoC only provides
 `SIFIVE_PERIPHERAL_CLOCK_FREQUENCY` (`soc.h`), the pin state type (`pinctrl_soc.h`) and the devicetree nodes. The I2C

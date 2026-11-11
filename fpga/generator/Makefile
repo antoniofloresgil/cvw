@@ -90,6 +90,8 @@ endif
 
 # The chip asic_soc_rv32imac on the Nexys Video, open-source flow only (fpga/src/fpgaChip.sv): 64 KiB of block RAM,
 # no DDR3, 18.4375 MHz from the PLL, the chip's bootloader in the boot ROM.  Zephyr and FreeRTOS run on it as on the chip.
+# CHIPCONFIG=asic_soc_rv32imac_ai builds the chip with the AI unit (src/uncore/ai); the output directory is the same.
+CHIPCONFIG ?= asic_soc_rv32imac
 nexysvideochip: PreProcessChip
 	./build-opensource.sh "nexysvideochip"
 
@@ -244,7 +246,7 @@ PreProcessChip:
 	rm -rf ../src/CopiedFiles_do_not_add_to_repo
 	cp -r ../../src/ ../src/CopiedFiles_do_not_add_to_repo/
 	mkdir -p ../src/CopiedFiles_do_not_add_to_repo/config
-	cp ../../config/deriv/asic_soc_rv32imac/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
+	cp ../../config/deriv/$(CHIPCONFIG)/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
 	cp ../../config/shared/*.vh ../src/CopiedFiles_do_not_add_to_repo/config/
 	cp ../../fpga/src/fpgaChip.sv ../../fpga/src/fpgaChipClk.v ../src/CopiedFiles_do_not_add_to_repo/
 	sed -i "s/bit \[DATA_WIDTH-1:0\].*ROM.*/(\* rom_style=\"block\" \*) &/g" ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv

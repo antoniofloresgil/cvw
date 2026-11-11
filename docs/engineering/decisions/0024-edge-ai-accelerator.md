@@ -215,6 +215,6 @@ The first operation is a matrix-vector product, the core of a fully connected la
 | 0. Software baseline: an int8 dot product and a small fully-connected layer, cycles per MAC | A table in an experiment record |
 | 0b. Coral NPU on the Nexys Video: build, resources, clock, one of its examples | A record with its resource use and what a coprocessor next to Wally would cost |
 | 1. RTL of the unit, lint and cocotb differential test | Passes on random data; `lint-wally` clean. **Done 2026-11-11 in simulation**: [record](../experiments/2026-11-11-ai-unit-rtl.md), 64 x 64 layer in 1488 cycles against 126 513 in software |
-| 2. Zephyr driver and the FPGA build | The same test on the board; cycles per MAC against step 0 |
+| 2. Zephyr driver and the FPGA build | The same test on the board; cycles per MAC against step 0. **Zephyr driver and FPGA build done 2026-11-11, board test pending**: `chipsim-ai` passes (64 x 64 layer: unit 1496 cycles, whole driver call 2353, software under Zephyr 223 024); the free flow closes `asic_soc_rv32imac_ai` at 18.44 MHz (Fmax 19.88), 22 057 LUTs, 11 DSP48, 16 RAMB36 + 2 RAMB18 |
 | 3. A keyword-spotting model on it | Accuracy equal to the reference, cycles and RAM used |
 | 4. Decision on B, an interrupt, and the ASIC | Written in this ADR or a successor |

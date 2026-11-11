@@ -28,6 +28,10 @@ touch the ZSBL's `fpga/src/boot.mem`. Last result (nextpnr-xilinx): 20,215 LUTs 
 final timing report says 19.01 MHz for a clock of 18.44 MHz, a margin of 3 %, from the router's own model (the Linux build
 of the open flow is used in the same way).
 
+`make nexysvideochip CHIPCONFIG=asic_soc_rv32imac_ai` builds the chip with the AI unit (`src/uncore/ai`, registers at 0x10084000) into the same
+directory, so it overwrites the plain bitstream (build the plain one again to go back). Result of 2026-11-11: 22,057 LUTs (+1,842 over the
+plain chip), 7,556 flip-flops (+535), 11 DSP48 (+7), 16 RAMB36 and 2 RAMB18 (+1); timing 19.88 MHz for 18.44 MHz. Not run on the board yet.
+
 ## Run
 
 ```bash

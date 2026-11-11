@@ -1,0 +1,4 @@
+/* the chip with the AI unit (asic_soc_rv32imac_ai): enable its driver */
+&ai0 {
+        status = "okay";
+};

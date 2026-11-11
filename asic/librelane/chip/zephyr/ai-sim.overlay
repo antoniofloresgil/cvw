@@ -1,0 +1,8 @@
+/* chipsim of the chip with the AI unit: its driver, and the testbench's UART (one bit every 16 clocks, divisor 1) as in sim.overlay */
+&ai0 {
+        status = "okay";
+};
+
+&uart0 {
+        current-speed = <1152000>;
+};

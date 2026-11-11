@@ -233,6 +233,23 @@ async def ai_gemv(dut):
     assert lines[-1] == b"AI GEMV OK", f"{lines!r}"
 
 
+@cocotb.test(skip=not AI_CHIP)
+async def ai_zephyr(dut):
+    """The AI unit under Zephyr (../zephyr/ai, module/drivers/ai_wally.c): a 64 x 64 layer on the unit and in C, the same bytes, a second layer
+    with another multiplier, ReLU off and no bias, and a job the unit refuses (-EINVAL)."""
+    image = HERE.parent / "zephyr/build-ai-sim/zephyr/zephyr.bin"    # make chipsim-ai builds it
+    assert image.exists(), f"{image} is missing: make -C {image.parents[3]} APP=ai BUILD=build-ai-sim OVERLAY=ai-sim.overlay"
+    await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
+    lines = await read_lines(dut, b"AI ", timeout=2000000)
+    while lines[-1] not in (b"AI ZEPHYR OK",) and not lines[-1].startswith(b"AI FAIL"):
+        lines += await read_lines(dut, b"AI ", timeout=2000000)
+    for line in lines:
+        dut._log.info(line.decode())
+    assert lines[0] == b"ai start", f"{lines!r}"
+    assert lines[1].startswith(b"layer 64x64 ok: unit "), f"{lines!r}"
+    assert lines[2:] == [b"signed layer without bias ok", b"bad arguments -22", b"AI ZEPHYR OK"], f"{lines!r}"
+
+
 async def read_lines(dut, last, timeout=400000):
     """The lines the program prints on the UART, up to the first one that starts with last."""
     lines, line = [], b""

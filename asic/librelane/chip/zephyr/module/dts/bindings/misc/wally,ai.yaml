@@ -1,0 +1,9 @@
+description: CORE-V-Wally int8 matrix-vector unit (src/uncore/ai/ai_unit.sv, chip asic_soc_rv32imac_ai)
+
+compatible: "wally,ai"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true

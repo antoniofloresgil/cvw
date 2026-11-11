@@ -46,3 +46,10 @@ config GPIO_WALLY
     depends on GPIO && DT_HAS_WALLY_GPIO_ENABLED
     help
       The FE310-style GPIO of the chip with edge and level interrupts on every pin through its single PLIC line.
+
+config AI_WALLY
+    bool "Wally int8 matrix-vector unit (src/uncore/ai/ai_unit.sv)"
+    default y
+    depends on DT_HAS_WALLY_AI_ENABLED
+    help
+      Polled driver of the AI unit of the chip asic_soc_rv32imac_ai (wally_ai.h): one fully connected layer per call.

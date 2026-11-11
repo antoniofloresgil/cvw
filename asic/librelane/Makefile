@@ -50,7 +50,7 @@ OSS_CAD      ?= $(HOME)/riscv/oss-cad-suite
 NIX := nix develop $(LIBRELANE) --accept-flake-config --command
 LL  := $(NIX) librelane --pdk $(PDK) --pdk-root $(PDK_ROOT) --manual-pdk
 
-.PHONY: all synth check sramsim chipsim boardsim pdk inputs clean
+.PHONY: all synth check sramsim chipsim chipsim-ai boardsim pdk inputs clean
 all: inputs $(IHP_PDK)
 	cd $(WORK) && $(LL) config.json
 	if grep -q '"MACROS"' $(WORK)/config.json; then $(MAKE) check; fi
@@ -70,6 +70,13 @@ chipsim: $(IHP_PDK)
 	$(MAKE) -C chip/zephyr APP=timer BUILD=build-timer-sim OVERLAY=sim.overlay
 	$(MAKE) -C chip/zephyr APP=trace BUILD=build-trace-sim OVERLAY=sim.overlay
 	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imac$(SUFFIX) \
+	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_chip.py
+
+# the chip with the AI unit (asic_soc_rv32imac_ai): the bare-metal test, the baseline and the Zephyr driver's demo
+chipsim-ai: $(IHP_PDK)
+	$(MAKE) inputs CONFIG=asic_soc_rv32imac_ai
+	$(MAKE) -C chip/zephyr APP=ai BUILD=build-ai-sim OVERLAY=ai-sim.overlay
+	cd chip/test && IHP_PDK=$(IHP_PDK) WORK=$(CURDIR)/work/asic_soc_rv32imac_ai$(SUFFIX) COCOTB_TEST_FILTER="ai_" \
 	  PATH=$(OSS_CAD)/bin:$$PATH tabbypy3 test_chip.py
 
 boardsim: $(IHP_PDK)

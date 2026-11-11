@@ -162,6 +162,13 @@
                         status = "disabled";
                 };
 
+                /* the int8 matrix-vector unit, only in the chip asic_soc_rv32imac_ai (block 4 of the MCU window): ai.overlay enables it */
+                ai0: ai@10084000 {
+                        compatible = "wally,ai";
+                        reg = <0x10084000 0x1000>;
+                        status = "disabled";
+                };
+
                 /* real-time counter of seconds since 1970 with one alarm, PLIC source 18 */
                 rtc0: rtc@10083000 {
                         compatible = "wally,rtc";
