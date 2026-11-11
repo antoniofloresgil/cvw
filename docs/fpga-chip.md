@@ -24,17 +24,17 @@ make nexysvideochip                 # about 5 minutes: opensource-nexysvideochip
 ```
 
 `make nexysvideochip` builds the chip's bootloader (`asic/librelane/chip/boot.mem`) and preloads it in the BOOTROM, so it does not
-touch the ZSBL's `fpga/src/boot.mem`. Last result (nextpnr-xilinx): 20,215 LUTs (7 %), 7,021 flip-flops, 16 RAMB36 and one RAMB18, 4 DSP48; the
+touch the ZSBL's `fpga/src/boot.mem`. First result (nextpnr-xilinx): 20,215 LUTs (7 %), 7,021 flip-flops, 16 RAMB36 and one RAMB18, 4 DSP48; the
 final timing report says 19.01 MHz for a clock of 18.44 MHz, a margin of 3 %, from the router's own model (the Linux build
 of the open flow is used in the same way). That was before the instruction trace's line got a register (`etraceingress.sv`): the longest path,
 from the load/store address (and the PMP checks) through `StallW` and the trace encoder to the sink's queue, was then cut in two, and
-the same chip, on the same seed, went from 20.86 to 28.90 MHz (one run each, 2026-11-12).
+the same chip, on the same seed, went from 20.86 (a later run of the sources of the 19.01 above) to 28.90 MHz (one run each, 2026-11-12).
 
 `make nexysvideochip-vivado` builds the same sources, clock and pins with Vivado 2024.2 (`chip-vivado.tcl`, non-project flow, default strategies)
 into `vivado-nexysvideochip/` (`VIVADO_OUT=<dir>` changes it), in about 2 minutes. Before and after the trace register: 11,325 and 11,316 LUTs,
 7,020 and 7,094 flip-flops; the slowest full-cycle path went from 35.3 ns (load/store address to the trace sink's queue, 28 levels) to
 33.1 ns (load/store address to the RAM's address, 25 levels), against a period of 54.2 ns. Paths that end in falling-edge registers
-(the register file, the SPI) get half a period, and the reset (3,000 destinations) is their worst path. Neither bitstream has been run on the board.
+(the register file, the SPI) get half a period, and the reset (3,000 destinations) is their worst path. The Vivado bitstreams have not been run on the board.
 
 `make nexysvideochip CHIPCONFIG=asic_soc_rv32imac_ai` builds the chip with the AI unit (`src/uncore/ai`, registers at 0x10084000) into the same
 directory, so it overwrites the plain bitstream (build the plain one again to go back). Result of 2026-11-11: 22,057 LUTs (+1,842 over the
@@ -149,5 +149,5 @@ running keeps the port and takes the bootloader's `W`.
 
 ## Not checked yet
 
-* `zephyr/mcu` with an I2C device on the pads (see above), the contents of an SPI flash read by `zephyr/periph`, and the timing margin over many runs (the router reports 19.01 MHz for an 18.44 MHz clock).
+* `zephyr/mcu` with an I2C device on the pads (see above), the contents of an SPI flash read by `zephyr/periph`, and the timing margin over many runs (the router reported 19.01 and 20.86 MHz before the trace register and 28.90 MHz after it, one run each, for an 18.44 MHz clock).
 * No JTAG (Debug Module, instruction trace): the pads to a Pmod are the next step.
