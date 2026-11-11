@@ -183,6 +183,11 @@ MCU_SUPPORTED           1
 PLIC_NUM_SRC            32'd18
 PLIC_MCU_ID             32'd15
 
+# The same chip with the AI unit (src/uncore/ai, docs/engineering/decisions/0024-edge-ai-accelerator.md): an int8 matrix-vector unit
+# with its own bus master.  The chip itself stays without it until the unit has been measured.
+deriv asic_soc_rv32imac_ai asic_soc_rv32imac
+AI_SUPPORTED            1
+
 # The syn_sram configurations use SRAM macros
 deriv   syn_sram_rv32e   rv32e
 DTIM_RANGE          64'h1FF

@@ -218,6 +218,21 @@ async def ai_baseline(dut):
     assert lines[-1] == b"AI BASELINE OK", f"{lines!r}"
 
 
+AI_CHIP = "_ai" in os.environ.get("WORK", "")      # the chip with the AI unit: make inputs CONFIG=asic_soc_rv32imac_ai, WORK=work/asic_soc_rv32imac_ai
+
+
+@cocotb.test(skip=not AI_CHIP)
+async def ai_gemv(dut):
+    """The AI unit (src/uncore/ai) on the chip asic_soc_rv32imac_ai: ../ai/gemv runs matrix-vector products of several shapes against a C
+    reference bit by bit, refuses bad arguments, and prints the unit's cycles and the core's."""
+    program = (HERE.parent / "ai/gemv/build/gemv.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    lines = await read_lines(dut, b"AI GEMV", timeout=2000000)
+    for line in lines:
+        dut._log.info(line.decode())
+    assert lines[-1] == b"AI GEMV OK", f"{lines!r}"
+
+
 async def read_lines(dut, last, timeout=400000):
     """The lines the program prints on the UART, up to the first one that starts with last."""
     lines, line = [], b""
@@ -819,6 +834,7 @@ def main():
                     "-Wl,-Ttext=0x80000000", "-o", build / "pmp.elf", HERE / "pmp.S"], check=True)
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "pmp.elf", build / "pmp.bin"], check=True)
     subprocess.run(["make", "-C", HERE.parent / "ai/baseline"], check=True)
+    subprocess.run(["make", "-C", HERE.parent / "ai/gemv"], check=True)
     subprocess.run(["make", "-C", HERE.parent / "freertos"], check=True)     # needs addins/FreeRTOS-Kernel
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "mcu.elf", build / "mcu.bin"], check=True)
 

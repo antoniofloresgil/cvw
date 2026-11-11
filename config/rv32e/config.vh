@@ -192,6 +192,7 @@ localparam logic [63:0] PWM_RANGE        = 64'h000000FF;
 localparam logic MCU_SUPPORTED = 0;
 localparam logic [63:0] MCU_BASE         = 64'h10080000;
 localparam logic [63:0] MCU_RANGE        = 64'h0000FFFF;
+localparam logic AI_SUPPORTED = 0;
 
 // Bus Interface width
 localparam AHBW = (XLEN);

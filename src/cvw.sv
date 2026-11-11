@@ -208,6 +208,7 @@ typedef struct packed {
   logic         MCU_SUPPORTED;      // timer, watchdog, I2C and RTC of the open-ASIC chip (src/uncore/mcu)
   logic [63:0]  MCU_BASE;
   logic [63:0]  MCU_RANGE;
+  logic         AI_SUPPORTED;       // int8 matrix-vector unit with its own bus master (src/uncore/ai), registers at MCU block 4
 
   // Test modes
 

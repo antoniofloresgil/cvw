@@ -31,7 +31,7 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   input  logic [P.AHBW-1:0]    HRDATAEXT,
   input  logic                 HREADYEXT, HRESPEXT,
   output logic [P.AHBW-1:0]    HRDATA,
-  output logic                 HREADY, HRESP,
+  output logic                 HREADY, HRESP,        // HREADY: the core's view (low while the AI unit has the bus)
   output logic                 HSELEXT,
   // peripheral pins
   output logic [NCORES-1:0]    MTimerInt, MSwInt,         // Timer and software interrupts from CLINT
@@ -92,17 +92,60 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   /* SDC Interrupt (SPI Controller) */
   logic                        SDCIntr;
 
+  // The bus the uncore decodes: the core's (HADDR ...), or, with AI_SUPPORTED, the AI unit's master (src/uncore/ai).  The unit takes the bus
+  // only when no transfer of the core is in its data phase (CoreDV), so no response is lost at the change.  While it has the bus the core
+  // sees HREADY low, and the core's bus FSM (ebu/busfsm.sv) issues an address only in a clock with HREADY high, so none is in flight.
+  // The unit's transfers are single 32-bit accesses to the RAM, back to back.
+  logic [P.PA_BITS-1:0]        HADDRM;
+  logic [P.AHBW-1:0]           HWDATAM;
+  logic [P.XLEN/8-1:0]         HWSTRBM;
+  logic                        HWRITEM, HREADYM;
+  logic [2:0]                  HSIZEM;
+  logic [1:0]                  HTRANSM;
+  logic [P.XLEN-1:0]           MCURead;
+  if (P.AI_SUPPORTED) begin : ai
+    if (P.XLEN != 32 || !P.MCU_SUPPORTED || !P.UNCORE_RAM_SUPPORTED || P.AHBW != 32)
+      $error("AI_SUPPORTED needs XLEN and AHBW 32, MCU_SUPPORTED and UNCORE_RAM_SUPPORTED");
+    logic                      Req, Write, AUnit, UnitDV, CoreDV, Sel;
+    logic [P.PA_BITS-1:0]      Addr;
+    logic [31:0]               WData, Read;
+    logic [3:0]                WStrb;
+    assign AUnit = Req & ~CoreDV;
+    always_ff @(posedge HCLK)
+      if (~HRESETn) {UnitDV, CoreDV} <= 2'b00;
+      else if (HREADYM) begin
+        UnitDV <= AUnit;
+        CoreDV <= ~AUnit & HTRANS[1];
+      end
+    assign HADDRM  = AUnit ? Addr : HADDR;
+    assign HTRANSM = AUnit ? 2'b10 : HTRANS;
+    assign HWRITEM = AUnit ? Write : HWRITE;
+    assign HSIZEM  = AUnit ? 3'b010 : HSIZE;
+    assign HWDATAM = UnitDV ? WData : HWDATA;
+    assign HWSTRBM = UnitDV ? WStrb : HWSTRB;
+    assign HREADY  = HREADYM & ~AUnit;      // the core's bus FSM (ebu/busfsm.sv) issues an address only while HREADY is high
+    assign Sel     = PSEL[7] & (PADDR[15:12] == 4'd4);
+    ai_unit #(P) unit(.HCLK, .HRESETn, .PSEL(Sel), .PWRITE, .PENABLE, .PADDR(PADDR[7:0]), .PWDATA(PWDATA[31:0]), .PRDATA(Read),
+      .Req, .Write, .Addr, .WData, .WStrb, .Accept(AUnit & HREADYM), .DataDone(UnitDV & HREADYM), .BusErr(UnitDV & HRESP), .RData(HRDATA[31:0]));
+    assign PRDATA[7] = MCURead | Read;
+  end else begin : noai
+    assign HADDRM = HADDR;   assign HTRANSM = HTRANS; assign HWRITEM = HWRITE; assign HSIZEM = HSIZE;
+    assign HWDATAM = HWDATA; assign HWSTRBM = HWSTRB;
+    assign HREADY = HREADYM;
+    assign PRDATA[7] = MCURead;
+  end
+
   // Determine which region of physical memory (if any) is being accessed
   // Use a trimmed down portion of the PMA checker - only the address decoders
   // Set access types to all 1 as don't cares because the MMU has already done access checking
-  adrdecs #(P) adrdecs(HADDR, 1'b1, 1'b1, 1'b1, HSIZE[1:0], HSELRegions);
+  adrdecs #(P) adrdecs(HADDRM, 1'b1, 1'b1, 1'b1, HSIZEM[1:0], HSELRegions);
 
   // unswizzle HSEL signals
   assign {HSELMCU, HSELPWM, HSELSPI, HSELSDC, HSELPLIC, HSELUART, HSELGPIO, HSELCLINT, HSELRam, HSELBootRom, HSELEXT, HSELIROM, HSELDTIM} = HSELRegions[13:1];
 
   // AHB -> APB bridge
   ahbapbbridge #(P, 8) ahbapbbridge (
-    .HCLK, .HRESETn, .HSEL({HSELMCU, HSELPWM, HSELSDC, HSELSPI, HSELUART, HSELPLIC, HSELCLINT, HSELGPIO}), .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HTRANS, .HREADY,
+    .HCLK, .HRESETn, .HSEL({HSELMCU, HSELPWM, HSELSDC, HSELSPI, HSELUART, HSELPLIC, HSELCLINT, HSELGPIO}), .HADDR(HADDRM), .HWDATA(HWDATAM), .HWSTRB(HWSTRBM), .HWRITE(HWRITEM), .HTRANS(HTRANSM), .HREADY(HREADYM),
     .HRDATA(HREADBRIDGE), .HRESP(HRESPBRIDGE), .HREADYOUT(HREADYBRIDGE),
     .PCLK, .PRESETn, .PSEL, .PWRITE, .PENABLE, .PADDR, .PWDATA, .PSTRB, .PREADY, .PRDATA);
   assign HSELBRIDGE = HSELGPIO | HSELCLINT | HSELPLIC | HSELUART | HSELSPI | HSELSDC | HSELPWM | HSELMCU; // if any of the bridge signals are selected
@@ -110,8 +153,8 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   // on-chip RAM
   if (P.UNCORE_RAM_SUPPORTED) begin : ram
     ram_ahb #(.P(P), .RANGE(P.UNCORE_RAM_RANGE), .PRELOAD(P.UNCORE_RAM_PRELOAD), .TRACE_SHARED(P.TRACE_IN_RAM)) ram (
-      .HCLK, .HRESETn, .HSELRam, .HADDR, .HWRITE, .HREADY,
-      .HTRANS, .HWDATA, .HWSTRB, .HREADRam, .HRESPRam, .HREADYRam,
+      .HCLK, .HRESETn, .HSELRam, .HADDR(HADDRM), .HWRITE(HWRITEM), .HREADY(HREADYM),
+      .HTRANS(HTRANSM), .HWDATA(HWDATAM), .HWSTRB(HWSTRBM), .HREADRam, .HRESPRam, .HREADYRam,
       .TrReq, .TrWe, .TrBwe, .TrAddr, .TrDin, .TrGrant, .TrDout);
   end else begin
     assign {HREADRam, HRESPRam, HREADYRam} = '0;
@@ -120,7 +163,7 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
 
   if (P.BOOTROM_SUPPORTED) begin : bootrom
     rom_ahb #(.P(P), .RANGE(P.BOOTROM_RANGE), .PRELOAD(P.BOOTROM_PRELOAD))
-    bootrom(.HCLK, .HRESETn, .HSELRom(HSELBootRom), .HADDR, .HREADY, .HTRANS,
+    bootrom(.HCLK, .HRESETn, .HSELRom(HSELBootRom), .HADDR(HADDRM), .HREADY(HREADYM), .HTRANS(HTRANSM),
       .HREADRom(HREADBootRom), .HRESPRom(HRESPBootRom), .HREADYRom(HREADYBootRom));
   end else assign {HREADBootRom, HRESPBootRom, HREADYBootRom} = '0;
 
@@ -201,11 +244,11 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   if (P.MCU_SUPPORTED == 1) begin : mcu
     mcu_apb #(P) mcu(
       .PCLK, .PRESETn, .PSEL(PSEL[7]), .PADDR(PADDR[15:0]), .PWDATA, .PWRITE, .PENABLE,
-      .PREADY(PREADY[7]), .PRDATA(PRDATA[7]), .MCUIntr,
+      .PREADY(PREADY[7]), .PRDATA(MCURead), .MCUIntr,
       .TimerCaptureIn(GPIOIN[3:0]), .TimerPWMOut, .TimerPWMEn, .I2CSCLIn(GPIOIN[6]), .I2CSDAIn(GPIOIN[7]),
       .I2CSCLDrive, .I2CSDADrive, .WDTReset);
   end else begin : mcu
-    assign MCUIntr = '0; assign TimerPWMOut = '0; assign TimerPWMEn = '0;
+    assign MCURead = '0; assign MCUIntr = '0; assign TimerPWMOut = '0; assign TimerPWMEn = '0;
     assign I2CSCLDrive = 1'b0; assign I2CSDADrive = 1'b0; assign WDTReset = 1'b0;
   end
 
@@ -220,7 +263,7 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
                  HSELBRIDGED & HRESPBRIDGE |
                  HSELBootRomD & HRESPBootRom;
 
-  assign HREADY = HSELRamD & HREADYRam |
+  assign HREADYM = HSELRamD & HREADYRam |
                   HSELEXTD & HREADYEXT |
                   HSELBRIDGED & HREADYBRIDGE |
                   HSELBootRomD & HREADYBootRom |
@@ -231,8 +274,8 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   // takes more than 1 cycle to respond it needs to hold on to the old select until the
   // device is ready.  Hence this register must be selectively enabled by HREADY.
   // However on reset None must be selected.
-  flopenl #(14) hseldelayreg(HCLK, ~HRESETn, HREADY, HSELRegions, 14'b1,
+  flopenl #(14) hseldelayreg(HCLK, ~HRESETn, HREADYM, HSELRegions, 14'b1,
     {HSELMCUD, HSELPWMD, HSELSPID, HSELSDCD, HSELPLICD, HSELUARTD, HSELGPIOD, HSELCLINTD,
       HSELRamD, HSELBootRomD, HSELEXTD, HSELIROMD, HSELDTIMD, HSELNoneD});
-  flopenr #(1) hselbridgedelayreg(HCLK, ~HRESETn, HREADY, HSELBRIDGE, HSELBRIDGED);
+  flopenr #(1) hselbridgedelayreg(HCLK, ~HRESETn, HREADYM, HSELBRIDGE, HSELBRIDGED);
 endmodule
