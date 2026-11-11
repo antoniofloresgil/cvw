@@ -44,6 +44,7 @@ hardware bring-up.
 | Firmware of the chip (FreeRTOS, Zephyr, the UART/SPI bootloader) and its `chipsim` tests | [FreeRTOS](../../asic/librelane/chip/freertos/README.md), [Zephyr](../../asic/librelane/chip/zephyr/README.md), [ASIC flow README](../../asic/librelane/README.md) |
 | The chip on a Nexys Video with the open FPGA flow | [The chip on the FPGA](../fpga-chip.md) |
 | Test board for that chip (rev A soldered, rev A-S with the QFN 32 test socket) | [ADR 0023](decisions/0023-mcu-test-board.md), [board README](../../hardware/board/README.md) |
+| An edge-AI unit for the chip, prototyped on the FPGA first (what exists, the options, the plan) | [ADR 0024](decisions/0024-edge-ai-accelerator.md) |
 | Contribution process | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 Existing flow documentation and executable sources remain authoritative for
