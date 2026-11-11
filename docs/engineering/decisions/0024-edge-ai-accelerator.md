@@ -57,19 +57,21 @@ Nothing found targets IHP SG13G2. The summaries of the projects above come from 
 | **F** | Attach the Coral NPU as a separate accelerator core: AXI4 to AHB, the CPU loads its TCMs and starts it | A bridge, and an arbiter for its manager port | High, with a toolchain | Size (not measured) and a second core to boot; the AXI side needs a bridge that Wally lacks (it has `ahbwishbonebridge.sv` only) |
 | **E** | Software only: the M extension, `Zbb`, careful kernels | None | The baseline | None; it is what the others are measured against |
 
-## Decision (proposed)
+## Decision (proposed; direction set by the user on 2026-11-11: B)
 
-Start with **A** on the FPGA, measured against **E**, and decide B only from the measurements. In parallel, and without touching
+Build **B**: the unit of A with a **bus master of its own** that reads the activations and the weights from the RAM, for the
+data movement that bounds A, measured against **E** on the FPGA. A's register interface stays as the control path (the CPU
+writes addresses, sizes and a command; the unit fetches by itself). In parallel, and without touching
 the chip, find out what the **Coral NPU** costs on the Nexys Video (build its FPGA target, read its LUT, BRAM and DSP use and its
 clock) and run its examples: that gives the reference for what a full open NPU is, and F becomes a decision with numbers.
 
-1. **A unit `ai` as block 4 of `mcu_apb`**, parameter-gated and off by default, so that the
+1. **A unit `ai` (its control registers as block 4 of `mcu_apb`)**, parameter-gated and off by default, so that the
    address decode and the core stay as they are. First version: `LANES` (4, 8, 16) signed int8
    multipliers into int32 accumulators, two operand windows (activations and weights) that the CPU
    fills a word at a time, a dot-product / GEMV tile command, and the epilogue (bias, a fixed-point
    multiplier and shift, clamp, ReLU). Poll the status; an interrupt only later (the MCU has four
    interrupt lines today, one per block).
-2. **The reference is software on the same chip**: an int8 kernel of the CMSIS-NN kind, cycles per
+2. **The reference is software on the same chip** (it stays the first step: it says what B has to beat): an int8 kernel of the CMSIS-NN kind, cycles per
    MAC measured on the RTL simulation and on the board. Nothing is claimed about speedups before it.
 3. **The check** is a differential test against a Python/numpy model with random data, as TinyGPU-ML does,
    in cocotb; then a Zephyr driver and the same test on the Nexys Video.
@@ -113,6 +115,43 @@ Data to collect before the decision:
    clock-gate cells, the generated Verilog (Bazel and Chisel stay outside the flow), and a first area estimate with Yosys.
 4. What the project gives up by moving: the Wally core (this repository's reason to exist), the chip's boot and debug work,
    the test board.
+
+## The bus master of B
+
+The chip's bus is one AHB-Lite bus: `ebu.sv` arbitrates the core's instruction fetch and load/store onto it, and `uncore.sv`
+decodes the address and drives the RAM and the APB bridge. A second master has two places to go:
+
+| Where | Change | Verdict |
+| --- | --- | --- |
+| In `ebu.sv`, as a third requester | The core's bus unit, shared with the multicore variants | Intrusive: avoid |
+| **In `uncore.sv`, a two-master arbiter before the address decode** | The uncore only, parameter-gated and off by default | **The place for it.** The core stays as it is |
+
+The arbiter is small (a fixed priority, the core first or the unit first, to be chosen by the measurements; AHB-Lite masters
+hold the bus for a burst). The unit's master is a read-only AHB-Lite master with INCR bursts and a word counter; it writes its
+results back through the same master or leaves them in its own scratchpad for the CPU to read (a choice for the first RTL). The
+chip has no data cache, so the unit reads what the core wrote without a coherence problem; the FPGA build of the chip is the same.
+The ceiling is one 32-bit word (four int8) per clock after the address phase of a burst, against several clocks per word through
+the APB bridge when the CPU feeds the unit: that gain is what the prototype has to measure, and it is an estimate until then.
+
+## Licenses (read 2026-11-11 from each repository's `LICENSE` and GitHub's report; file headers and submodules not read)
+
+This repository is `Apache-2.0 WITH SHL-2.1` (the Solderpad Hardware License 2.1 wraps the Apache License 2.0).
+
+| Candidate | License | Code may be reused |
+| --- | --- | --- |
+| Coral NPU, CFU Playground, Tiny Tapeout int8 dot product, SNAX / OpenGeMM (`snax_cluster`) | Apache-2.0 | Yes |
+| X-HEEP | Solderpad 0.51 (optionally Apache-2.0) | Yes; its submodules may differ |
+| CV-X-IF | Solderpad 2.1 | Yes |
+| NEORV32 | BSD-3-Clause | Yes, keeping the notice |
+| near-memory MAC on PicoRV32 | MIT | Yes, keeping the notice |
+| TinyGPU-ML, the 8x8 systolic PicoRV32 SoC, the 1/4/8-PE unit, the PicoRV32 MAC co-processor | none declared | **No**: ideas only, unless the authors add a license |
+
+**What to reuse for B.** For the MAC datapath nothing is a drop-in: CFU Playground's `macc.py` units are Amaranth Python
+written for its instruction interface, the Tiny Tapeout unit is built for one tile's pins, and the Coral NPU and OpenGeMM are
+Chisel generators coupled to their own memory systems. A lane is a few lines of SystemVerilog (an int8 by int8 multiplier and an
+adder tree); the work is in the control (tiling, the epilogue) and in the tests, and it is written here. For the bus master, the
+candidates (X-HEEP's DMA subsystem, `pulp-platform/idma`) speak OBI or AXI, not AHB; Wally's own `ahbinterface.sv` and the
+read side of `ebu.sv` are the clearest base, with this repository's license. Nothing is copied from a project without a license.
 
 ## What it does not decide
 
