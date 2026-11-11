@@ -208,6 +208,32 @@ The first operation is a matrix-vector product, the core of a fully connected la
 - **Gate:** `AI_SUPPORTED` (default 0) in `config.vh`, so no other configuration changes; `bin/actconfig-sync`'s parameter list is not
   involved (it is not an ISA extension).
 
+## Possible improvement: a real kernel library for the step 3 model (looked at 2026-11-12, from web pages only; nothing built)
+
+Step 0's baseline is four hand-written C kernels, not a library. For step 3 (a keyword-spotting model) the reference could be CMSIS-NN, the
+Apache-2.0 int8/int16 kernel library of Arm that TensorFlow Lite for Microcontrollers (TFLM) calls on Arm cores, and the driver
+(`wally_ai_run`) could replace its fully connected kernel.
+
+What the repositories say:
+
+- [CMSIS-NN](https://github.com/ARM-software/CMSIS-NN): CMake build that needs `TARGET_CPU`; every operator has a pure C implementation (made
+  for Cortex-M0/M3); it says the C code can be built for a host "with minor stubbing" and does not mention RISC-V. int8 operators: Conv2D,
+  DepthwiseConv2D, Fully Connected, Batch Matmul, Add, Mul, pooling, Softmax, LSTM, SVDF. It has not been compiled here.
+- [muRISCV-NN](https://github.com/tum-ei-eda/muriscv-nn) (TUM, Apache-2.0): a fork of CMSIS-NN for RISC-V with portable scalar C kernels
+  and kernels for the V and P extensions, a TFLM integration (`Integration/tflm`), run on the MLPerf Tiny models. Its page does not say RV32IMAC
+  explicitly, which operators it covers, or when it was last updated. It is the first thing to try for a RISC-V reference.
+- A keyword-spotting model: Arm's [ML-zoo](https://github.com/ARM-software/ML-zoo/tree/master/models/keyword_spotting/micronet_small) has
+  `micronet_small` (int8 TFLite), but that repository was archived by its owner on 2025-07-18 and its page gives no sizes or accuracy. A
+  DS-CNN of about 25 K parameters is said to need an arena of about 22 KB (a third-party page, not measured). The chip's RAM is 56 KiB
+  usable (the last 8 KiB are the trace buffer), so the arena, the model's weights (in RAM or the BOOTROM-loaded image) and the stack have
+  to fit together: to be measured, not assumed.
+
+What it would take, in order: build muRISCV-NN (or CMSIS-NN's C kernels) for `rv32imac_zicsr`, run one quantized model on the chip in
+simulation and record cycles per layer; then swap the fully connected kernel for the unit and compare accuracy bit by bit (the unit's
+requantization `((W x + bias) * MULT) >> SHIFT` is the TFLite scheme, but the rounding of CMSIS-NN's requantization has to be checked
+against the unit's plain arithmetic shift before any bit-exact claim); then see what share of the model's cycles are in layers the unit
+can take (the unit does fully connected layers only; convolutions would have to be lowered to matrix-vector products or stay in software).
+
 ## Steps and what ends each
 
 | Step | Exit |
