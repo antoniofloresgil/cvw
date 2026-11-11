@@ -30,7 +30,7 @@ fixed-point requantization, clamp, ReLU) on the naive and on the best word kerne
 - Consequence for the unit: the bus is the bottleneck, not the multipliers. The unit must hold operands in a local scratchpad
   and reuse them (weights stream once, activations stay), or its master will wait on the same RAM latency. The 147 MMAC/s
   ceiling of ADR 0024 (8 lanes) assumed one operand pair per lane per clock from local storage; a bus-fed design reaches
-  only a fraction of it. Step 1 should measure the RAM's cycles per word on a burst before fixing the number of lanes.
+  only a fraction of it. The RAM itself is not the limit: `ram_ahb.sv` with `RAM_LATENCY` 0 answers a pipelined read every clock (read from the RTL, not measured), so a master of the unit's own can stream one 32-bit word per clock; the slowness is in how the core fetches and loads. Hence four lanes (the 32-bit bus) in the design of ADR 0024.
 - The bar for step 3: a layer well under 126 K cycles. Ten times fewer (about 12 K cycles) needs about 3 cycles per MAC.
 
 ## Reproduce

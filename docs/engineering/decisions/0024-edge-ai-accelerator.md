@@ -183,6 +183,31 @@ read side of `ebu.sv` are the clearest base, with this repository's license. Not
 - **Licenses.** Nothing from the projects above is copied; their license and quality must be read before
   any reuse (TinyGPU-ML states none).
 
+## Design of the first RTL (step 1, written 2026-11-11 after the step 0 numbers)
+
+What step 0 and the RTL say: the software costs 25 to 32 cycles per MAC at an IPC of 0.2 (see the
+[baseline record](../experiments/2026-11-11-ai-software-baseline.md)), and the RAM of the chip (`RAM_LATENCY` 0, `ram_ahb.sv`) answers a
+pipelined read every clock, with one lost clock only for a read right after a write. So the bus gives one 32-bit word, four int8, per
+clock, and the unit is built around that: **`AI_LANES` = 4**, the number a 32-bit bus can feed (more lanes only pay with a batch that
+reuses each weight word, which the first version does not have). Read from the RTL, not yet measured.
+
+The first operation is a matrix-vector product, the core of a fully connected layer and of a pointwise convolution:
+
+- **Operands:** the weights W (int8, row-major `OUT` x `IN`, `IN` a multiple of 4) stay in the RAM and the unit's master streams them
+  one word per clock; the input vector X (up to `AI_X_BYTES`, 1 KiB at first) sits in a small scratchpad inside the unit, loaded once
+  by the unit from RAM (a burst), so only W crosses the bus per MAC.
+- **Per output row:** `IN/4` clocks of 4 multiplications (signed int8 x int8) into one int32 accumulator, then the epilogue: add the
+  int32 bias (read from RAM), multiply by a 32-bit multiplier, shift right (rounding as the reference does), clamp (ReLU clamps to
+  0..127, otherwise -128..127), pack four results per word and write them to `Y`. The first epilogue is the baseline's exact formula,
+  `((acc + bias) * M) >> S` with a 64-bit product, so the test compares bit by bit with `chip/ai/baseline/main.c`.
+- **Registers** (block 4 of `mcu_apb`, 32-bit): `CTRL` (start, relu), `STATUS` (busy, done, error: a bus error stops the unit), `IN`, `OUT`,
+  `W_ADDR`, `X_ADDR`, `BIAS_ADDR`, `Y_ADDR`, `MULT`, `SHIFT`. Polling only; an interrupt is step 4.
+- **Estimate** for the 64 x 64 layer: 64 rows x (16 weight words + about 4 clocks of epilogue and bus turn) = about 1300 clocks, against
+  126 000 in software: about 100 times faster, at the price of the arbiter's clocks lost to the core. The number the step 2 test has to
+  confirm or deny, on the board.
+- **Gate:** `AI_SUPPORTED` (default 0) in `config.vh`, so no other configuration changes; `bin/actconfig-sync`'s parameter list is not
+  involved (it is not an ISA extension).
+
 ## Steps and what ends each
 
 | Step | Exit |
