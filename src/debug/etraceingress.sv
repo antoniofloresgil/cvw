@@ -25,6 +25,7 @@
 //          ITrace, one line, from the most significant bit:
 //            Valid, Halted, IType[2:0], IRetire, ILastSize, Priv[1:0], Cause[4:0], IAddr, Tval
 //          Halted is the hart's Debug Mode; ILastSize is 1 for 32-bit instructions, 0 for 16-bit.
+//          The line is registered (see below): it leaves one cycle after the one it describes.
 //
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
@@ -138,7 +139,12 @@ module etraceingress import cvw::*; #(parameter cvw_t P) (
       LValid = EmitT; LIType = TInt ? INTERRUPT : EXCEPTION; LRetire = TRetire; LSize4 = TSize4; LPriv = TPriv;
       LCause = TCause; LAddr = TPC; LTval = TTval;
     end
-  assign ITrace = {LValid, DebugMode, LIType, LRetire, LSize4, LPriv, LCause, LAddr, LTval};
+  // The line is registered: RetireW depends on StallW, which comes from the memory system (the LSU's address and the PMP/PMA checks
+  // among others), and the encoder's packet logic follows, so without this register one cycle spans from the checkers to the sink's queue
+  // (the longest path of the chip on an FPGA).  The trace is delayed one cycle; nothing else sees it.
+  logic [2*P.XLEN+13:0] ILine;
+  assign ILine = {LValid, DebugMode, LIType, LRetire, LSize4, LPriv, LCause, LAddr, LTval};
+  flopr #(2*P.XLEN+14) itracereg(clk, reset, ILine, ITrace);
 
   always_ff @(posedge clk)
     if (reset) begin
