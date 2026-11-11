@@ -26,11 +26,12 @@ the NPUs of other RISC-V MCUs). What bounds the answer is in this chip, not in t
 
 ## What exists (searched 2026-11-11)
 
-Nothing found does what this chip needs end to end: an int8 inference unit on a RISC-V microcontroller,
-open, verified, on an open PDK, with a flow for IHP SG13G2. The closest pieces:
+Nothing found is an int8 inference unit that drops into this chip, open, verified, with a flow for IHP SG13G2. The nearest
+thing to a complete open stack is Google's Coral NPU (first row), which is a whole accelerator core of another scale. The pieces:
 
 | Project | What it is | Use for us |
 | --- | --- | --- |
+| [Coral NPU](https://github.com/google-coral/coralnpu) (Google, Apache-2.0; [announcement](https://research.google/blog/coral-npu-a-full-stack-platform-for-edge-ai/)) | An open NPU core for ultra-low-power edge SoCs: a scalar RISC-V core and an RVV 1.0 vector unit (`rv32imf_zve32x_zbb`, 128-bit SIMD), 8 KB instruction and 32 KB data tightly-coupled memory, AXI4 manager and subordinate ports, so an external CPU configures it and loads its memories. Verilator, cocotb and UVM testbenches, a compiler stack on IREE/MLIR (JAX, PyTorch, TensorFlow). Google puts the base design in the 512 GOPS range at a few milliwatts. The matrix unit (a quantized outer-product MAC engine) was announced as "later this year": a later report says it was completed, which was not checked against the repository. A commercial part (Synaptics) uses it. The repository has `synthesis/` and `fpga/` directories; no area, FPGA resource or open-PDK result was found. | The **reference to beat or borrow from**: it is the full-stack version of this idea. Its two TCMs are 40 KB, close to our 64 KiB, but it has its own core and an AXI manager port, which our bus does not have (option F). Too much silicon for a die that cannot grow, to be checked on the FPGA. |
 | [CFU Playground](https://github.com/google/CFU-Playground) (Google, Apache-2.0) | A method and tools: profile a TFLite Micro model on an FPGA soft CPU (VexRiscv, LiteX; Nexys Video among the tested boards), pick an operator, add a custom function unit, measure again. FPGA and simulation only, no ASIC flow; "not an officially supported Google project". | The **method** (profile first, accelerate what costs). Not the code: its unit plugs into VexRiscv's instruction interface. |
 | [X-HEEP](https://arxiv.org/html/2508.16959) (EPFL) | An open MCU platform for TinyAI, with cores CV32E20/40X/40P and accelerators on an OBI master/slave interface or CV-X-IF; reported at 0.15 mm2 (host, TSMC 65 nm), memory banks 44 % of its area. | An **architecture reference**: memory dominates, so near-memory and per-bank design matter more than MAC count. |
 | NM-Carus / NM-Caesar ([paper](https://arxiv.org/abs/2406.14263)) | Near-memory vector units inside SRAM banks for X-HEEP: up to 28x and 53.9x faster than an RV32IMC on their tasks (post-layout simulation). | Shows how large the gain from keeping data in the memory is. Not reusable: they live inside X-HEEP's memory banks. |
@@ -53,11 +54,14 @@ Nothing found targets IHP SG13G2. The summaries of the projects above come from 
 | **B** | As A, plus a bus master that reads the RAM itself | A new master on the core's bus | Higher | The arbitration is intrusive and the AHB structure is shared with the cores |
 | **C** | Custom instructions (a packed int8 dot product, as the PULP/CORE-V extensions) in the integer unit | Decoder, ALU and hazards | High for the dot product | Touches the core, hard to keep merging upstream |
 | **D** | CV-X-IF and a coprocessor | The interface in the core | High | The interface does not exist in Wally |
+| **F** | Attach the Coral NPU as a separate accelerator core: AXI4 to AHB, the CPU loads its TCMs and starts it | A bridge, and an arbiter for its manager port | High, with a toolchain | Size (not measured) and a second core to boot; the AXI side needs a bridge that Wally lacks (it has `ahbwishbonebridge.sv` only) |
 | **E** | Software only: the M extension, `Zbb`, careful kernels | None | The baseline | None; it is what the others are measured against |
 
 ## Decision (proposed)
 
-Start with **A** on the FPGA, measured against **E**, and decide B only from the measurements.
+Start with **A** on the FPGA, measured against **E**, and decide B only from the measurements. In parallel, and without touching
+the chip, find out what the **Coral NPU** costs on the Nexys Video (build its FPGA target, read its LUT, BRAM and DSP use and its
+clock) and run its examples: that gives the reference for what a full open NPU is, and F becomes a decision with numbers.
 
 1. **A unit `ai` as block 4 of `mcu_apb`**, parameter-gated and off by default, so that the
    address decode and the core stay as they are. First version: `LANES` (4, 8, 16) signed int8
@@ -93,6 +97,7 @@ measures.
 | Step | Exit |
 | --- | --- |
 | 0. Software baseline: an int8 dot product and a small fully-connected layer, cycles per MAC | A table in an experiment record |
+| 0b. Coral NPU on the Nexys Video: build, resources, clock, one of its examples | A record with its resource use and what a coprocessor next to Wally would cost |
 | 1. RTL of the unit, lint and cocotb differential test | Passes on random data; `lint-wally` clean |
 | 2. Zephyr driver and the FPGA build | The same test on the board; cycles per MAC against step 0 |
 | 3. A keyword-spotting model on it | Accuracy equal to the reference, cycles and RAM used |
