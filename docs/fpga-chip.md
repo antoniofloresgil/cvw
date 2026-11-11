@@ -32,6 +32,19 @@ of the open flow is used in the same way).
 directory, so it overwrites the plain bitstream (build the plain one again to go back). Result of 2026-11-11: 22,057 LUTs (+1,842 over the
 plain chip), 7,556 flip-flops (+535), 11 DSP48 (+7), 16 RAMB36 and 2 RAMB18 (+1); timing 19.88 MHz for 18.44 MHz. Not run on the board yet.
 
+`make nexysvideochip-vivado CHIPCONFIG=asic_soc_rv32imac_ai` builds the same sources, clock and pins with Vivado 2024.2 (`chip-vivado.tcl`, non-project
+flow, default strategies, no timing push) into `vivado-nexysvideochip/`, to compare with the open flow (2026-11-11, about 2 minutes against about 5 for the open flow):
+
+| | Open flow (Yosys + nextpnr) | Vivado 2024.2 |
+|---|---|---|
+| LUTs | 22,057 | 12,684 |
+| Flip-flops | 7,556 | 7,591 |
+| DSP48 | 11 | 8 |
+| RAMB36 / RAMB18 | 16 / 2 | 16 / 2 |
+| Timing at 18.44 MHz | Fmax 19.88 MHz (router's model) | WNS +14.4 ns (Fmax about 25 MHz); worst path is the reset to the register file |
+
+Neither bitstream has been run on the board.
+
 ## Run
 
 ```bash

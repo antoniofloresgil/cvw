@@ -95,6 +95,12 @@ CHIPCONFIG ?= asic_soc_rv32imac
 nexysvideochip: PreProcessChip
 	./build-opensource.sh "nexysvideochip"
 
+# The same chip with Vivado (chip-vivado.tcl, non-project flow) to compare with the open-source flow: same sources, clock and pins, its own
+# output directory vivado-nexysvideochip/ (the open flow's opensource-nexysvideochip/ is not touched).
+.PHONY: nexysvideochip-vivado
+nexysvideochip-vivado: PreProcessChip
+	set -o pipefail; vivado -mode batch -source chip-vivado.tcl 2>&1 | tee vivado-nexysvideochip.log
+
 qmtechk7: export XILINX_PART := xc7k325tffg676-1
 qmtechk7: export XILINX_BOARD := qmtechk7
 qmtechk7: export board := qmtechk7
