@@ -26,14 +26,22 @@ make nexysvideochip                 # about 5 minutes: opensource-nexysvideochip
 `make nexysvideochip` builds the chip's bootloader (`asic/librelane/chip/boot.mem`) and preloads it in the BOOTROM, so it does not
 touch the ZSBL's `fpga/src/boot.mem`. Last result (nextpnr-xilinx): 20,215 LUTs (7 %), 7,021 flip-flops, 16 RAMB36 and one RAMB18, 4 DSP48; the
 final timing report says 19.01 MHz for a clock of 18.44 MHz, a margin of 3 %, from the router's own model (the Linux build
-of the open flow is used in the same way).
+of the open flow is used in the same way). That was before the instruction trace's line got a register (`etraceingress.sv`): the longest path,
+from the load/store address (and the PMP checks) through `StallW` and the trace encoder to the sink's queue, was then cut in two, and
+the same chip, on the same seed, went from 20.86 to 28.90 MHz (one run each, 2026-11-12).
+
+`make nexysvideochip-vivado` builds the same sources, clock and pins with Vivado 2024.2 (`chip-vivado.tcl`, non-project flow, default strategies)
+into `vivado-nexysvideochip/` (`VIVADO_OUT=<dir>` changes it), in about 2 minutes. Before and after the trace register: 11,325 and 11,316 LUTs,
+7,020 and 7,094 flip-flops; the slowest full-cycle path went from 35.3 ns (load/store address to the trace sink's queue, 28 levels) to
+33.1 ns (load/store address to the RAM's address, 25 levels), against a period of 54.2 ns. Paths that end in falling-edge registers
+(the register file, the SPI) get half a period, and the reset (3,000 destinations) is their worst path. Neither bitstream has been run on the board.
 
 `make nexysvideochip CHIPCONFIG=asic_soc_rv32imac_ai` builds the chip with the AI unit (`src/uncore/ai`, registers at 0x10084000) into the same
 directory, so it overwrites the plain bitstream (build the plain one again to go back). Result of 2026-11-11: 22,057 LUTs (+1,842 over the
-plain chip), 7,556 flip-flops (+535), 11 DSP48 (+7), 16 RAMB36 and 2 RAMB18 (+1); timing 19.88 MHz for 18.44 MHz. Not run on the board yet.
+plain chip), 7,556 flip-flops (+535), 11 DSP48 (+7), 16 RAMB36 and 2 RAMB18 (+1); timing 19.88 MHz for 18.44 MHz (before the trace register). Not run on the board yet.
 
 `make nexysvideochip-vivado CHIPCONFIG=asic_soc_rv32imac_ai` builds the same sources, clock and pins with Vivado 2024.2 (`chip-vivado.tcl`, non-project
-flow, default strategies, no timing push) into `vivado-nexysvideochip/`, to compare with the open flow (2026-11-11, about 2 minutes against about 5 for the open flow):
+flow, default strategies, no timing push) into `vivado-nexysvideochip/`, to compare with the open flow (2026-11-11, before the trace register above; about 2 minutes against about 5 for the open flow):
 
 | | Open flow (Yosys + nextpnr) | Vivado 2024.2 |
 |---|---|---|
@@ -41,13 +49,11 @@ flow, default strategies, no timing push) into `vivado-nexysvideochip/`, to comp
 | Flip-flops | 7,556 | 7,591 |
 | DSP48 | 11 | 8 |
 | RAMB36 / RAMB18 | 16 / 2 | 16 / 2 |
-| Timing at 18.44 MHz | Fmax 19.88 MHz (router's model) | WNS +14.4 ns (Fmax about 25 MHz); worst path is the reset to the register file |
+| Timing at 18.44 MHz | Fmax 19.88 MHz (router's model) | slowest full-cycle path 35.3 ns of 54.2 (load/store address to the trace sink's queue, about 28 MHz); the half-cycle reset paths are the worst slack (+14.4 ns) but would hold to about 40 MHz |
 
 The AI unit alone in Vivado (`report_utilization -hierarchical` on the routed design): 1,161 LUTs, 561 flip-flops, 1 RAMB18 (the x memory) and 4 DSP48. The
 slowest path that ends in it (`XMem` to `Acc`, 21 logic levels) takes 19.0 ns against the 54.2 ns period, a slack of 35.1 ns. The open flow's difference
-with and without the unit was +1,842 LUTs, +535 flip-flops and +7 DSP48. `VIVADO_OUT=<dir>` changes the output directory of `chip-vivado.tcl`.
-
-Neither bitstream has been run on the board.
+with and without the unit was +1,842 LUTs, +535 flip-flops and +7 DSP48. The AI chip's bitstreams, from either flow, have not been run on the board.
 
 ## Run
 

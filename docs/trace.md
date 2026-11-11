@@ -52,6 +52,9 @@ the reference flow expects:
 - **An interrupt**: `itype` 2, `cause` its code.
 - The line of a trap comes one cycle after the instruction that retires beside it, so that
   retirements and traps never share a cycle.
+- The line leaves `etraceingress` from a register, one cycle after the cycle it describes. Its logic depends on `StallW`,
+  which comes from the memory system, and the encoder follows: without the register the chip's longest path on an FPGA ran
+  from the load/store address to the sink's queue.
 - Tracing stops while the hart is in Debug Mode (`priv` 4, the encoder treats it as a halt).
 
 ## The encoder
