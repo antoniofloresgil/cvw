@@ -58,7 +58,14 @@ with and without the unit was +1,842 LUTs, +535 flip-flops and +7 DSP48. The AI 
 `ai-sim.overlay` also changes the UART speed, so it does not do on the board) pass with the same cycles as the simulation and the same in both flows
 (64 x 64 layer: unit 1496 to 1504 cycles, Zephyr call 2353, C 126 513 bare metal and 219 121 under Zephyr). The records are in
 [the unit's](engineering/experiments/2026-11-11-ai-unit-rtl.md) and [the baseline's](engineering/experiments/2026-11-11-ai-software-baseline.md).
-Not run: the AI chip with the trace register.
+The same chip **with the trace register** (`ai-baseline` after merging `main`, rebuilt 2026-11-12), checked on the board in both flows: `gemv`, the baseline
+and the Zephyr `ai` image pass again, with the same cycles. Open flow: 21,933 LUTs, 7,630 flip-flops (+74, the register), 11 DSP48, 16 RAMB36 and 2 RAMB18;
+Fmax **26.53 MHz** at the last pass of nextpnr (one run; 19.88 before the register). Vivado: 12,685 LUTs and 7,665 flip-flops; the slowest full-cycle path is
+33.5 ns of 54.2 (38 logic levels, from the PMP configuration registers to the write pointer of the trace sink), against 35.3 ns before the register, so
+the register helps the AI chip less than the plain chip (the path now ends in the sink's write enable, not in its queue); the half-cycle paths are
+unchanged (worst slack +13.9 ns). In the Zephyr image the whole call of the driver (`call` in its output) took 2,353 cycles in some runs and 5,900 to
+6,250 in others with the same image and the same bitstream (also with the bitstreams from before the register), and the unit's own cycles ranged from
+1,479 to 1,496; the cause is not known, so the 2,353 of the ADR is the best case.
 
 ## Run
 

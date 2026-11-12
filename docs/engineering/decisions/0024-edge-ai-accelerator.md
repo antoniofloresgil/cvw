@@ -250,12 +250,15 @@ so TFLM's, the requantization of a fully connected layer differs from the unit's
 
 Choice: **a mode of the unit that returns the int32 accumulator** (`sum(w * x) + bias`, no multiply, shift or clamp; Y as words), and the
 requantization of the (at most 65 535, in practice tens or hundreds of) outputs stays in the library's software. It is bit-exact with the
-library for any model, needs a small RTL change (the writer and the Y checks, nothing in the multiplier) and costs, by my estimate (not
-measured), 30 to 40 cycles per output in software, which is under 3 K cycles for a 64-output layer against 126 K for the layer in C. Not done yet.
+library for any model, needs a small RTL change (the writer and the Y checks, nothing in the multiplier) and costs the library's requantization in
+software: **measured on the board 2026-11-12, 82 cycles per output, 5 263 for a 64-output layer** (my first estimate, 30 to 40 per output, was half
+that), against 1 504 cycles of the unit for the layer itself. So a layer would take about 6 800 cycles (unit plus requantization, plus preparing the
+bias; not measured end to end) against 84 379 for the library's own kernel: about 12 times, not the 56 times of the unit alone. See
+[the record](../experiments/2026-11-12-muriscv-nn-fully-connected.md). Not done yet.
 
 **Possible improvement, later (option 2 of that discussion): requantize in the unit as the library does**: a 32 x 32 multiplier with the
 rounding of `muriscv_nn_doubling_high_mult` and `muriscv_nn_divide_by_power_of_two`, a signed shift and an output offset. It saves the
-software requantization and makes the unit a drop-in for the library's kernel, but it will probably **cost cycle time and area**: a 32 x 32
+software requantization (three quarters of the time of a layer with option 1) and makes the unit a drop-in for the library's kernel, but it will probably **cost cycle time and area**: a 32 x 32
 multiplier is several times the 16 x 32 one (which already needs care to close 40 ns in the ASIC flow), the rounding adds an adder after it,
 and on the FPGA it needs more DSP48 and a longer path. To be measured in both flows (and, for the ASIC, in the 8 h physical flow) before
 adopting it; the raw mode above must stay, so that it can be compared.
@@ -267,6 +270,6 @@ adopting it; the raw mode above must stay, so that it can be compared.
 | 0. Software baseline: an int8 dot product and a small fully-connected layer, cycles per MAC | A table in an experiment record |
 | 0b. Coral NPU on the Nexys Video: build, resources, clock, one of its examples | A record with its resource use and what a coprocessor next to Wally would cost |
 | 1. RTL of the unit, lint and cocotb differential test | Passes on random data; `lint-wally` clean. **Done 2026-11-11 in simulation, on the Nexys Video 2026-11-12**: [record](../experiments/2026-11-11-ai-unit-rtl.md), 64 x 64 layer in 1504 cycles against 126 513 in software |
-| 2. Zephyr driver and the FPGA build | The same test on the board; cycles per MAC against step 0. **Done 2026-11-12 on the Nexys Video**, with the bitstreams of both flows (open and Vivado 2024.2, made before the trace register): `gemv`, `baseline` and the Zephyr `ai` image all pass, with the same cycles as `chipsim-ai` (64 x 64 layer: unit 1496 cycles, whole driver call 2353, software under Zephyr 219 121 on the board and 223 024 in simulation, so 93 times less; bare-metal C 126 513, unit alone 1504, 84 times less). The free flow closes `asic_soc_rv32imac_ai` at 18.44 MHz (Fmax 19.88, measured before the trace register of `etraceingress`, which raised the plain chip's to 28.90), 22 057 LUTs, 11 DSP48, 16 RAMB36 + 2 RAMB18 |
+| 2. Zephyr driver and the FPGA build | The same test on the board; cycles per MAC against step 0. **Done 2026-11-12 on the Nexys Video**, with the bitstreams of both flows (open and Vivado 2024.2, made before the trace register): `gemv`, `baseline` and the Zephyr `ai` image all pass, with the same cycles as `chipsim-ai` (64 x 64 layer: unit 1496 cycles, whole driver call 2353, software under Zephyr 219 121 on the board and 223 024 in simulation, so 93 times less in the best case: the call took 5 900 to 6 250 cycles in about two thirds of the runs, with the same image and bitstream, cause unknown; bare-metal C 126 513, unit alone 1504, 84 times less). The free flow closes `asic_soc_rv32imac_ai` at 18.44 MHz (Fmax 19.88 before the trace register of `etraceingress`, 26.53 after it, one run each; the plain chip's went from 20.86 to 28.90), 22 057 LUTs, 11 DSP48, 16 RAMB36 + 2 RAMB18 |
 | 3. A keyword-spotting model on it | Accuracy equal to the reference, cycles and RAM used |
 | 4. Decision on B, an interrupt, and the ASIC | Written in this ADR or a successor |

@@ -33,3 +33,7 @@
         path = addins/zephyr
         url = https://github.com/zephyrproject-rtos/zephyr.git
         shallow = true
+[submodule "addins/muriscv-nn"]
+  path = addins/muriscv-nn
+  url = https://github.com/tum-ei-eda/muriscv-nn.git
+  shallow = true
