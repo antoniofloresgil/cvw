@@ -1,8 +1,9 @@
 # Software baseline for the AI unit: cycles per int8 MAC
 
-Status: **measured on 2026-11-11 in the RTL simulation of the chip** (`make chipsim`, test `ai_baseline`). Step 0 of
-[ADR 0024](../decisions/0024-edge-ai-accelerator.md). The same image has not been run on the Nexys Video yet; the simulation is
-the chip's RTL with the IHP SRAM models, so the cycle counts should match, but the board run is pending.
+Status: **measured on 2026-11-11 in the RTL simulation of the chip** (`make chipsim`, test `ai_baseline`) and **on the Nexys Video on
+2026-11-12**, with the same cycle counts in every row (the table below is both). Step 0 of
+[ADR 0024](../decisions/0024-edge-ai-accelerator.md). The board runs used the bitstreams of the chip with the AI unit, from the open flow
+and from Vivado (`asic_soc_rv32imac_ai`, both built before the trace register), loaded with `uart_load.py`; the baseline does not touch the unit.
 
 ## What was run
 

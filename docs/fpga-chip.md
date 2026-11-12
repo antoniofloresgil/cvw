@@ -34,11 +34,11 @@ the same chip, on the same seed, went from 20.86 (a later run of the sources of 
 into `vivado-nexysvideochip/` (`VIVADO_OUT=<dir>` changes it), in about 2 minutes. Before and after the trace register: 11,325 and 11,316 LUTs,
 7,020 and 7,094 flip-flops; the slowest full-cycle path went from 35.3 ns (load/store address to the trace sink's queue, 28 levels) to
 33.1 ns (load/store address to the RAM's address, 25 levels), against a period of 54.2 ns. Paths that end in falling-edge registers
-(the register file, the SPI) get half a period, and the reset (3,000 destinations) is their worst path. The Vivado bitstreams have not been run on the board.
+(the register file, the SPI) get half a period, and the reset (3,000 destinations) is their worst path. The Vivado bitstreams of the plain chip have not been run on the board (the AI chip's has: see below).
 
 `make nexysvideochip CHIPCONFIG=asic_soc_rv32imac_ai` builds the chip with the AI unit (`src/uncore/ai`, registers at 0x10084000) into the same
 directory, so it overwrites the plain bitstream (build the plain one again to go back). Result of 2026-11-11: 22,057 LUTs (+1,842 over the
-plain chip), 7,556 flip-flops (+535), 11 DSP48 (+7), 16 RAMB36 and 2 RAMB18 (+1); timing 19.88 MHz for 18.44 MHz (before the trace register). Not run on the board yet.
+plain chip), 7,556 flip-flops (+535), 11 DSP48 (+7), 16 RAMB36 and 2 RAMB18 (+1); timing 19.88 MHz for 18.44 MHz (before the trace register). Run on the board on 2026-11-12: see below.
 
 `make nexysvideochip-vivado CHIPCONFIG=asic_soc_rv32imac_ai` builds the same sources, clock and pins with Vivado 2024.2 (`chip-vivado.tcl`, non-project
 flow, default strategies, no timing push) into `vivado-nexysvideochip/`, to compare with the open flow (2026-11-11, before the trace register above; about 2 minutes against about 5 for the open flow):
@@ -53,7 +53,12 @@ flow, default strategies, no timing push) into `vivado-nexysvideochip/`, to comp
 
 The AI unit alone in Vivado (`report_utilization -hierarchical` on the routed design): 1,161 LUTs, 561 flip-flops, 1 RAMB18 (the x memory) and 4 DSP48. The
 slowest path that ends in it (`XMem` to `Acc`, 21 logic levels) takes 19.0 ns against the 54.2 ns period, a slack of 35.1 ns. The open flow's difference
-with and without the unit was +1,842 LUTs, +535 flip-flops and +7 DSP48. The AI chip's bitstreams, from either flow, have not been run on the board.
+with and without the unit was +1,842 LUTs, +535 flip-flops and +7 DSP48. The AI chip's bitstreams, from the open flow and from Vivado (both from before the trace register), **ran on the board on 2026-11-12**: the
+`gemv` test, the software baseline and the Zephyr `ai` image (`make APP=ai OVERLAY=ai.overlay`, the overlay that enables `ai0`; the simulation's
+`ai-sim.overlay` also changes the UART speed, so it does not do on the board) pass with the same cycles as the simulation and the same in both flows
+(64 x 64 layer: unit 1496 to 1504 cycles, Zephyr call 2353, C 126 513 bare metal and 219 121 under Zephyr). The records are in
+[the unit's](engineering/experiments/2026-11-11-ai-unit-rtl.md) and [the baseline's](engineering/experiments/2026-11-11-ai-software-baseline.md).
+Not run: the AI chip with the trace register.
 
 ## Run
 
