@@ -256,12 +256,19 @@ that), against 1 504 cycles of the unit for the layer itself. So a layer would t
 bias; not measured end to end) against 84 379 for the library's own kernel: about 12 times, not the 56 times of the unit alone. See
 [the record](../experiments/2026-11-12-muriscv-nn-fully-connected.md). Not done yet.
 
-**Possible improvement, later (option 2 of that discussion): requantize in the unit as the library does**: a 32 x 32 multiplier with the
-rounding of `muriscv_nn_doubling_high_mult` and `muriscv_nn_divide_by_power_of_two`, a signed shift and an output offset. It saves the
-software requantization (three quarters of the time of a layer with option 1) and makes the unit a drop-in for the library's kernel, but it will probably **cost cycle time and area**: a 32 x 32
-multiplier is several times the 16 x 32 one (which already needs care to close 40 ns in the ASIC flow), the rounding adds an adder after it,
-and on the FPGA it needs more DSP48 and a longer path. To be measured in both flows (and, for the ASIC, in the 8 h physical flow) before
-adopting it; the raw mode above must stay, so that it can be compared.
+**Next, after the raw mode (decided 2026-11-12): requantize in the unit as the library does (option 2 of that discussion), in several passes of the
+multiplier it already has.** Software requantization is three quarters of the time of a layer with the raw mode (5 263 of about 6 800 cycles). My first note
+said this option would "probably cost cycle time and area" because it assumed a 32 x 32 multiplier; that was wrong in kind. The requantization happens
+once per output, not per MAC, and the unit spends about 23 cycles per output (1 504 / 64), so there is time for a slow multiplier: split the Q31
+multiplier in two halves of 16 bits, use the existing 32 x 16 multiplier twice, add the two products (64 bits, over several cycles), then the
+rounding of `muriscv_nn_doubling_high_mult`, the rounding divide of `muriscv_nn_divide_by_power_of_two`, a signed shift, the output offset and the
+clamp. Estimate, not measured: 2 to 3 more cycles per output (150 to 200 for a 64 x 64 layer), some hundreds of LUTs of adders, no extra DSP48, the
+cycle time kept by spreading the 64-bit additions over cycles; a layer of about 1 700 cycles, bit-exact with the library. To be shown: that the
+two-pass product reproduces the library's rounding exactly (a differential test against `muriscv_nn_requantize` over random and extreme values), and
+that Fmax does not drop in either FPGA flow (the ASIC, in the 8 h physical flow, only if it is adopted). The raw mode stays, to compare the two.
+Software alternatives if this does not close: a hand-written requantization with `mul`/`mulh` (the core is bound by instruction fetch, IPC 0.23, so fewer
+instructions is what counts; perhaps 30 to 40 % less than the library's 82 cycles per output, not measured), or power-of-two scales in the model (shift
+only, but then TFLM's exported models do not run as they are).
 
 ## Steps and what ends each
 
