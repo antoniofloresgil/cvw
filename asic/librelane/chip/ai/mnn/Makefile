@@ -39,3 +39,9 @@ $(foreach s,$(SRCS),$(eval $(call LIBRULE,$(s))))
 
 $(BUILD):
 	mkdir -p $@
+
+# build/ and build-asm/ (the variant with DEFS=-DMURISCV_NN_USE_REQUANTIZE_INLINE_ASSEMBLY BUILD=build-asm)
+clean:
+	$(RM) -r build build-asm
+
+.PHONY: clean
