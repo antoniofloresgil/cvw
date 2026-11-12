@@ -2,18 +2,21 @@
 // ai_unit.sv
 //
 // Purpose: int8 matrix-vector unit with its own AHB master (docs/engineering/decisions/0024-edge-ai-accelerator.md).
-//          y = clamp(((W x + bias) * MULT) >> SHIFT): the layer of a neural network, in one command.
+//          y = clamp(((W x + bias) * MULT) >> SHIFT): the layer of a neural network, in one command.  With RAW set the unit returns the
+//          int32 accumulator W x + bias, one word per output, and leaves the requantization to software (the scheme of CMSIS-NN and
+//          muRISCV-NN, which differs from the one above in the multiplier, the rounding and the zero points).
 //          W (OUT rows of IN int8, row-major) and the int32 bias stay in the RAM and are streamed by the unit's master one 32-bit word
 //          (four int8) per clock; the input vector x (IN bytes, up to X_BYTES) is read once into a small memory inside the unit, so the
 //          bus carries only W.  The results are int8, four to a word, written back to the RAM.
 //
 // Registers (word accesses at the unit's PADDR, block 4 of mcu_apb):
 //   00 CTRL     [0] START (a write of 1 starts a run when idle)  [1] RELU: clamp to 0..127 instead of -128..127
+//               [2] RAW: write W x + bias as an int32 per output (Y is OUT words); MULT, SHIFT and RELU are then ignored
 //   04 STATUS   [0] BUSY  [1] DONE  [2] ERROR: write 1 to clear DONE and ERROR.  A start with bad arguments, or a bus error, sets ERROR
 //   08 IN       bytes of x and of a row of W: a multiple of 4, 4..X_BYTES
 //   0C OUT      rows, 1..65535
 //   10 W_ADDR   weights, word aligned          14 X_ADDR   input vector, word aligned
-//   18 BIAS_ADDR  OUT int32, word aligned; 0 means no bias      1C Y_ADDR   OUT int8, word aligned
+//   18 BIAS_ADDR  OUT int32, word aligned; 0 means no bias      1C Y_ADDR   OUT int8 (OUT int32 with RAW), word aligned
 //   20 MULT     signed 16-bit multiplier (bits 15:0)            24 SHIFT    arithmetic right shift, 0..47
 //   28 CYCLES   clocks of the last run (read only)
 // Every address must lie in the uncore RAM outside the trace buffer, else the start is refused (ERROR).  The registers are written
@@ -51,7 +54,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   state_t State;
 
   // registers
-  logic        Relu, Busy, Done, Err;
+  logic        Relu, Raw, Busy, Done, Err;
   logic [31:0] InB, OutR, WAddr, XAddr, BiasAddr, YAddr, Mult, Shift, Cycles;
 
   // run state
@@ -80,25 +83,28 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
     return ({8'b0, a} >= RAM_BASE) && (off + 40'(len) <= RAM_USABLE);
   endfunction
 
+  // the start is the same write that sets RAW, so the check must use the bit being written, not the register's old value
+  logic Wr, Start, RawNow;
+  assign Wr     = PSEL & PENABLE & PWRITE;
+  assign Start  = Wr & (PADDR[7:2] == 6'h00) & PWDATA[0];
+  assign RawNow = Start ? PWDATA[2] : Raw;
+
   logic Valid;
   assign Valid = InB[1:0] == 2'b00 && InB != 32'd0 && InB <= 32'(X_BYTES)
-               && OutR != 32'd0 && OutR <= 32'hFFFF && Shift <= 32'd47
+               && OutR != 32'd0 && OutR <= 32'hFFFF && (RawNow || Shift <= 32'd47)
                && WAddr[1:0] == 2'b00 && XAddr[1:0] == 2'b00 && BiasAddr[1:0] == 2'b00 && YAddr[1:0] == 2'b00
                && inram(WAddr, OutR[15:0] * InB[10:0]) && inram(XAddr, InB)
-               && (NoBias || inram(BiasAddr, {14'b0, OutR[15:0], 2'b00})) && inram(YAddr, OutR);
+               && (NoBias || inram(BiasAddr, {14'b0, OutR[15:0], 2'b00}))
+               && inram(YAddr, RawNow ? {14'b0, OutR[15:0], 2'b00} : OutR);
 
   // ---- APB registers ----
-  logic Wr, Start;
-  assign Wr    = PSEL & PENABLE & PWRITE;
-  assign Start = Wr & (PADDR[7:2] == 6'h00) & PWDATA[0];
-
   always_ff @(posedge HCLK)
     if (~HRESETn) begin
-      Relu <= 1'b0;
+      Relu <= 1'b0; Raw <= 1'b0;
       {InB, OutR, WAddr, XAddr, BiasAddr, YAddr, Mult, Shift} <= '0;
     end else if (Wr & ~Busy) begin
       case (PADDR[7:2])
-        6'h00: Relu     <= PWDATA[1];
+        6'h00: begin Relu <= PWDATA[1]; Raw <= PWDATA[2]; end
         6'h02: InB      <= PWDATA;
         6'h03: OutR     <= PWDATA;
         6'h04: WAddr    <= PWDATA;
@@ -113,7 +119,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
 
   always_comb
     case (PADDR[7:2])
-      6'h00:   PRDATA = {30'b0, Relu, 1'b0};
+      6'h00:   PRDATA = {29'b0, Raw, Relu, 1'b0};
       6'h01:   PRDATA = {29'b0, Err, Done, Busy};
       6'h02:   PRDATA = InB;
       6'h03:   PRDATA = OutR;
@@ -218,14 +224,15 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
           State <= EPI1;
         end
         EPI1: begin
-          case (Row[1:0])
+          if (Raw) Pack <= Sum;                       // a word per output: written at once
+          else case (Row[1:0])
             2'd0: Pack[7:0]   <= Byte;
             2'd1: Pack[15:8]  <= Byte;
             2'd2: Pack[23:16] <= Byte;
             2'd3: Pack[31:24] <= Byte;
           endcase
-          if (Row[1:0] == 2'd3 || LastRow) begin
-            StrbReg <= 4'b1111 >> (2'd3 - Row[1:0]);
+          if (Raw || Row[1:0] == 2'd3 || LastRow) begin
+            StrbReg <= Raw ? 4'b1111 : 4'b1111 >> (2'd3 - Row[1:0]);
             State <= WR;
           end else begin
             Row <= Row + 16'd1;

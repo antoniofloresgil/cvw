@@ -254,7 +254,9 @@ library for any model, needs a small RTL change (the writer and the Y checks, no
 software: **measured on the board 2026-11-12, 82 cycles per output, 5 263 for a 64-output layer** (my first estimate, 30 to 40 per output, was half
 that), against 1 504 cycles of the unit for the layer itself. So a layer would take about 6 800 cycles (unit plus requantization, plus preparing the
 bias; not measured end to end) against 84 379 for the library's own kernel: about 12 times, not the 56 times of the unit alone. See
-[the record](../experiments/2026-11-12-muriscv-nn-fully-connected.md). Not done yet.
+[the record](../experiments/2026-11-12-muriscv-nn-fully-connected.md). **RTL and `gemv` test done 2026-11-12 in simulation** (CTRL bit 2, 64 x 64
+layer in 1 650 cycles, 146 more than in byte mode because it writes a word per row; [record](../experiments/2026-11-11-ai-unit-rtl.md)); board test, driver and the
+wrapper over the library pending.
 
 **Next, after the raw mode (decided 2026-11-12): requantize in the unit as the library does (option 2 of that discussion), in several passes of the
 multiplier it already has.** Software requantization is three quarters of the time of a layer with the raw mode (5 263 of about 6 800 cycles). My first note

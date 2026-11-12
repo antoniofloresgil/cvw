@@ -45,3 +45,24 @@ tool. The Zephyr image of step 2 gave the same result (see ADR 0024). What this 
   polling (no interrupt), weights and bias must not overlap the results, one command at a time.
 - The 1 KiB vector memory is a flop/BRAM array: right for the FPGA, an SRAM macro or a smaller size for the ASIC.
 - Not measured: resources and clock on the Nexys Video, power, the multiplier's timing at 40 ns in the ASIC flow.
+
+## RAW mode: the int32 accumulator (2026-11-12, simulation)
+
+CTRL bit 2 (`RAW`): the unit writes `W x + bias` as one int32 per output (Y is OUT words, so OUT * 4 bytes must lie in the usable RAM), and
+ignores MULT, SHIFT (a shift above 47 is accepted) and RELU. It is for the library kernels of muRISCV-NN and CMSIS-NN, whose requantization
+(Q31 multiplier, rounding, zero points) the unit's is not ([ADR 0024](../decisions/0024-edge-ai-accelerator.md)); the library requantizes the words
+in software. The unit writes each word as soon as the row ends (a byte-mode run writes one word per four rows), so it takes longer:
+
+| Case | byte mode | RAW |
+|---|---|---|
+| 64 x 64 | 1504 | 1650 |
+| 63 x 64 | 1482 | 1624 |
+| 3 x 1024 | 1047 | 1054 |
+| 7 x 12 | 71 | 92 |
+| 1 x 4 | 14 | 13 |
+
+`gemv` has six RAW shapes (the extreme one is a 1024-long dot product of -128 with -128), three refusals (Y reaching into the trace buffer, Y not aligned, W in the
+boot ROM) and a byte-mode run after the RAW ones, all passing in `chipsim-ai`; lint is clean for `asic_soc_rv32imac_ai`. The test found a bug of the first
+version: the check of a start used the old value of the RAW register, because the write that starts a run is the one that sets RAW; it now uses the bit
+being written. Not run on the board yet. The 64 x 64 layer in RAW plus the library's requantization (5 263 cycles, [record](2026-11-12-muriscv-nn-fully-connected.md)) is
+about 6 900 cycles.

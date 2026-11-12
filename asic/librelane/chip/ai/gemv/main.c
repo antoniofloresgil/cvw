@@ -21,6 +21,9 @@
 #define AI_MULT   0x20
 #define AI_SHIFT  0x24
 #define AI_CYCLES 0x28
+#define CTRL_START 1u
+#define CTRL_RELU  2u
+#define CTRL_RAW   4u
 
 static void putc_(char c)
 {
@@ -64,6 +67,9 @@ static int8_t X[1024] __attribute__((aligned(4)));
 static int32_t BIAS[64] __attribute__((aligned(4)));
 static int8_t Y[72] __attribute__((aligned(4)));    /* the unit writes the first OUT bytes; the others stay at 0x55 */
 static int8_t R[72] __attribute__((aligned(4)));
+static int32_t YW[72] __attribute__((aligned(4)));  /* RAW mode: the unit writes the first OUT words; the others stay at the canary */
+static int32_t RW[72];
+#define CANARY 0x55555555
 
 static uint32_t seed = 12345;
 
@@ -102,22 +108,23 @@ static void reference(const int8_t *w, int in, int out, const int32_t *bias, int
 }
 
 /* run the unit; returns the STATUS read at the end and the unit's cycles and the core's in *cyc */
-static uint32_t run(const int8_t *w, int in, int out, const int32_t *bias, int mult, int shift, int relu, uint32_t *cyc)
+static uint32_t run(const int8_t *w, int in, int out, const int32_t *bias, int mult, int shift, int relu, int raw, uint32_t *cyc)
 {
     for (int i = 0; i < 72; i++) {
         Y[i] = 0x55;
+        YW[i] = CANARY;
     }
     AI(AI_IN) = (uint32_t)in;
     AI(AI_OUT) = (uint32_t)out;
     AI(AI_W) = (uint32_t)(uintptr_t)w;
     AI(AI_X) = (uint32_t)(uintptr_t)X;
     AI(AI_BIAS) = (uint32_t)(uintptr_t)bias;
-    AI(AI_Y) = (uint32_t)(uintptr_t)Y;
+    AI(AI_Y) = raw ? (uint32_t)(uintptr_t)YW : (uint32_t)(uintptr_t)Y;
     AI(AI_MULT) = (uint32_t)mult;
     AI(AI_SHIFT) = (uint32_t)shift;
     uint32_t c0 = rdcycle();
 
-    AI(AI_CTRL) = 1u | ((uint32_t)relu << 1);
+    AI(AI_CTRL) = CTRL_START | (relu ? CTRL_RELU : 0u) | (raw ? CTRL_RAW : 0u);
     uint32_t st;
 
     do {
@@ -132,7 +139,7 @@ static uint32_t run(const int8_t *w, int in, int out, const int32_t *bias, int m
 static int check(const char *name, const int8_t *w, int in, int out, const int32_t *bias, int mult, int shift, int relu)
 {
     uint32_t cyc[2];
-    uint32_t st = run(w, in, out, bias, mult, shift, relu, cyc);
+    uint32_t st = run(w, in, out, bias, mult, shift, relu, 0, cyc);
     int ok = (st & 6u) == 2u;       /* DONE, no ERROR */
 
     reference(w, in, out, bias, mult, shift, relu);
@@ -151,7 +158,38 @@ static int check(const char *name, const int8_t *w, int in, int out, const int32
     return ok;
 }
 
-static int refuse(const char *name, uint32_t in, uint32_t out, uint32_t wa, uint32_t ya, uint32_t shift)
+/* RAW mode: the int32 accumulator W x + bias; MULT, SHIFT and RELU must be ignored (the values passed would be refused or would change a byte result) */
+static int check_raw(const char *name, const int8_t *w, int in, int out, const int32_t *bias)
+{
+    uint32_t cyc[2];
+    uint32_t st = run(w, in, out, bias, 0, 99, 1, 1, cyc);
+    int ok = (st & 6u) == 2u;
+
+    for (int j = 0; j < out; j++) {
+        int32_t acc = bias ? bias[j] : 0;
+
+        for (int i = 0; i < in; i++) {
+            acc += w[j * in + i] * X[i];
+        }
+        RW[j] = acc;
+        ok &= YW[j] == acc;
+    }
+    for (int j = out; j < 72; j++) {
+        ok &= YW[j] == CANARY;
+    }
+    for (int j = 0; j < 72; j++) {
+        ok &= Y[j] == 0x55;         /* the byte buffer was not touched */
+    }
+    puts_(name);
+    puts_(ok ? " ok " : " FAIL ");
+    putu(cyc[0]);
+    puts_(" unit cycles, ");
+    putu(cyc[1]);
+    puts_(" core cycles\n");
+    return ok;
+}
+
+static int refuse_ctrl(const char *name, uint32_t in, uint32_t out, uint32_t wa, uint32_t ya, uint32_t shift, uint32_t ctrl)
 {
     for (int i = 0; i < 72; i++) {
         Y[i] = 0x55;
@@ -164,7 +202,7 @@ static int refuse(const char *name, uint32_t in, uint32_t out, uint32_t wa, uint
     AI(AI_Y) = ya;
     AI(AI_MULT) = 1;
     AI(AI_SHIFT) = shift;
-    AI(AI_CTRL) = 1;
+    AI(AI_CTRL) = ctrl;
     uint32_t st = AI(AI_STATUS);
 
     AI(AI_STATUS) = 6u;
@@ -176,6 +214,11 @@ static int refuse(const char *name, uint32_t in, uint32_t out, uint32_t wa, uint
     puts_(name);
     puts_(ok ? " refused\n" : " NOT REFUSED\n");
     return ok;
+}
+
+static int refuse(const char *name, uint32_t in, uint32_t out, uint32_t wa, uint32_t ya, uint32_t shift)
+{
+    return refuse_ctrl(name, in, out, wa, ya, shift, CTRL_START);
 }
 
 int main(void)
@@ -215,6 +258,24 @@ int main(void)
     ok &= refuse("Y in the trace buffer", 4, 4, (uint32_t)(uintptr_t)W, 0x8000E000, 8);
     ok &= refuse("Y not aligned", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y + 1, 8);
     ok &= check("after the refusals", W, 64, 64, BIAS, 77, 14, 1);
+
+    /* RAW mode */
+    ok &= check_raw("raw 64x64", W, 64, 64, BIAS);
+    ok &= check_raw("raw 7x12 no bias", W, 12, 7, 0);
+    ok &= check_raw("raw 1x4", W, 4, 1, BIAS);
+    ok &= check_raw("raw 63x64", W, 64, 63, BIAS);
+    ok &= check_raw("raw 3x1024", WB, 1024, 3, BIAS);
+    for (int i = 0; i < 1024; i++) {
+        X[i] = -128;
+    }
+    for (int i = 0; i < 3 * 1024; i++) {
+        WB[i] = -128;
+    }
+    ok &= check_raw("raw 3x1024 extreme (all -128)", WB, 1024, 3, BIAS);
+    ok &= refuse_ctrl("raw Y runs into the trace buffer", 4, 4, (uint32_t)(uintptr_t)W, 0x8000DFFC, 8, CTRL_START | CTRL_RAW);
+    ok &= refuse_ctrl("raw Y not aligned", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)YW + 1, 8, CTRL_START | CTRL_RAW);
+    ok &= refuse_ctrl("raw W in the boot ROM", 4, 4, 0x1000, (uint32_t)(uintptr_t)YW, 8, CTRL_START | CTRL_RAW);
+    ok &= check("byte mode again after raw", W, 64, 64, BIAS, 77, 14, 1);
 
     puts_(ok ? "AI GEMV OK\n" : "AI GEMV FAIL\n");
     for (;;) {
