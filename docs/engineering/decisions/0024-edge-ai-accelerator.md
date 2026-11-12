@@ -230,9 +230,35 @@ What the repositories say:
 
 What it would take, in order: build muRISCV-NN (or CMSIS-NN's C kernels) for `rv32imac_zicsr`, run one quantized model on the chip in
 simulation and record cycles per layer; then swap the fully connected kernel for the unit and compare accuracy bit by bit (the unit's
-requantization `((W x + bias) * MULT) >> SHIFT` is the TFLite scheme, but the rounding of CMSIS-NN's requantization has to be checked
-against the unit's plain arithmetic shift before any bit-exact claim); then see what share of the model's cycles are in layers the unit
+requantization is **not** the library's: see the next section); then see what share of the model's cycles are in layers the unit
 can take (the unit does fully connected layers only; convolutions would have to be lowered to matrix-vector products or stay in software).
+
+### Decision of 2026-11-12: muRISCV-NN, and the unit returns the raw accumulator
+
+The user chose muRISCV-NN as the reference (cloned at `/datos/repos/muriscv-nn`, outside this repository, commit `8f15b68`). From its source
+(`Source/FullyConnectedFunctions/muriscv_nn_fully_connected_s8.c`, `Include/muriscv_nn_support_functions.h`), which is the CMSIS-NN scheme and
+so TFLM's, the requantization of a fully connected layer differs from the unit's `y = clamp(((W x + bias) * MULT) >> SHIFT)`:
+
+| | muRISCV-NN / CMSIS-NN / TFLM | The unit |
+|---|---|---|
+| multiplier | Q31, 32 bits | 16 bits, signed |
+| rounding | 64-bit product with rounding (doubling high multiply), then a rounding divide by a power of two (to nearest) | arithmetic shift, rounds toward minus infinity |
+| shift | signed (also to the left) | 0 to 47, right only |
+| input zero point | added to every input | none; but `sum(w * (x + off)) = sum(w * x) + off * sum(w)`, so it goes into the bias (the kernel precomputes it as `kernel_sum`) |
+| output offset | added after requantizing, before the clamp | none |
+| clamp | any `activation.min/max` | 0..127 or -128..127 |
+
+Choice: **a mode of the unit that returns the int32 accumulator** (`sum(w * x) + bias`, no multiply, shift or clamp; Y as words), and the
+requantization of the (at most 65 535, in practice tens or hundreds of) outputs stays in the library's software. It is bit-exact with the
+library for any model, needs a small RTL change (the writer and the Y checks, nothing in the multiplier) and costs, by my estimate (not
+measured), 30 to 40 cycles per output in software, which is under 3 K cycles for a 64-output layer against 126 K for the layer in C. Not done yet.
+
+**Possible improvement, later (option 2 of that discussion): requantize in the unit as the library does**: a 32 x 32 multiplier with the
+rounding of `muriscv_nn_doubling_high_mult` and `muriscv_nn_divide_by_power_of_two`, a signed shift and an output offset. It saves the
+software requantization and makes the unit a drop-in for the library's kernel, but it will probably **cost cycle time and area**: a 32 x 32
+multiplier is several times the 16 x 32 one (which already needs care to close 40 ns in the ASIC flow), the rounding adds an adder after it,
+and on the FPGA it needs more DSP48 and a longer path. To be measured in both flows (and, for the ASIC, in the 8 h physical flow) before
+adopting it; the raw mode above must stay, so that it can be compared.
 
 ## Steps and what ends each
 
