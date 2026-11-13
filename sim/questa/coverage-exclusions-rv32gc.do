@@ -362,12 +362,10 @@ coverage exclude -scope $DCBUS/AHBBuscachefsm -ftrans CurrState DATA_PHASE->ADR_
 ExcludeRows $DCBUS/AHBBuscachefsm e {Flush_1 {+BusRW\[1\]*}}
 
 # Reset (HRESETn = 0) with BeatCntReset = 0 needs a bus request pending during reset.  The testbench asserts reset
-# only between programs, when the LSU has no request, so BeatCntReset (NextState == ADR_PHASE, or IDLE in the
-# arbiter) is 1 throughout reset.
+# only between programs, when the LSU has no request, so BeatCntReset (NextState == ADR_PHASE) is 1 throughout
+# reset.
 ExcludeRows $DCBUS/AHBBuscachefsm e {HRESETn_0} [TagLine ${SRC}/ebu/buscachefsm.sv buscachefsm-beat-count-reset]
 ExcludeRows $DCBUS/AHBBuscachefsm e {HRESETn_0} [TagLine ${SRC}/ebu/buscachefsm.sv buscachefsm-beat-count-delayed-reset]
-ExcludeRows /core/ebu/ebu/ebufsmarb e {HRESETn_0 +FinalBeat_*}
-ExcludeRows /core/ebu/ebu/ebufsmarb e {HRESETn_0} [TagLine ${SRC}/ebu/ebufsmarb.sv arb-finalbeat-reset]
 
 ######################################################################################################
 # MMU (instruction and data) and page table walker
@@ -392,9 +390,10 @@ ExcludeRows $IMMU/pmachecker e {ReadAccessM_0} [TagLine ${SRC}/mmu/pmachecker.sv
 ExcludeRows $IMMU/pmachecker e {AtomicAllowed_* +AtomicAccessM_*}
 ExcludeRows $IMMU/pmachecker e {WriteAccessM_0 PMADataAccessFault_* +ReadAccessM_*}
 ExcludeRows $IMMU/pmachecker e {PMADataAccessFault_* +|CMOpM_*}
-# Every fetch is a word (Size = 2), no wider than the bus, so the IMMU never checks an access wider than the bus
-# against Cacheable: (Size > 2)_1 and the Cacheable rows, whose non-masking condition needs it, cannot be reached.
-ExcludeRows $IMMU/pmachecker e {{(Size > 2)_1} Cacheable_*}
+# Every fetch is a word (Size = 2), so Size > 2 is never 1, and a fetch that does not fault is always cacheable:
+# rv32gc fetches only from the boot ROM and RAM, both cacheable, and Sv32 has no Svpbmt to make a page uncacheable.
+# So (Size > 2)_0, which needs a fetch with neither, (Size > 2)_1 and the Cacheable rows, which need Size > 2, cannot be reached.
+ExcludeRows $IMMU/pmachecker e {{(Size > 2)_*} Cacheable_*}
 ExcludeTermRows $IMMU/pmp/pmpchecker e {ReadAccessM_1 WriteAccessM_1 ExecuteAccessF_0 {|CMOpM\[2:0\]_1} {CMOpM\[3\]_1}
   PMPCBOMAccessFault_1 PMPCBOZAccessFault_1 PMPCMOAccessFault_1}
 ExcludeRows $IMMU/pmp/pmpchecker e {MatchingR_* EnforcePMP_* {+|CMOpM\[2:0\]*}}
