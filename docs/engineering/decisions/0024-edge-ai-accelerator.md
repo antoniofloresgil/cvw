@@ -262,8 +262,9 @@ layer in 1 650 cycles, 146 more than in byte mode because it writes a word per r
 bitstream, identical cycles); **the wrapper over the library (`ai/mnn/wally_fc.h`) done 2026-11-13**, bit-exact with the library
 on 60 random and extreme layers in simulation and on the board ([record](../experiments/2026-11-13-wally-fc-s8.md)); the Zephyr driver's RAW support pending.
 
-**Next, after the raw mode (decided 2026-11-12): requantize in the unit as the library does (option 2 of that discussion), in several passes of the
-multiplier it already has.** Software requantization is three quarters of the time of a layer with the raw mode (6 072 and more of the 10 865 cycles measured). My first note
+**Done 2026-11-13 in simulation (CTRL bit 3, Q31): requantize in the unit as the library does (option 2 of that discussion), in two passes of the
+multiplier it already has**: 64 x 64 layer in 1 855 cycles as the core sees it, bit-exact with the library on 140 layers, 127 of them with the unit requantizing
+([record](../experiments/2026-11-13-ai-unit-q31.md)); board, area and cycle time pending. The plan, as decided 2026-11-12: Software requantization is three quarters of the time of a layer with the raw mode (6 072 and more of the 10 865 cycles measured). My first note
 said this option would "probably cost cycle time and area" because it assumed a 32 x 32 multiplier; that was wrong in kind. The requantization happens
 once per output, not per MAC, and the unit spends about 23 cycles per output (1 504 / 64), so there is time for a slow multiplier: split the Q31
 multiplier in two halves of 16 bits, use the existing 32 x 16 multiplier twice, add the two products (64 bits, over several cycles), then the
