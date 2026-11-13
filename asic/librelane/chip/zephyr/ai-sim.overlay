@@ -1,6 +1,10 @@
-/* chipsim of the chip with the AI unit: its driver, and the testbench's UART (one bit every 16 clocks, divisor 1) as in sim.overlay */
+/* chipsim of the chip with the AI unit: its driver, the unit's input area left out of the RAM (the last 1 KiB of the 56 KiB), and the testbench's UART (one bit every 16 clocks, divisor 1) as in sim.overlay */
 &ai0 {
         status = "okay";
+};
+
+&sram0 {
+        reg = <0x80000000 0xDC00>;
 };
 
 &uart0 {

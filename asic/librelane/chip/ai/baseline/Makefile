@@ -10,7 +10,7 @@ CFLAGS := $(ARCH) $(OPT) -g -ffunction-sections -fdata-sections -mno-relax -Wall
 
 $(BUILD)/baseline.bin: $(BUILD)/baseline.elf
 	$(CROSS)objcopy -O binary $< $@
-	test $$(stat -c %s $@) -le 57344
+	test $$(stat -c %s $@) -le 56320
 	$(CROSS)size $<
 
 $(BUILD)/baseline.elf: $(BUILD)/main.o $(BUILD)/crt0.o link.ld

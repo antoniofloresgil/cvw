@@ -190,6 +190,8 @@ static int check_raw(const char *name, const int8_t *w, int in, int out, const i
     return ok;
 }
 
+static uint32_t xover;      /* a source address of x for the next refuse_ctrl, 0 for the usual X */
+
 static int refuse_ctrl(const char *name, uint32_t in, uint32_t out, uint32_t wa, uint32_t ya, uint32_t shift, uint32_t ctrl)
 {
     for (int i = 0; i < 72; i++) {
@@ -198,7 +200,7 @@ static int refuse_ctrl(const char *name, uint32_t in, uint32_t out, uint32_t wa,
     AI(AI_IN) = in;
     AI(AI_OUT) = out;
     AI(AI_W) = wa;
-    AI(AI_X) = (uint32_t)(uintptr_t)X;
+    AI(AI_X) = xover ? xover : (uint32_t)(uintptr_t)X;
     AI(AI_BIAS) = 0;
     AI(AI_Y) = ya;
     AI(AI_MULT) = 1;
@@ -256,6 +258,13 @@ int main(void)
     ok &= refuse("shift 48", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y, 48);
     ok &= refuse("W in the boot ROM", 4, 4, 0x1000, (uint32_t)(uintptr_t)Y, 8);
     ok &= refuse("W past the usable RAM", 4, 4, 0x8000DFFC, (uint32_t)(uintptr_t)Y, 8);
+    /* the part of the RAM that holds the unit's input area (0x8000C000-0x8000DFFF, its macro has one port, which the unit uses for x): W and the
+     * source of x must lie below it, y below the area itself (the last 1 KiB, 0x8000DC00) */
+    ok &= refuse("W in the input area's RAM part", 4, 4, 0x8000C000, (uint32_t)(uintptr_t)Y, 8);
+    xover = 0x8000C000;
+    ok &= refuse("x in the input area's RAM part", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y, 8);
+    xover = 0;
+    ok &= refuse("Y in the input area", 4, 4, (uint32_t)(uintptr_t)W, 0x8000DC00, 8);
     ok &= refuse("Y in the trace buffer", 4, 4, (uint32_t)(uintptr_t)W, 0x8000E000, 8);
     ok &= refuse("Y not aligned", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y + 1, 8);
     ok &= check("after the refusals", W, 64, 64, BIAS, 77, 14, 1);

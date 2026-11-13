@@ -5,8 +5,9 @@
  *   WALLY_AI_RAW   acc = W x + bias, an int32 per output: for a library that requantizes in software
  *   WALLY_AI_Q31   y = clamp(requantize(W x + bias, q31_mult, q31_shift) + offset, act_min, act_max), int8: the requantization of CMSIS-NN and
  *                  muRISCV-NN (Q31 doubling-high multiply with rounding, rounding divide by a power of two, output offset, clamp), bit for bit
- * The unit reads W, x and the bias from the RAM with its own bus master and writes the result there.  All buffers must lie in the RAM outside
- * the trace buffer, aligned to four bytes. */
+ * The unit reads W, x and the bias from the RAM with its own bus master and writes the result there.  All buffers must be aligned to four bytes in
+ * the RAM below the unit's input area (the last 1 KiB before the trace buffer, 0x8000DC00, outside Zephyr's RAM in the chip's AI overlays); W, x and
+ * the bias must lie below 0x8000C000 (the RAM part of that area, whose macro the unit's input port uses), y may be anywhere below the area. */
 #ifndef WALLY_AI_H
 #define WALLY_AI_H
 

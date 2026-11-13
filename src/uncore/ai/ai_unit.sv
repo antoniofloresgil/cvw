@@ -10,8 +10,10 @@
 //          The 32 x 32 product is made in two passes of the 32 x 16 multiplier (low half unsigned, high half signed) and the rest in a
 //          pipeline of five stages that runs while the next row is read, so a layer costs a few cycles more than in byte mode.
 //          W (OUT rows of IN int8, row-major) and the int32 bias stay in the RAM and are streamed by the unit's master one 32-bit word
-//          (four int8) per clock; the input vector x (IN bytes, up to X_BYTES) is read once into a small memory inside the unit, so the
-//          bus carries only W.  The results are int8, four to a word, written back to the RAM.
+//          (four int8) per clock; the input vector x (IN bytes, up to X_BYTES) is read once and copied into a reserved area of the RAM, the last
+//          X_BYTES of the RAM part before the trace buffer (AREA_OFF below), and read from there through a port of its own to that part's macro
+//          (ram_ahb.sv, XpReq), so the bus carries only W and the unit has no memory of its own.  The results are int8, four to a word, written
+//          back to the RAM.
 //
 // Registers (word accesses at the unit's PADDR, block 4 of mcu_apb):
 //   00 CTRL     [0] START (a write of 1 starts a run when idle)  [1] RELU: clamp to 0..127 instead of -128..127
@@ -26,9 +28,11 @@
 //   24 SHIFT    arithmetic right shift, 0..47; with Q31 signed -31..30 (positive: left shift of the accumulator first)
 //   28 CYCLES   clocks of the last run (read only)
 //   2C OFFSET   Q31 only: added to the requantized value (int32)    30 ACT_MIN  34 ACT_MAX  Q31 only: clamp (int32), the low byte is stored
-// Every address must lie in the uncore RAM outside the trace buffer, else the start is refused (ERROR).  The registers are written
-// only while idle.  The core is stalled while the unit owns the bus (uncore.sv): the unit takes it only between two transfers of the
-// core, for the length of a row.
+// Where the buffers may be (else the start is refused, ERROR): W, the bias and x in the RAM below the part that holds the input area (the part is
+// 2^M words, M = log2 TRACE_RAM_WORDS: 0x8000C000 and up in the 64 KiB chip), because that part's macro has one port and the unit uses it for x; y
+// anywhere in the RAM below the input area.  The input area itself (the last X_BYTES before the trace buffer) is the unit's: a program must not use it.
+// The registers are written only while idle.  The core is stalled while the unit owns the bus (uncore.sv): the unit takes it only between two
+// transfers of the core, for the length of the load of x and then of a row, also while it waits for the last words.
 //
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -49,13 +53,26 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   input  logic                 Accept,                 // the address was accepted this clock
   input  logic                 DataDone,               // the data phase of the unit's previous transfer ends this clock
   input  logic                 BusErr,                 // HRESP during the unit's data phase
-  input  logic [31:0]          RData
+  input  logic [31:0]          RData,
+  output logic                 Own,                    // the core is held off the bus (see uncore.sv): the unit has the RAM part of its input area
+  // port to the RAM part that holds the input vector (ram_ahb.sv): a word written in LOADX, read in ROW, back one clock later
+  output logic                 XpReq, XpWe,
+  output logic [$clog2(P.TRACE_RAM_WORDS)-1:0] XpAddr,
+  output logic [31:0]          XpDin,
+  input  logic [31:0]          XpDout
 );
 
   localparam X_BYTES = 1024;
   localparam X_WORDS = X_BYTES / 4;
   localparam [39:0] RAM_BASE   = 40'(P.UNCORE_RAM_BASE);
-  localparam [39:0] RAM_USABLE = 40'(P.UNCORE_RAM_RANGE) + 40'd1 - (P.TRACE_IN_RAM ? 40'(P.TRACE_RAM_WORDS) * 40'd4 : 40'd0);
+  // the RAM of 2^N words has parts of 2^(N-1), 2^(N-2) ... 2^M words and the trace RAM of 2^M (ram_ahb.sv); the unit's port is on the last part before
+  // the trace RAM, which has 2^M words at word 2^N - 2^(M+1)
+  localparam N = $clog2((P.UNCORE_RAM_RANGE + 1) / 4);
+  localparam M = $clog2(P.TRACE_RAM_WORDS);
+  localparam [39:0] PART_OFF = 40'd4 * (40'd1 << N) - 40'd8 * (40'd1 << M);          // the part's offset from RAM_BASE, in bytes
+  localparam [39:0] AREA_OFF = 40'd4 * (40'd1 << N) - 40'd4 * (40'd1 << M) - 40'(X_BYTES);   // the input area's offset: the last X_BYTES of the part
+  localparam [M-1:0] AREA_WORD = M'((1 << M) - X_WORDS);                              // the area's first word in the part
+  if (X_WORDS > (1 << M)) $error("ai_unit: X_BYTES larger than the RAM part of the input area");
 
   typedef enum logic [3:0] {IDLE, LOADX, ROW, EPI0, EPI1, QDRAIN, WR, WRWAIT, FIN} state_t;
   state_t State;
@@ -71,7 +88,6 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   logic signed [31:0] Acc, Sum, BiasReg;
   logic [31:0]  WReg, Pack;
   logic         MacValid;
-  logic [31:0]  XMem [X_WORDS];
   logic [31:0]  XDout;
   logic [3:0]   StrbReg;
 
@@ -84,10 +100,10 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   assign LastRow = (Row == OutR[15:0] - 16'd1);
 
   // ---- the check of a start ----
-  function automatic logic inram(input [31:0] a, input [31:0] len);
+  function automatic logic inram(input [31:0] a, input [31:0] len, input [39:0] limit);
     logic [39:0] off;
     off = {8'b0, a} - RAM_BASE;
-    return ({8'b0, a} >= RAM_BASE) && (off + 40'(len) <= RAM_USABLE);
+    return ({8'b0, a} >= RAM_BASE) && (off + 40'(len) <= limit);
   endfunction
 
   // the start is the same write that sets RAW, so the check must use the bit being written, not the register's old value
@@ -103,9 +119,9 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   assign Valid = InB[1:0] == 2'b00 && InB != 32'd0 && InB <= 32'(X_BYTES)
                && OutR != 32'd0 && OutR <= 32'hFFFF && ShiftOk && !(RawNow && QNow)
                && WAddr[1:0] == 2'b00 && XAddr[1:0] == 2'b00 && BiasAddr[1:0] == 2'b00 && YAddr[1:0] == 2'b00
-               && inram(WAddr, OutR[15:0] * InB[10:0]) && inram(XAddr, InB)
-               && (NoBias || inram(BiasAddr, {14'b0, OutR[15:0], 2'b00}))
-               && inram(YAddr, RawNow ? {14'b0, OutR[15:0], 2'b00} : OutR);
+               && inram(WAddr, OutR[15:0] * InB[10:0], PART_OFF) && inram(XAddr, InB, PART_OFF)
+               && (NoBias || inram(BiasAddr, {14'b0, OutR[15:0], 2'b00}, PART_OFF))
+               && inram(YAddr, RawNow ? {14'b0, OutR[15:0], 2'b00} : OutR, AREA_OFF);
 
   // ---- APB registers ----
   always_ff @(posedge HCLK)
@@ -191,11 +207,15 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   assign Hi      = 48'sd127;
   assign Byte    = (Shifted > Hi) ? 8'sd127 : (Shifted < Lo) ? 8'(Lo) : 8'(Shifted);
 
-  // the input vector's memory: written by the load, read at the response's index (one clock later the word is there)
-  always_ff @(posedge HCLK) begin
-    if (State == LOADX && DataDone) XMem[RespCnt[7:0]] <= RData;
-    XDout <= XMem[RespCnt[7:0]];
-  end
+  // the input vector's area in the RAM, through the port to its part: written by the load as the words arrive, read at the response's index of a
+  // word of W (one clock later the word is there, as the MAC needs it); the core is held off the bus meanwhile (Own), and W, bias and the source of x are not
+  // in the part (Valid), so the macro's port is the unit's in those clocks
+  assign Own    = (State == LOADX || State == ROW) && IssueCnt != 10'd0;
+  assign XpReq  = DataDone && ((State == LOADX) || (State == ROW && RespCnt < {1'b0, Kw}));
+  assign XpWe   = (State == LOADX);
+  assign XpAddr = AREA_WORD + M'(RespCnt[7:0]);
+  assign XpDin  = RData;
+  assign XDout  = XpDout;
 
   // ---- Q31 requantization: muriscv_nn_requantize (doubling high multiply without saturation, rounding divide by a power of two),
   //      the output offset and the clamp, as a pipeline of stages Q1..Q5 that starts when a row's sum is ready (EPI1) ----

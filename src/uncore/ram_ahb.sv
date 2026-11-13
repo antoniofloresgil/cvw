@@ -34,7 +34,14 @@ module ram_ahb import cvw::*; #(parameter cvw_t P,
   input  logic [$clog2(P.TRACE_RAM_WORDS)-1:0] TrAddr,
   input  logic [31:0]          TrDin,
   output logic                 TrGrant,                      // the port is the sink's this cycle
-  output logic [31:0]          TrDout
+  output logic [31:0]          TrDout,
+  // P.AI_SUPPORTED: the AI unit's port to the last part of the RAM before the trace RAM (src/uncore/ai/ai_unit.sv), 2^M words, M = log2 TRACE_RAM_WORDS.
+  // The unit owns that part's macro in the cycles in which XpReq is high: the core is held off the bus while it asks (uncore.sv, Own), and the unit's
+  // own transfers keep out of the part (its Valid check), so the port is never contended
+  input  logic                 XpReq, XpWe,
+  input  logic [$clog2(P.TRACE_RAM_WORDS)-1:0] XpAddr,
+  input  logic [31:0]          XpDin,
+  output logic [31:0]          XpDout
 );
 
   localparam                   DEPTH = (RANGE+1)/64'(64'(P.XLEN)/8);  // RANGE is a mask (size-1), DEPTH is in XLEN-bit words
@@ -78,6 +85,7 @@ module ram_ahb import cvw::*; #(parameter cvw_t P,
     assign HREADRam = MemDout;
     assign TrGrant  = 1'b0;
     assign TrDout   = '0;
+    assign XpDout   = '0;
   end else begin : shared
     // The RAM of DEPTH = 2^N words is split in parts of 2^(N-1), 2^(N-2) ... 2^M words (j = 0, 1 ...),
     // each a power of two that ram1p1rwbe can bank, and the trace RAM of 2^M words (M = log2 TRACE_RAM_WORDS):
@@ -113,10 +121,18 @@ module ram_ahb import cvw::*; #(parameter cvw_t P,
 
     assign MemCe       = CpuNeeds & Sel[0];
     assign PartDout[0] = MemDout;
+    // With P.AI_SUPPORTED the AI unit has a port to the last part before the trace RAM (j = NP-1, 2^M words): its request wins, as the core
+    // is held off the bus then.  The name of the instance (part[j].memory) is the same, as gen_config.py names the macros by it.
+    if (P.AI_SUPPORTED & NP < 2) $error("AI_SUPPORTED needs a RAM of at least two parts besides the trace RAM (ram_ahb.sv)");
     for (genvar j = 1; j < NP; j++) begin : part
-      ram1p1rwbe #(P.USE_SRAM, 2**(N-1-j), P.XLEN, 0) memory(.clk(HCLK), .ce(CpuNeeds & Sel[j]),
-        .addr(Word[N-2-j:0]), .we(memwriteD), .din(HWDATA), .bwe(HWSTRB), .dout(PartDout[j]));
+      localparam XUSE = P.AI_SUPPORTED & (j == NP-1);
+      logic XOn;
+      assign XOn = XUSE & XpReq;
+      ram1p1rwbe #(P.USE_SRAM, 2**(N-1-j), P.XLEN, 0) memory(.clk(HCLK), .ce((CpuNeeds & Sel[j]) | XOn),
+        .addr(XOn ? (N-1-j)'(XpAddr) : Word[N-2-j:0]), .we(XOn ? XpWe : memwriteD), .din(XOn ? XpDin : HWDATA),
+        .bwe(XOn ? 4'hF : HWSTRB), .dout(PartDout[j]));
     end
+    assign XpDout = P.AI_SUPPORTED ? PartDout[NP-1] : '0;
 
     logic TCpu;
     assign TCpu    = CpuNeeds & Sel[NP];

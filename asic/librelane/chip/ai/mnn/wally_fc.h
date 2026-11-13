@@ -11,7 +11,8 @@
  * (the accumulators).
  *
  * What the unit takes (wally_fc_s8_unit_ok): filter_offset 0, input depth a multiple of 4 up to 1024, all buffers (weights, input,
- * folded bias, scratch) aligned to four bytes in the RAM outside the trace buffer.  Otherwise the call returns MURISCV_NN_ARG_ERROR
+ * folded bias, scratch) aligned to four bytes in the RAM, the weights, the folded bias and the input below 0x8000C000 (the RAM part of the unit's input area, whose macro the unit's
+ * input port uses) and none of them in the unit's input area, the last 1 KiB before the trace buffer (0x8000DC00-0x8000DFFF: a program's RAM ends at 0x8000DC00).  Otherwise the call returns MURISCV_NN_ARG_ERROR
  * and the caller uses the library's function. */
 #ifndef WALLY_FC_H
 #define WALLY_FC_H

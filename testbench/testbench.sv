@@ -518,7 +518,8 @@ module testbench;
     ram_ahb #(.P(P), .RANGE(P.EXT_MEM_RANGE))
     ram (.HCLK, .HRESETn, .HADDR, .HWRITE, .HTRANS, .HWDATA, .HSELRam(HSELEXT),
       .HREADRam(HRDATAEXT), .HREADYRam(HREADYEXT), .HRESPRam(HRESPEXT), .HREADY, .HWSTRB,
-      .TrReq(1'b0), .TrWe(1'b0), .TrBwe(4'b0), .TrAddr('0), .TrDin(32'b0), .TrGrant(), .TrDout());
+      .TrReq(1'b0), .TrWe(1'b0), .TrBwe(4'b0), .TrAddr('0), .TrDin(32'b0), .TrGrant(), .TrDout(),
+      .XpReq(1'b0), .XpWe(1'b0), .XpAddr('0), .XpDin(32'b0), .XpDout());
   end else begin
     assign HREADYEXT = 1'b1;
     assign {HRESPEXT, HRDATAEXT} = '0;

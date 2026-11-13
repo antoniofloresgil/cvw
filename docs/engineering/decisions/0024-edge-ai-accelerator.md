@@ -307,6 +307,68 @@ library, so it is paid back by the first inference with the unit. The image is 4
 measured: accuracy (the weights are random, so the classes mean nothing), a trained model, and the board. What is still not done is TFLM itself: a model
 small enough for this RAM would have to be built and its interpreter ported to freestanding C++.
 
+## ASIC synthesis of the unit (2026-11-13, Yosys only, nothing placed)
+
+`make synth` (LibreLane 3.1 to `Yosys.Synthesis`, SG13G2, the same settings) of `asic_soc_rv32imac` and of `asic_soc_rv32imac_ai`, whose only difference
+is `AI_SUPPORTED = 1`. Runs `RUN_2026-11-13_13-36-57` in `asic/librelane/work/<config>/runs/`:
+
+| | Without the unit | With the unit | Difference |
+| --- | --- | --- | --- |
+| Cells | 69,423 | 124,955 | +55,532 (+80 %) |
+| Area (Yosys, um2) | 1,362,654 | 2,215,374 | +852,720 (+63 %) |
+| Flip-flops (`sg13g2_dfrbpq_1`) | 7,900 | 17,004 | +9,104 |
+| Area of the flip-flops | 387,012 | 833,006 | +445,994 |
+
+The unit costs more than half of the chip again, not the "small unit" the step 1 design assumed. The cause is the buffer of the input vector,
+`XMem[256]` of 32 bits (`X_BYTES = 1024`, `ai_unit.sv`): Yosys makes it 8,192 flip-flops with a write enable each and a 256:1 read multiplexer, which is
+most of the +9,104 flip-flops and, by estimate (not measured separately), about 0.7 mm2 of the 0.85. IHP has a macro of exactly that shape,
+`RM_IHPSG13_1P_256x32_c2_bm_bist`, 416.64 x 118.78 um (0.0495 mm2, from its LEF), but `asic/librelane` adapts only the 1024 x 32 and 2048 x 32 ones. Options:
+put `XMem` in the 256 x 32 macro (the read is already registered, `XDout <= XMem[...]`), or cut `X_BYTES` (the 64-64-32-10 network needs 64). The same synthesis with a shorter buffer (a temporary change of `X_BYTES`, then undone), to see what the buffer costs:
+
+| `X_BYTES` | Cells | Area (um2) | Added to the chip without the unit | Flip-flops |
+| --- | --- | --- | --- | --- |
+| none (`AI_SUPPORTED = 0`) | 69,423 | 1,362,654 | | 7,900 |
+| 64 | 86,832 | 1,588,481 | +225,827 (+17 %) | 9,325 |
+| 256 | 94,198 | 1,711,100 | +348,446 (+26 %) | 10,861 |
+| 1024 (the design) | 124,955 | 2,215,374 | +852,720 (+63 %) | 17,004 |
+
+The buffer costs about 640 um2 per byte (a flip-flop, its enable and its share of the read multiplexer); the rest of the unit, about 190,000 um2 and
+910 flip-flops, does not depend on it. The README of `asic/librelane` gives the chip's cells 1.21 mm2, 61 % of the area outside the macros, so about
+0.8 mm2 is left at full use, and the die cannot grow (the antenna rule `Ant.e`, 19,706 of 20,000 at 2.752 mm; a ninth macro needs 2.92 mm and
+the README says that is why the trace shares the RAM). A macro of the 256 x 32 shape would be 0.05 mm2, but two kinds of macro in a design give Magic 380,000
+false errors. What is left: a short buffer (64 bytes limits a layer to 64 inputs), or the input vector read from the RAM that exists, through a second port
+on a part of it that the weights do not use, as the trace sink does (`ram_ahb.sv`, `TrReq`): no flip-flops and no limit but the part's size, at the cost of
+RTL in `ram_ahb`, `uncore` and `ai_unit`. Decided on 2026-11-13 by the user: the second one, below.
+
+Not measured:
+timing after synthesis, placement, or whether the die has room (it cannot grow more than about 20 um).
+
+### The input vector in the RAM (2026-11-13): the shared port
+
+`XMem` is gone. The unit has a port to the last part of the RAM before the trace buffer (`ram_ahb.sv`, `XpReq`, as the trace sink has one to the last
+part; 8 KiB, one 2048 x 32 macro in the chip, 0x8000C000-0x8000DFFF): the last 1 KiB of that part (0x8000DC00-0x8000DFFF) is the unit's input area, a
+program's RAM ends at 0x8000DC00 (55 KiB, the linker scripts of `chip/ai/*` and the Zephyr overlays `ai.overlay` and `ai-sim.overlay` say so). The unit
+still copies x there from wherever it is (LOADX, through the bus) and reads it from the area in every MAC through the port, so the software interface is
+the same, with two rules that the start checks (else ERROR, `-EINVAL` in the driver): W, the bias and the source of x lie below 0x8000C000, because that
+part's macro has one port and the unit's own transfers would contend for it; y may lie anywhere below the input area. Nothing else changes for a program.
+For the core not to contend either, `uncore.sv` holds it off the bus (`Own`) from the unit's first address of a load or a row to the end of the row, also
+after the unit's last address, so the core waits a few clocks more than before.
+
+| Chip | Cells | Area (um2) | Added to the chip without the unit | Flip-flops |
+| --- | --- | --- | --- | --- |
+| without the unit | 69,423 | 1,362,654 | | 7,900 |
+| the unit with `XMem` in flip-flops, 1024 bytes | 124,955 | 2,215,374 | +852,720 (+63 %) | 17,004 |
+| the unit with 64 bytes in flip-flops | 86,832 | 1,588,481 | +225,827 (+17 %) | 9,325 |
+| **the unit with the input vector in the RAM** | 84,320 | 1,543,394 | **+180,740 (+13 %)** | 8,781 |
+
+The unit now costs 0.18 mm2 for an input of up to 1 KiB (and the area could grow to the part's 8 KiB), a fifth of what it cost. The chip without the unit,
+synthesized again after the change, gives 69,593 cells and 1,362,040 um2 with the same 7,900 flip-flops (ABC's variation with the names, 0.05 %).
+`make chipsim-ai`: its six tests pass (`ai_baseline`, `ai_gemv`, `ai_wally_fc`, `ai_mlp`, `ai_digits`, `ai_zephyr`), and the 64 x 64 layer takes 1,433 unit
+cycles (1,504 before), `ai_gemv` also checks the new refusals (W or x in the part, y in the input area). Not measured: placement, timing after it, or whether
+the chip fits its die (it had 1.98 mm2 of room outside the macros of which the chip used 1.21); the FPGA numbers of `docs/fpga-chip.md` are of the version
+with `XMem` in flip-flops, and the board has not run this one.
+
+
 ## Steps and what ends each
 
 | Step | Exit |

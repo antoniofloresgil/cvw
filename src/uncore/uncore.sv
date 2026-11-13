@@ -95,7 +95,9 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   // The bus the uncore decodes: the core's (HADDR ...), or, with AI_SUPPORTED, the AI unit's master (src/uncore/ai).  The unit takes the bus
   // only when no transfer of the core is in its data phase (CoreDV), so no response is lost at the change.  While it has the bus the core
   // sees HREADY low, and the core's bus FSM (ebu/busfsm.sv) issues an address only in a clock with HREADY high, so none is in flight.
-  // The unit's transfers are single 32-bit accesses to the RAM, back to back.
+  // The unit's transfers are single 32-bit accesses to the RAM, back to back.  While it loads or reads its input vector (Own: from its first address to
+  // the end of the row) the core is held off the bus altogether, also after the unit's last address: the unit then has the port of the RAM part that holds
+  // the vector (ram_ahb.sv, XpReq) and the core must not use that macro.
   logic [P.PA_BITS-1:0]        HADDRM;
   logic [P.AHBW-1:0]           HWDATAM;
   logic [P.XLEN/8-1:0]         HWSTRBM;
@@ -103,10 +105,14 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   logic [2:0]                  HSIZEM;
   logic [1:0]                  HTRANSM;
   logic [P.XLEN-1:0]           MCURead;
+  // the AI unit's port to the RAM part that holds its input vector (ram_ahb.sv)
+  logic                        XpReq, XpWe;
+  logic [$clog2(P.TRACE_RAM_WORDS)-1:0] XpAddr;
+  logic [31:0]                 XpDin, XpDout;
   if (P.AI_SUPPORTED) begin : ai
-    if (P.XLEN != 32 || !P.MCU_SUPPORTED || !P.UNCORE_RAM_SUPPORTED || P.AHBW != 32)
-      $error("AI_SUPPORTED needs XLEN and AHBW 32, MCU_SUPPORTED and UNCORE_RAM_SUPPORTED");
-    logic                      Req, Write, AUnit, UnitDV, CoreDV, Sel;
+    if (P.XLEN != 32 || !P.MCU_SUPPORTED || !P.UNCORE_RAM_SUPPORTED || P.AHBW != 32 || !P.TRACE_IN_RAM)
+      $error("AI_SUPPORTED needs XLEN and AHBW 32, MCU_SUPPORTED, UNCORE_RAM_SUPPORTED and TRACE_IN_RAM (the unit's input vector is in a part of the shared RAM)");
+    logic                      Req, Write, AUnit, UnitDV, CoreDV, Sel, Own;
     logic [P.PA_BITS-1:0]      Addr;
     logic [31:0]               WData, Read;
     logic [3:0]                WStrb;
@@ -115,23 +121,25 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
       if (~HRESETn) {UnitDV, CoreDV} <= 2'b00;
       else if (HREADYM) begin
         UnitDV <= AUnit;
-        CoreDV <= ~AUnit & HTRANS[1];
+        CoreDV <= ~AUnit & ~Own & HTRANS[1];
       end
     assign HADDRM  = AUnit ? Addr : HADDR;
-    assign HTRANSM = AUnit ? 2'b10 : HTRANS;
+    assign HTRANSM = AUnit ? 2'b10 : Own ? 2'b00 : HTRANS;
     assign HWRITEM = AUnit ? Write : HWRITE;
     assign HSIZEM  = AUnit ? 3'b010 : HSIZE;
     assign HWDATAM = UnitDV ? WData : HWDATA;
     assign HWSTRBM = UnitDV ? WStrb : HWSTRB;
-    assign HREADY  = HREADYM & ~AUnit;      // the core's bus FSM (ebu/busfsm.sv) issues an address only while HREADY is high
+    assign HREADY  = HREADYM & ~AUnit & ~Own;      // the core's bus FSM (ebu/busfsm.sv) issues an address only while HREADY is high
     assign Sel     = PSEL[7] & (PADDR[15:12] == 4'd4);
     ai_unit #(P) unit(.HCLK, .HRESETn, .PSEL(Sel), .PWRITE, .PENABLE, .PADDR(PADDR[7:0]), .PWDATA(PWDATA[31:0]), .PRDATA(Read),
-      .Req, .Write, .Addr, .WData, .WStrb, .Accept(AUnit & HREADYM), .DataDone(UnitDV & HREADYM), .BusErr(UnitDV & HRESP), .RData(HRDATA[31:0]));
+      .Req, .Write, .Addr, .WData, .WStrb, .Accept(AUnit & HREADYM), .DataDone(UnitDV & HREADYM), .BusErr(UnitDV & HRESP), .RData(HRDATA[31:0]),
+      .Own, .XpReq, .XpWe, .XpAddr, .XpDin, .XpDout);
     assign PRDATA[7] = MCURead | Read;
   end else begin : noai
     assign HADDRM = HADDR;   assign HTRANSM = HTRANS; assign HWRITEM = HWRITE; assign HSIZEM = HSIZE;
     assign HWDATAM = HWDATA; assign HWSTRBM = HWSTRB;
     assign HREADY = HREADYM;
+    assign {XpReq, XpWe, XpAddr, XpDin} = '0;
     assign PRDATA[7] = MCURead;
   end
 
@@ -155,9 +163,11 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
     ram_ahb #(.P(P), .RANGE(P.UNCORE_RAM_RANGE), .PRELOAD(P.UNCORE_RAM_PRELOAD), .TRACE_SHARED(P.TRACE_IN_RAM)) ram (
       .HCLK, .HRESETn, .HSELRam, .HADDR(HADDRM), .HWRITE(HWRITEM), .HREADY(HREADYM),
       .HTRANS(HTRANSM), .HWDATA(HWDATAM), .HWSTRB(HWSTRBM), .HREADRam, .HRESPRam, .HREADYRam,
-      .TrReq, .TrWe, .TrBwe, .TrAddr, .TrDin, .TrGrant, .TrDout);
+      .TrReq, .TrWe, .TrBwe, .TrAddr, .TrDin, .TrGrant, .TrDout,
+      .XpReq, .XpWe, .XpAddr, .XpDin, .XpDout);
   end else begin
     assign {HREADRam, HRESPRam, HREADYRam} = '0;
+    assign XpDout = '0;
     assign {TrGrant, TrDout} = '0;
   end
 

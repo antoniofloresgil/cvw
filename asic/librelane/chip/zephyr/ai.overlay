@@ -1,4 +1,8 @@
-/* the chip with the AI unit (asic_soc_rv32imac_ai): enable its driver */
+/* the chip with the AI unit (asic_soc_rv32imac_ai): enable its driver, and leave the unit its input area, the last 1 KiB of the 56 KiB */
 &ai0 {
         status = "okay";
+};
+
+&sram0 {
+        reg = <0x80000000 0xDC00>;
 };

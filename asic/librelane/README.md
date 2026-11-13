@@ -73,7 +73,7 @@ Configurations:
   domains; see its README. `chipsim`'s `zephyr` test boots it from the flash and checks that two domains keep their
   data and that every access outside a thread's domain (another domain, kernel data and code, the UART, the trace
   area, a jump into data, a system call without permission) faults and aborts only that thread. Zephyr gets the
-  RAM's first 56 KiB; the last 8 KiB are the trace buffer's.
+  RAM's first 56 KiB (55 KiB on the chip with the AI unit: its input area is the last 1 KiB before the trace buffer); the last 8 KiB are the trace buffer's.
   Zephyr also drives the chip's peripherals (UART with interrupts, GPIO, SPI, PWM, I2C and the watchdog), each with a
   `chipsim` test on the pads; the FE310-compatible blocks use Zephyr's SiFive drivers (see `chip/zephyr/README.md`).
 - `asic_soc_rv32imac` also has the microcontroller peripherals of

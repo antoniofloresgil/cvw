@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
- * The first 56 KiB of the RAM of asic_soc_rv32imac at 0x80000000 (the last 8 KiB are the trace buffer): a flat image loaded by the
+ * The first 55 KiB of the RAM of asic_soc_rv32imac_ai at 0x80000000 (the last 8 KiB are the trace buffer, and the 1 KiB before it, 0x8000DC00,
+ * is the AI unit's input area: src/uncore/ai/ai_unit.sv): a flat image loaded by the
  * bootloader, with .bss last (the bootloader does not clear it; crt0.S does). */
 MEMORY
 {
-  RAM (rwx) : ORIGIN = 0x80000000, LENGTH = 56K
+  RAM (rwx) : ORIGIN = 0x80000000, LENGTH = 55K
 }
 ENTRY(_start)
 SECTIONS
