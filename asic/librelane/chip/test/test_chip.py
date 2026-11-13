@@ -249,7 +249,8 @@ async def ai_wally_fc(dut):
 @cocotb.test(skip=not AI_CHIP)
 async def ai_zephyr(dut):
     """The AI unit under Zephyr (../zephyr/ai, module/drivers/ai_wally.c): a 64 x 64 layer on the unit and in C, the same bytes, a second layer
-    with another multiplier, ReLU off and no bias, and a job the unit refuses (-EINVAL)."""
+    with another multiplier, ReLU off and no bias, the RAW mode (int32 accumulators), the Q31 mode (the requantization of muRISCV-NN, two layers, against an
+    independent implementation) and jobs the unit refuses (-EINVAL)."""
     image = HERE.parent / "zephyr/build-ai-sim/zephyr/zephyr.bin"    # make chipsim-ai builds it
     assert image.exists(), f"{image} is missing: make -C {image.parents[3]} APP=ai BUILD=build-ai-sim OVERLAY=ai-sim.overlay"
     await reset_chip(dut, flash=flash_image(image.read_bytes()), ready="F")
@@ -260,7 +261,10 @@ async def ai_zephyr(dut):
         dut._log.info(line.decode())
     assert lines[0] == b"ai start", f"{lines!r}"
     assert lines[1].startswith(b"layer 64x64 ok: unit "), f"{lines!r}"
-    assert lines[2:] == [b"signed layer without bias ok", b"bad arguments -22", b"AI ZEPHYR OK"], f"{lines!r}"
+    assert lines[2] == b"signed layer without bias ok", f"{lines!r}"
+    assert lines[3].startswith(b"raw layer ok: unit "), f"{lines!r}"
+    assert lines[4].startswith(b"q31 layer ok: unit "), f"{lines!r}"
+    assert lines[5:] == [b"q31 second layer ok", b"bad arguments -22", b"q31 bad shift -22", b"AI ZEPHYR OK"], f"{lines!r}"
 
 
 async def read_lines(dut, last, timeout=400000):

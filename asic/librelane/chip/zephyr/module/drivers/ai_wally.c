@@ -20,6 +20,13 @@
 #define REG_MULT   0x20
 #define REG_SHIFT  0x24
 #define REG_CYCLES 0x28
+#define REG_OFFSET 0x2C
+#define REG_AMIN   0x30
+#define REG_AMAX   0x34
+#define CTRL_START BIT(0)
+#define CTRL_RELU  BIT(1)
+#define CTRL_RAW   BIT(2)
+#define CTRL_Q31   BIT(3)
 #define ST_BUSY    BIT(0)
 #define ST_DONE    BIT(1)
 #define ST_ERR     BIT(2)
@@ -45,10 +52,31 @@ int wally_ai_run(const struct device *dev, const struct wally_ai_job *job, uint3
     sys_write32((uint32_t)(uintptr_t)job->w, b + REG_W);
     sys_write32((uint32_t)(uintptr_t)job->x, b + REG_X);
     sys_write32((uint32_t)(uintptr_t)job->bias, b + REG_BIAS);     /* NULL: no bias */
-    sys_write32((uint32_t)(uintptr_t)job->y, b + REG_Y);
-    sys_write32((uint32_t)(uint16_t)job->mult, b + REG_MULT);
-    sys_write32(job->shift, b + REG_SHIFT);
-    sys_write32(1U | (job->relu ? 2U : 0U), b + REG_CTRL);
+    sys_write32((uint32_t)(uintptr_t)(job->mode == WALLY_AI_RAW ? (void *)job->acc : (void *)job->y), b + REG_Y);
+    uint32_t ctrl = CTRL_START;
+
+    switch (job->mode) {
+    case WALLY_AI_BYTE:
+        sys_write32((uint32_t)(uint16_t)job->mult, b + REG_MULT);
+        sys_write32(job->shift, b + REG_SHIFT);
+        ctrl |= job->relu ? CTRL_RELU : 0U;
+        break;
+    case WALLY_AI_RAW:                                    /* MULT, SHIFT and RELU are ignored by the unit */
+        ctrl |= CTRL_RAW;
+        break;
+    case WALLY_AI_Q31:
+        sys_write32((uint32_t)job->q31_mult, b + REG_MULT);
+        sys_write32((uint32_t)job->q31_shift, b + REG_SHIFT);
+        sys_write32((uint32_t)job->offset, b + REG_OFFSET);
+        sys_write32((uint32_t)job->act_min, b + REG_AMIN);
+        sys_write32((uint32_t)job->act_max, b + REG_AMAX);
+        ctrl |= CTRL_Q31;
+        break;
+    default:
+        k_mutex_unlock(&data->lock);
+        return -EINVAL;
+    }
+    sys_write32(ctrl, b + REG_CTRL);
     st = sys_read32(b + REG_STATUS);
     bool refused = !(st & ST_BUSY) && (st & ST_ERR);     /* a run cannot end within one register access: ERROR at once is a refusal */
 
