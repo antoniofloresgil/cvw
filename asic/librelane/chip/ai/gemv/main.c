@@ -25,6 +25,7 @@
 #define CTRL_RELU  2u
 #define CTRL_RAW   4u
 #define CTRL_Q31   8u
+#define CTRL_W4    16u
 
 static void putc_(char c)
 {
@@ -289,6 +290,8 @@ int main(void)
     ok &= refuse_ctrl("Q31 shift 31", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y, 31, CTRL_START | CTRL_Q31);
     ok &= refuse_ctrl("Q31 shift -32", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y, (uint32_t)-32, CTRL_START | CTRL_Q31);
     ok &= refuse_ctrl("Q31 Y in the trace buffer", 4, 4, (uint32_t)(uintptr_t)W, 0x8000E000, (uint32_t)-6, CTRL_START | CTRL_Q31);
+    ok &= refuse_ctrl("W4 IN 12 (not a multiple of 8)", 12, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y, 8, CTRL_START | CTRL_W4);
+    ok &= refuse_ctrl("W4 weights run into the input area's RAM part", 8, 2, 0x8000BFFC, (uint32_t)(uintptr_t)Y, 8, CTRL_START | CTRL_W4);
     ok &= check("byte mode again after raw", W, 64, 64, BIAS, 77, 14, 1);
 
     puts_(ok ? "AI GEMV OK\n" : "AI GEMV FAIL\n");

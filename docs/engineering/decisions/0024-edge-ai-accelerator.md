@@ -369,6 +369,17 @@ the chip fits its die (it had 1.98 mm2 of room outside the macros of which the c
 with `XMem` in flip-flops, and the board has not run this one.
 
 
+## Int4 weights (2026-11-13, simulation and Yosys; [record](../experiments/2026-11-13-ai-unit-int4.md))
+
+CTRL bit 4 (W4) makes the unit read int4 weights, two to a byte in the layout of muRISCV-NN's `muriscv_nn_fully_connected_s4`, in any mode. The four
+8 x 8 multipliers take a word of W (eight weights) in two clocks, so **the speed is that of int8 and the saving is memory**: half the weight bytes in a
+RAM of 55 KiB. Going faster would need two words of x a clock, which the single port to the RAM part cannot give. The unit's bytes equal the library's
+s4 function on 70 random layers (`ai_int4`), and the digits network (`model/train_digits.py --bits 4`, quantization-aware fine-tuned) classifies the
+200 samples as the host's integer model does, 198 right of 200 as with int8 (`ai_digits4`; 0.9866 on the 597 test samples against 0.9749 for post-training
+quantization). Cost in Yosys: +2,227 um2 (1,545,621 for the chip with the unit), two flip-flops. FP8 and FP4 stay out, as judged on 2026-11-13: the
+library has no kernels for them and int4 gives the same memory saving with the library's own functions. Not measured: placement, timing, the board.
+
+
 ## Steps and what ends each
 
 | Step | Exit |

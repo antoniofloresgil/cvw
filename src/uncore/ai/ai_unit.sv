@@ -19,10 +19,13 @@
 //   00 CTRL     [0] START (a write of 1 starts a run when idle)  [1] RELU: clamp to 0..127 instead of -128..127
 //               [2] RAW: write W x + bias as an int32 per output (Y is OUT words); MULT, SHIFT and RELU are then ignored
 //               [3] Q31: requantize as muRISCV-NN does (MULT 32-bit, SHIFT signed, OFFSET, ACT_MIN, ACT_MAX; RELU ignored); not with RAW
+//               [4] W4: the weights are int4, two to a byte, the low nibble first (muriscv_nn_fully_connected_s4's layout), so a row of W is IN/2 bytes
+//                   and IN a multiple of 8; each word of W feeds two clocks of the same four multipliers (4 x 8 bits would do, the 8 x 8 ones are
+//                   shared), so the work per element is the same and the weights take half the RAM; with RAW, Q31 or neither
 //   04 STATUS   [0] BUSY  [1] DONE  [2] ERROR: write 1 to clear DONE and ERROR.  A start with bad arguments, or a bus error, sets ERROR
-//   08 IN       bytes of x and of a row of W: a multiple of 4, 4..X_BYTES
+//   08 IN       bytes of x and elements of a row of W: a multiple of 4 (of 8 with W4), 4..X_BYTES
 //   0C OUT      rows, 1..65535
-//   10 W_ADDR   weights, word aligned          14 X_ADDR   input vector, word aligned
+//   10 W_ADDR   weights (OUT*IN bytes, OUT*IN/2 with W4), word aligned          14 X_ADDR   input vector, word aligned
 //   18 BIAS_ADDR  OUT int32, word aligned; 0 means no bias      1C Y_ADDR   OUT int8 (OUT int32 with RAW), word aligned
 //   20 MULT     signed 16-bit multiplier (bits 15:0), with Q31 a signed 32-bit Q31 multiplier
 //   24 SHIFT    arithmetic right shift, 0..47; with Q31 signed -31..30 (positive: left shift of the accumulator first)
@@ -78,7 +81,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   state_t State;
 
   // registers
-  logic        Relu, Raw, QMode, Busy, Done, Err;
+  logic        Relu, Raw, QMode, W4, Busy, Done, Err;
   logic [31:0] InB, OutR, WAddr, XAddr, BiasAddr, YAddr, Mult, Shift, Cycles, Offset, ActMin, ActMax;
 
   // run state
@@ -87,14 +90,15 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   logic [9:0]   IssueCnt, RespCnt;
   logic signed [31:0] Acc, Sum, BiasReg;
   logic [31:0]  WReg, Pack;
-  logic         MacValid;
+  logic         MacValid, Mac2;           // Mac2: the second clock of a W4 word (its high four nibbles)
   logic [31:0]  XDout;
   logic [3:0]   StrbReg;
 
-  logic [8:0]   Kw;                       // words per row
+  logic [8:0]   Kw, Kx;                   // words of W per row (IN/4, IN/8 with W4), words of x (IN/4)
   logic [9:0]   Total;                    // reads per row: the words and the bias
   logic         NoBias, LastRow;
-  assign Kw      = InB[10:2];
+  assign Kx      = InB[10:2];
+  assign Kw      = W4 ? {1'b0, InB[10:3]} : InB[10:2];
   assign NoBias  = (BiasAddr == 32'd0);
   assign Total   = {1'b0, Kw} + (NoBias ? 10'd0 : 10'd1);
   assign LastRow = (Row == OutR[15:0] - 16'd1);
@@ -107,30 +111,31 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   endfunction
 
   // the start is the same write that sets RAW, so the check must use the bit being written, not the register's old value
-  logic Wr, Start, RawNow, QNow;
+  logic Wr, Start, RawNow, QNow, W4Now;
   assign Wr     = PSEL & PENABLE & PWRITE;
   assign Start  = Wr & (PADDR[7:2] == 6'h00) & PWDATA[0];
   assign RawNow = Start ? PWDATA[2] : Raw;
   assign QNow   = Start ? PWDATA[3] : QMode;
+  assign W4Now  = Start ? PWDATA[4] : W4;
   logic ShiftOk;
   assign ShiftOk = RawNow | (QNow ? (signed'(Shift) >= -32'sd31 && signed'(Shift) <= 32'sd30) : Shift <= 32'd47);
 
   logic Valid;
-  assign Valid = InB[1:0] == 2'b00 && InB != 32'd0 && InB <= 32'(X_BYTES)
+  assign Valid = InB[1:0] == 2'b00 && (!W4Now || InB[2] == 1'b0) && InB != 32'd0 && InB <= 32'(X_BYTES)
                && OutR != 32'd0 && OutR <= 32'hFFFF && ShiftOk && !(RawNow && QNow)
                && WAddr[1:0] == 2'b00 && XAddr[1:0] == 2'b00 && BiasAddr[1:0] == 2'b00 && YAddr[1:0] == 2'b00
-               && inram(WAddr, OutR[15:0] * InB[10:0], PART_OFF) && inram(XAddr, InB, PART_OFF)
+               && inram(WAddr, W4Now ? (OutR[15:0] * InB[10:0]) >> 1 : OutR[15:0] * InB[10:0], PART_OFF) && inram(XAddr, InB, PART_OFF)
                && (NoBias || inram(BiasAddr, {14'b0, OutR[15:0], 2'b00}, PART_OFF))
                && inram(YAddr, RawNow ? {14'b0, OutR[15:0], 2'b00} : OutR, AREA_OFF);
 
   // ---- APB registers ----
   always_ff @(posedge HCLK)
     if (~HRESETn) begin
-      Relu <= 1'b0; Raw <= 1'b0; QMode <= 1'b0;
+      Relu <= 1'b0; Raw <= 1'b0; QMode <= 1'b0; W4 <= 1'b0;
       {InB, OutR, WAddr, XAddr, BiasAddr, YAddr, Mult, Shift, Offset, ActMin, ActMax} <= '0;
     end else if (Wr & ~Busy) begin
       case (PADDR[7:2])
-        6'h00: begin Relu <= PWDATA[1]; Raw <= PWDATA[2]; QMode <= PWDATA[3]; end
+        6'h00: begin Relu <= PWDATA[1]; Raw <= PWDATA[2]; QMode <= PWDATA[3]; W4 <= PWDATA[4]; end
         6'h02: InB      <= PWDATA;
         6'h03: OutR     <= PWDATA;
         6'h04: WAddr    <= PWDATA;
@@ -148,7 +153,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
 
   always_comb
     case (PADDR[7:2])
-      6'h00:   PRDATA = {28'b0, QMode, Raw, Relu, 1'b0};
+      6'h00:   PRDATA = {27'b0, W4, QMode, Raw, Relu, 1'b0};
       6'h01:   PRDATA = {29'b0, Err, Done, Busy};
       6'h02:   PRDATA = InB;
       6'h03:   PRDATA = OutR;
@@ -166,7 +171,8 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
     endcase
 
   // ---- the bus master ----
-  assign Req   = (State == LOADX && IssueCnt < {1'b0, Kw}) || (State == ROW && IssueCnt < Total) || (State == WR);
+  // with W4 a word of W lasts two clocks of MAC, so the next read is issued once the previous has answered (the x port serves one word a clock)
+  assign Req   = (State == LOADX && IssueCnt < {1'b0, Kx}) || (State == ROW && IssueCnt < Total && (!W4 || IssueCnt == RespCnt)) || (State == WR);
   assign Write = (State == WR);
   always_comb
     if (State == WR)                  Addr = P.PA_BITS'(YPtr);
@@ -185,6 +191,12 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
     p3 = signed'(w[31:24]) * signed'(x[31:24]);
     return 32'(p0) + 32'(p1) + 32'(p2) + 32'(p3);
   endfunction
+
+  // W4: the four nibbles of one half of a word of W, sign-extended to bytes, go through the same multipliers
+  logic [15:0] WHalf;
+  logic [31:0] WMul;
+  assign WHalf = Mac2 ? WReg[31:16] : WReg[15:0];
+  assign WMul  = W4 ? {{4{WHalf[15]}}, WHalf[15:12], {4{WHalf[11]}}, WHalf[11:8], {4{WHalf[7]}}, WHalf[7:4], {4{WHalf[3]}}, WHalf[3:0]} : WReg;
 
   // the multiplier: byte mode multiplies the sum by the 16-bit MULT; Q31 mode multiplies the shifted sum by the low half of MULT (unsigned,
   // stage Q1) and by its high half (signed, stage Q2)
@@ -211,9 +223,16 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   // word of W (one clock later the word is there, as the MAC needs it); the core is held off the bus meanwhile (Own), and W, bias and the source of x are not
   // in the part (Valid), so the macro's port is the unit's in those clocks
   assign Own    = (State == LOADX || State == ROW) && IssueCnt != 10'd0;
-  assign XpReq  = DataDone && ((State == LOADX) || (State == ROW && RespCnt < {1'b0, Kw}));
+  // W4: the word of W answers at clock c (x word 2k is read), its first half is multiplied in c+1 (MacValid) while x word 2k+1 is read, its second
+  // half in c+2; RespCnt is k+1 in c+1, so the address is 2*RespCnt-1
+  logic [8:0] XIdx;
+  always_comb
+    if (State == LOADX || !W4) XIdx = {1'b0, RespCnt[7:0]};
+    else if (MacValid)         XIdx = {RespCnt[7:0], 1'b0} - 9'd1;
+    else                       XIdx = {RespCnt[7:0], 1'b0};
+  assign XpReq  = (DataDone && ((State == LOADX) || (State == ROW && RespCnt < {1'b0, Kw}))) || (State == ROW && W4 && MacValid);
   assign XpWe   = (State == LOADX);
-  assign XpAddr = AREA_WORD + M'(RespCnt[7:0]);
+  assign XpAddr = AREA_WORD + M'(XIdx);
   assign XpDin  = RData;
   assign XDout  = XpDout;
 
@@ -249,7 +268,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
     if (~HRESETn) begin
       State <= IDLE; Busy <= 1'b0; Done <= 1'b0; Err <= 1'b0; Cycles <= '0;
       WPtr <= '0; BPtr <= '0; YPtr <= '0; Row <= '0; IssueCnt <= '0; RespCnt <= '0;
-      Acc <= '0; Sum <= '0; BiasReg <= '0; WReg <= '0; Pack <= '0; MacValid <= 1'b0; StrbReg <= '0;
+      Acc <= '0; Sum <= '0; BiasReg <= '0; WReg <= '0; Pack <= '0; MacValid <= 1'b0; Mac2 <= 1'b0; StrbReg <= '0;
       QSt <= QIDLE; Vsh <= '0; P0 <= '0; P1 <= '0; Hq <= '0; Rq <= '0; QLane <= '0;
     end else begin
       if (Busy) Cycles <= Cycles + 32'd1;
@@ -259,7 +278,8 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
         if (PWDATA[2]) Err  <= 1'b0;
       end
       MacValid <= 1'b0;
-      if (MacValid) Acc <= Acc + dot4(WReg, XDout);
+      Mac2     <= MacValid & W4 & (State == ROW);
+      if (MacValid | Mac2) Acc <= Acc + dot4(WMul, XDout);
       case (QSt)
         Q1: begin P0 <= Mul; QSt <= Q2; end
         Q2: begin P1 <= Mul; QSt <= Q3; end
@@ -291,7 +311,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
             IssueCnt <= '0; RespCnt <= '0; Acc <= '0;
           end else Err <= 1'b1;
         end
-        LOADX: if (DataDone && RespCnt == {1'b0, Kw} - 10'd1) begin
+        LOADX: if (DataDone && RespCnt == {1'b0, Kx} - 10'd1) begin
           State <= ROW;
           start_row();
         end
@@ -301,7 +321,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
             MacValid <= 1'b1;
           end
           if (DataDone && RespCnt == {1'b0, Kw}) BiasReg <= signed'(RData);
-          if (RespCnt == Total && !MacValid) State <= EPI0;
+          if (RespCnt == Total && !MacValid && !Mac2) State <= EPI0;
         end
         EPI0: begin
           Sum <= Acc + (NoBias ? 32'sd0 : BiasReg);
@@ -319,7 +339,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
               State <= QDRAIN;
             end else begin
               Row <= Row + 16'd1;
-              WPtr <= WPtr + InB;
+              WPtr <= WPtr + (W4 ? {1'b0, InB[31:1]} : InB);
               BPtr <= BPtr + 32'd4;
               State <= ROW;
               start_row();
@@ -338,7 +358,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
             State <= WR;
           end else begin
             Row <= Row + 16'd1;
-            WPtr <= WPtr + InB;
+            WPtr <= WPtr + (W4 ? {1'b0, InB[31:1]} : InB);
             BPtr <= BPtr + 32'd4;
             State <= ROW;
             start_row();
@@ -351,7 +371,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
           if (LastRow) State <= FIN;
           else begin
             Row <= Row + 16'd1;
-            WPtr <= WPtr + InB;
+            WPtr <= WPtr + (W4 ? {1'b0, InB[31:1]} : InB);
             BPtr <= BPtr + 32'd4;
             State <= ROW;
             start_row();

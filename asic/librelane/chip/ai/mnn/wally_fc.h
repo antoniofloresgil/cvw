@@ -150,4 +150,105 @@ static inline muriscv_nn_status wally_fc_s8_q31(const muriscv_nn_fc_params *fc, 
     return MURISCV_NN_SUCCESS;
 }
 
+/* ---- int4 weights (CTRL W4): muriscv_nn_fully_connected_s4's layout, two weights to a byte, the low nibble the lower index, rows one after the
+ * other (a flat nibble stream, kernel[j * in / 2 + i / 2] for element i of row j).  The input depth must be a multiple of 8 (a row is whole
+ * words) up to 1024; the other rules are those of the int8 functions.  The weights take half the RAM, the unit's cycles are the same. */
+
+/* folded[j] = (bias ? bias[j] : 0) + input_offset * sum of the int4 weights of row j */
+static inline void wally_fc_s4_prepare(int32_t *folded, const int8_t *w4, const int32_t *bias, int32_t in, int32_t out, int32_t input_offset)
+{
+    for (int32_t j = 0; j < out; j++) {
+        int32_t s = 0;
+
+        for (int32_t i = 0; i < in; i++) {
+            int32_t e = j * in + i;
+            uint8_t b = (uint8_t)w4[e >> 1];
+
+            s += (int8_t)((e & 1) ? (b & 0xF0u) : (uint8_t)(b << 4)) >> 4;
+        }
+        folded[j] = (int32_t)((uint32_t)(bias ? bias[j] : 0) + (uint32_t)input_offset * (uint32_t)s);
+    }
+}
+
+static inline int wally_fc_s4_unit_ok(const muriscv_nn_fc_params *fc, const muriscv_nn_dims *filter_dims, const muriscv_nn_dims *output_dims,
+                                      const void *w, const void *x, const void *folded_bias, const void *y)
+{
+    return wally_fc_s8_unit_ok(fc, filter_dims, output_dims, w, x, folded_bias, y) && (filter_dims->n & 7) == 0;
+}
+
+/* one run of the unit with int4 weights; returns 0, or -1 if it refused or a bus error happened */
+static inline int wally_fc_s4_run(uint32_t in, uint32_t out, const void *w4, const void *x, const void *folded_bias, void *y, uint32_t ctrl)
+{
+    uint32_t st;
+
+    WALLY_AI(WALLY_AI_IN) = in;
+    WALLY_AI(WALLY_AI_OUT) = out;
+    WALLY_AI(WALLY_AI_W) = (uint32_t)(uintptr_t)w4;
+    WALLY_AI(WALLY_AI_X) = (uint32_t)(uintptr_t)x;
+    WALLY_AI(WALLY_AI_BIAS) = (uint32_t)(uintptr_t)folded_bias;
+    WALLY_AI(WALLY_AI_Y) = (uint32_t)(uintptr_t)y;
+    WALLY_AI(WALLY_AI_CTRL) = 1u | 16u | ctrl;          /* START, W4 */
+    do {
+        st = WALLY_AI(WALLY_AI_STATUS);
+    } while (st & 1u);
+    WALLY_AI(WALLY_AI_STATUS) = 6u;
+    return (st & 4u) ? -1 : 0;
+}
+
+/* muriscv_nn_fully_connected_s4 with the product on the unit (RAW) and the library's requantization in software; ctx->buf is a scratch of
+ * 4 * output_depth bytes */
+static inline muriscv_nn_status wally_fc_s4(const muriscv_nn_context *ctx, const muriscv_nn_fc_params *fc,
+                                            const muriscv_nn_per_tensor_quant_params *quant, const muriscv_nn_dims *input_dims,
+                                            const q7_t *input, const muriscv_nn_dims *filter_dims, const q7_t *kernel,
+                                            const int32_t *folded_bias, const muriscv_nn_dims *output_dims, q7_t *output)
+{
+    int32_t *acc = (int32_t *)ctx->buf;
+    const int32_t in = filter_dims->n, out = output_dims->c;
+
+    if (acc == NULL || ctx->size < 4 * out || !wally_fc_s4_unit_ok(fc, filter_dims, output_dims, kernel, input, folded_bias, acc)) {
+        return MURISCV_NN_ARG_ERROR;
+    }
+    for (int32_t batch = input_dims->n; batch > 0; batch--) {
+        if (wally_fc_s4_run((uint32_t)in, (uint32_t)out, kernel, input, folded_bias, acc, 4u) != 0) {      /* RAW */
+            return MURISCV_NN_ARG_ERROR;
+        }
+        for (int32_t j = 0; j < out; j++) {
+            int32_t v = muriscv_nn_requantize(acc[j], quant->multiplier, quant->shift) + fc->output_offset;
+
+            v = v < fc->activation.min ? fc->activation.min : v;
+            output[j] = (int8_t)(v > fc->activation.max ? fc->activation.max : v);
+        }
+        input += in;
+        output += out;
+    }
+    return MURISCV_NN_SUCCESS;
+}
+
+/* the same with the unit requantizing (Q31), as wally_fc_s8_q31 */
+static inline muriscv_nn_status wally_fc_s4_q31(const muriscv_nn_fc_params *fc, const muriscv_nn_per_tensor_quant_params *quant,
+                                                const muriscv_nn_dims *input_dims, const q7_t *input, const muriscv_nn_dims *filter_dims,
+                                                const q7_t *kernel, const int32_t *folded_bias, const muriscv_nn_dims *output_dims,
+                                                q7_t *output)
+{
+    const int32_t in = filter_dims->n, out = output_dims->c;
+
+    if (!wally_fc_s4_unit_ok(fc, filter_dims, output_dims, kernel, input, folded_bias, output) ||
+        (input_dims->n > 1 && (out & 3) != 0)) {
+        return MURISCV_NN_ARG_ERROR;
+    }
+    WALLY_AI(WALLY_AI_MULT) = (uint32_t)quant->multiplier;
+    WALLY_AI(WALLY_AI_SHIFT) = (uint32_t)quant->shift;
+    WALLY_AI(WALLY_AI_OFFSET) = (uint32_t)fc->output_offset;
+    WALLY_AI(WALLY_AI_AMIN) = (uint32_t)fc->activation.min;
+    WALLY_AI(WALLY_AI_AMAX) = (uint32_t)fc->activation.max;
+    for (int32_t batch = input_dims->n; batch > 0; batch--) {
+        if (wally_fc_s4_run((uint32_t)in, (uint32_t)out, kernel, input, folded_bias, output, 8u) != 0) {   /* Q31 */
+            return MURISCV_NN_ARG_ERROR;
+        }
+        input += in;
+        output += out;
+    }
+    return MURISCV_NN_SUCCESS;
+}
+
 #endif

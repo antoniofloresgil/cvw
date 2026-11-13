@@ -247,6 +247,21 @@ async def ai_wally_fc(dut):
 
 
 @cocotb.test(skip=not AI_CHIP)
+async def ai_int4(dut):
+    """Int4 weights on the AI unit (CTRL W4, ../ai/mnn/int4.c): muriscv_nn_fully_connected_s4 on the core, the unit in RAW mode and the unit in Q31 mode,
+    byte for byte on random layers (shapes, batches, offsets, multipliers, shifts, clamps, extreme weights); the cycles and weight bytes of the 64 x 64
+    layer with int8 and with int4 weights are logged."""
+    program = (HERE.parent / "ai/mnn/build/int4.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    lines = await read_lines(dut, b"INT4 ", timeout=60000000)
+    for line in lines:
+        dut._log.info(line.decode())
+    assert lines[1].startswith(b"cases compared: 70, all equal"), f"{lines!r}"
+    assert b"same bytes out" in lines[2], f"{lines!r}"
+    assert lines[-1] == b"INT4 OK", f"{lines!r}"
+
+
+@cocotb.test(skip=not AI_CHIP)
 async def ai_mlp(dut):
     """A 64-64-32-10 int8 network (../ai/mnn/mlp.c) run three ways, the library on the core, the AI unit in RAW mode with the library's requantization
     in software, and the unit in Q31 mode: every layer's bytes equal on eight random inputs; the cycles of each layer are logged."""
@@ -265,6 +280,20 @@ async def ai_digits(dut):
     one on the unit in Q31 mode; its classes must be those of the host's bit-exact integer model, and the library, the RAW mode and the Q31 mode must
     agree on every layer of the first eight."""
     program = (HERE.parent / "ai/mnn/build/digits.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    lines = await read_lines(dut, b"DIGITS ", timeout=200000000)
+    for line in lines:
+        dut._log.info(line.decode())
+    assert b"equal in every layer on 8 of 8" in lines[1], f"{lines!r}"
+    assert b"different from the host's integer model on 0" in lines[2], f"{lines!r}"
+    assert lines[-1] == b"DIGITS OK", f"{lines!r}"
+
+
+@cocotb.test(skip=not AI_CHIP)
+async def ai_digits4(dut):
+    """The same network with int4 weights (../ai/mnn/digits.c -DDIGITS_W4, model/train_digits.py --bits 4, quantization-aware fine-tuned): the library's
+    s4 function, the unit RAW and the unit Q31 (CTRL W4) agree on every layer of the first eight, and the 200 samples give the host's classes."""
+    program = (HERE.parent / "ai/mnn/build/digits4.bin").read_bytes()
     await reset_chip(dut, flash=flash_image(program), ready="F")
     lines = await read_lines(dut, b"DIGITS ", timeout=200000000)
     for line in lines:

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
- * A trained network on the chip: the 64-64-32-10 int8 MLP of model/train_digits.py (8 x 8 digits), its test samples in digits_model.h.
+ * A trained network on the chip: the 64-64-32-10 MLP of model/train_digits.py (int8 weights, or int4 weights with -DDIGITS_W4) (8 x 8 digits), its test samples in digits_model.h.
  * Every sample runs on the unit in Q31 mode (the unit requantizes), its class is compared with the label (accuracy) and with the class of the
  * host's bit-exact integer model (it must be the same on every sample).  The first samples also run the library on the core and the unit in RAW
  * mode, and every layer's bytes must be equal in the three.  Cycles of an inference on the unit and in the library are printed.  Needs a chip
@@ -7,7 +7,21 @@
 #include <stdint.h>
 #include "common.h"
 #include "wally_fc.h"
+#ifdef DIGITS_W4        /* int4 weights (model/train_digits.py --bits 4): the library's s4 function, CTRL W4 on the unit */
+#include "model/digits4_model.h"
+#define WBITS "4"
+#define FC_LIB muriscv_nn_fully_connected_s4
+#define FC_RAW wally_fc_s4
+#define FC_Q31 wally_fc_s4_q31
+#define FC_PREPARE wally_fc_s4_prepare
+#else
 #include "model/digits_model.h"
+#define WBITS "8"
+#define FC_LIB muriscv_nn_fully_connected_s8
+#define FC_RAW wally_fc_s8
+#define FC_Q31 wally_fc_s8_q31
+#define FC_PREPARE wally_fc_s8_prepare
+#endif
 
 #define CHECKED 8       /* samples that also run the library and the RAW mode (the library takes 170,000 cycles each) */
 
@@ -37,11 +51,11 @@ static int layer(int path, int l, const int8_t *x, int8_t *y)
     muriscv_nn_status st;
 
     if (path == LIB) {
-        st = muriscv_nn_fully_connected_s8(&ctx, &fc, &q, &in_d, x, &f_d, DW[l], &b_d, DB[l], &o_d, y);
+        st = FC_LIB(&ctx, &fc, &q, &in_d, x, &f_d, DW[l], &b_d, DB[l], &o_d, y);
     } else if (path == RAW) {
-        st = wally_fc_s8(&uctx, &fc, &q, &in_d, x, &f_d, DW[l], F[l], &o_d, y);
+        st = FC_RAW(&uctx, &fc, &q, &in_d, x, &f_d, DW[l], F[l], &o_d, y);
     } else {
-        st = wally_fc_s8_q31(&fc, &q, &in_d, x, &f_d, DW[l], F[l], &o_d, y);
+        st = FC_Q31(&fc, &q, &in_d, x, &f_d, DW[l], F[l], &o_d, y);
     }
     return st == MURISCV_NN_SUCCESS ? 0 : -1;
 }
@@ -76,11 +90,11 @@ int main(void)
     int ok = 1, correct = 0, correct_lib = 0, differs = 0, refused = 0, unequal = 0;
     uint32_t cyc_unit = 0, cyc_lib = 0;
 
-    puts_("digits: 64-64-32-10 int8 MLP, ");
+    puts_("digits: 64-64-32-10 MLP with int" WBITS " weights, ");
     putu(DIGITS_N);
     puts_(" test samples\n");
     for (int l = 0; l < 3; l++) {
-        wally_fc_s8_prepare(F[l], DW[l], DB[l], DL[l].in, DL[l].out, DL[l].in_off);
+        FC_PREPARE(F[l], DW[l], DB[l], DL[l].in, DL[l].out, DL[l].in_off);
     }
     for (int n = 0; n < DIGITS_N; n++) {
         for (int i = 0; i < 64; i++) {

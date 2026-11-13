@@ -27,6 +27,7 @@
 #define CTRL_RELU  BIT(1)
 #define CTRL_RAW   BIT(2)
 #define CTRL_Q31   BIT(3)
+#define CTRL_W4    BIT(4)
 #define ST_BUSY    BIT(0)
 #define ST_DONE    BIT(1)
 #define ST_ERR     BIT(2)
@@ -53,7 +54,7 @@ int wally_ai_run(const struct device *dev, const struct wally_ai_job *job, uint3
     sys_write32((uint32_t)(uintptr_t)job->x, b + REG_X);
     sys_write32((uint32_t)(uintptr_t)job->bias, b + REG_BIAS);     /* NULL: no bias */
     sys_write32((uint32_t)(uintptr_t)(job->mode == WALLY_AI_RAW ? (void *)job->acc : (void *)job->y), b + REG_Y);
-    uint32_t ctrl = CTRL_START;
+    uint32_t ctrl = CTRL_START | (job->w4 ? CTRL_W4 : 0U);
 
     switch (job->mode) {
     case WALLY_AI_BYTE:

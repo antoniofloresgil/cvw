@@ -22,11 +22,11 @@ enum wally_ai_mode {
 };
 
 struct wally_ai_job {
-    const int8_t *w;         /* out rows of in int8, row-major */
+    const int8_t *w;         /* out rows of in int8, row-major; with w4, in/2 bytes a row: two int4 to a byte, the low nibble first (muRISCV-NN's s4 layout) */
     const int8_t *x;         /* in int8 */
     const int32_t *bias;     /* out int32, or NULL for none */
     int8_t *y;               /* out int8 (BYTE and Q31) */
-    uint16_t in;             /* a multiple of 4, 4..1024 */
+    uint16_t in;             /* a multiple of 4 (of 8 with w4), 4..1024 */
     uint16_t out;            /* 1..65535 */
     int16_t mult;            /* BYTE: signed 16-bit multiplier */
     uint8_t shift;           /* BYTE: arithmetic right shift, 0..47 */
@@ -38,6 +38,7 @@ struct wally_ai_job {
     int32_t offset;          /* Q31: output offset, added to the requantized value */
     int32_t act_min;         /* Q31: clamp, the low byte of the result is stored (-128..127 for int8) */
     int32_t act_max;
+    bool w4;                 /* int4 weights, any mode: the same cycles as int8, half the weight bytes */
 };
 
 /* Run the job and wait for it (the unit takes about in/4 + 5 clocks per output, a few more in RAW mode).  Returns 0, -EINVAL if the unit

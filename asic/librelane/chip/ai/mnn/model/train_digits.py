@@ -18,12 +18,22 @@ SIZES = (64, 64, 32, 10)
 Q_MIN, Q_MAX = -128, 127
 
 
-def train(x, y, seed=1, epochs=300, lr=3e-3, batch=64):
-    """Float MLP (ReLU, softmax cross entropy, Adam); returns [(W, b), ...] with W of shape (out, in)."""
+def fake_quant(w, qmax):
+    """The weights as the chip will see them (quantized and scaled back), for the forward pass of quantization-aware training."""
+    s_w = weight_scale(w, qmax)
+    return np.clip(np.round(w / s_w), -qmax, qmax) * s_w
+
+
+def train(x, y, seed=1, epochs=300, lr=3e-3, batch=64, init=None, qat_bits=None):
+    """Float MLP (ReLU, softmax cross entropy, Adam); returns [(W, b), ...] with W of shape (out, in).  With qat_bits the forward pass uses the weights
+    quantized to that width and the gradient goes to the float ones (straight-through); init starts from given parameters."""
     rng = np.random.default_rng(seed)
     params = []
     for i, o in zip(SIZES[:-1], SIZES[1:]):
         params.append([rng.normal(0, np.sqrt(2.0 / i), (o, i)), np.zeros(o)])
+    if init is not None:
+        params = [[w.copy(), b.copy()] for w, b in init]
+    qmax = (1 << (qat_bits - 1)) - 1 if qat_bits else None
     m = [[np.zeros_like(p) for p in layer] for layer in params]
     v = [[np.zeros_like(p) for p in layer] for layer in params]
     step = 0
@@ -34,7 +44,7 @@ def train(x, y, seed=1, epochs=300, lr=3e-3, batch=64):
             idx = order[s : s + batch]
             acts = [x[idx]]
             for k, (w, b) in enumerate(params):
-                z = acts[-1] @ w.T + b
+                z = acts[-1] @ (fake_quant(w, qmax) if qat_bits else w).T + b
                 acts.append(np.maximum(z, 0) if k < len(params) - 1 else z)
             logits = acts[-1] - acts[-1].max(axis=1, keepdims=True)
             p = np.exp(logits)
@@ -44,7 +54,7 @@ def train(x, y, seed=1, epochs=300, lr=3e-3, batch=64):
             for k in range(len(params) - 1, -1, -1):
                 gw, gb = grad.T @ acts[k], grad.sum(axis=0)
                 if k > 0:
-                    grad = (grad @ params[k][0]) * (acts[k] > 0)
+                    grad = (grad @ (fake_quant(params[k][0], qmax) if qat_bits else params[k][0])) * (acts[k] > 0)
                 for j, g in enumerate((gw, gb)):
                     m[k][j] = 0.9 * m[k][j] + 0.1 * g
                     v[k][j] = 0.999 * v[k][j] + 0.001 * g * g
@@ -87,15 +97,30 @@ def requantize(val, mult, shift):
     return r
 
 
-def quantize_model(params, x_train):
-    """Per-tensor int8 model; returns the list of layer dicts and the input quantization (scale, zero point)."""
+def weight_scale(w, qmax):
+    """Per-tensor symmetric scale: the maximum for int8, the clipping that gives the least squared error for narrower weights (int4 has 15 levels,
+    and the largest weight alone would waste them)."""
+    top = np.abs(w).max()
+    if qmax >= 127:
+        return top / qmax
+    best = None
+    for frac in np.linspace(0.3, 1.0, 71):
+        s_w = top * frac / qmax
+        err = float(((np.clip(np.round(w / s_w), -qmax, qmax) * s_w - w) ** 2).sum())
+        best = (err, s_w) if best is None or err < best[0] else best
+    return best[1]
+
+
+def quantize_model(params, x_train, bits=8):
+    """Per-tensor model with `bits`-bit weights (8 or 4); returns the list of layer dicts."""
+    qmax = (1 << (bits - 1)) - 1
     acts = forward_float(params, x_train)
     s_in, zp_in = 1.0 / 255.0, -128        # inputs in [0, 1]: q = round(x / s) + zp
     layers = []
     for k, (w, b) in enumerate(params):
         last = k == len(params) - 1
-        s_w = np.abs(w).max() / 127.0
-        wq = np.clip(np.round(w / s_w), -127, 127).astype(np.int8)
+        s_w = weight_scale(w, qmax)
+        wq = np.clip(np.round(w / s_w), -qmax, qmax).astype(np.int8)
         bq = np.round(b / (s_in * s_w)).astype(np.int32)
         if last:
             s_out, zp_out = np.abs(acts[k]).max() / 127.0, 0
@@ -130,8 +155,11 @@ def c_array(name, values, ctype, per_line=16):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--samples", type=int, default=200, help="test samples embedded in the header for the chip")
-    ap.add_argument("--out", default=str(Path(__file__).with_name("digits_model.h")))
+    ap.add_argument("--bits", type=int, choices=(8, 4), default=8, help="weight width; 4 fine-tunes with quantization-aware training and packs two to a byte")
+    ap.add_argument("--qat-epochs", type=int, default=60, help="epochs of quantization-aware fine-tuning for --bits 4")
+    ap.add_argument("--out", help="default: digits_model.h (int8) or digits4_model.h (int4) next to this script")
     args = ap.parse_args()
+    out_path = args.out or str(Path(__file__).with_name("digits_model.h" if args.bits == 8 else "digits4_model.h"))
 
     data = load_digits()
     x, y = data.data / 16.0, data.target
@@ -140,7 +168,10 @@ def main():
     tr, te = order[:n_train], order[n_train:]
     params = train(x[tr], y[tr])
     float_acc = float((forward_float(params, x[te])[-1].argmax(axis=1) == y[te]).mean())
-    layers = quantize_model(params, x[tr])
+    if args.bits == 4:
+        params = train(x[tr], y[tr], epochs=args.qat_epochs, lr=1e-3, init=params, qat_bits=4)
+        float_acc = float((forward_float(params, x[te])[-1].argmax(axis=1) == y[te]).mean())
+    layers = quantize_model(params, x[tr], args.bits)
 
     def quant_input(a):
         return (np.round(a * 255.0).astype(np.int64) - 128).astype(np.int8)
@@ -151,18 +182,21 @@ def main():
     int_acc = float((pred == y[te]).mean())
     n = args.samples
     sub_acc = float((pred[:n] == y[te][:n]).mean())
-    print(f"test set {len(te)} samples: float {float_acc:.4f}, int8 {int_acc:.4f}; first {n}: int8 {sub_acc:.4f}")
+    wname = f"int{args.bits}"
+    print(f"test set {len(te)} samples: float {float_acc:.4f}, {wname} {int_acc:.4f}; first {n}: {wname} {sub_acc:.4f}")
     for k, ly in enumerate(layers):
         print(f"layer {k + 1}: in_off {ly['in_off']}, out_off {ly['out_off']}, mult {ly['mult']}, shift {ly['shift']}")
 
     out = [
         "/* SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1",
-        " * Generated by model/train_digits.py (do not edit): the 64-64-32-10 int8 MLP trained on the 8 x 8 digits of scikit-learn, its quantization",
+        f" * Generated by model/train_digits.py --bits {args.bits} (do not edit): the 64-64-32-10 MLP with {wname} weights"
+        + (" (quantization-aware fine-tuned, two to a byte, low nibble first)" if args.bits == 4 else "")
+        + " trained on the 8 x 8 digits of scikit-learn, its quantization",
         f" * (muRISCV-NN's fully connected layer: input offset, Q31 multiplier and shift, output offset, clamp), and {n} test samples with their labels",
-        f" * and the classes the host's bit-exact integer model gives.  Accuracy on the {len(te)} test samples: float {float_acc:.4f}, int8 {int_acc:.4f};",
-        f" * on the {n} embedded ones: int8 {sub_acc:.4f}. */",
-        "#ifndef DIGITS_MODEL_H",
-        "#define DIGITS_MODEL_H",
+        f" * and the classes the host's bit-exact integer model gives.  Accuracy on the {len(te)} test samples: float {float_acc:.4f}, {wname} {int_acc:.4f};",
+        f" * on the {n} embedded ones: {wname} {sub_acc:.4f}. */",
+        f"#ifndef DIGITS{'' if args.bits == 8 else '4'}_MODEL_H",
+        f"#define DIGITS{'' if args.bits == 8 else '4'}_MODEL_H",
         "",
         "#include <stdint.h>",
         "",
@@ -182,7 +216,11 @@ def main():
         )
     out.append("};")
     for k, ly in enumerate(layers):
-        out += ["", c_array(f"DW{k + 1}", ly["w"], "int8_t"), "", c_array(f"DB{k + 1}", ly["b"], "int32_t", 8)]
+        w = ly["w"]
+        if args.bits == 4:
+            flat = w.ravel().astype(np.int64) & 0xF
+            w = (flat[0::2] | (flat[1::2] << 4)).astype(np.uint8).view(np.int8)       # the library's s4 layout: low nibble the lower index
+        out += ["", c_array(f"DW{k + 1}", w, "int8_t"), "", c_array(f"DB{k + 1}", ly["b"], "int32_t", 8)]
     out += [
         "",
         c_array("DX", xq_te[:n], "int8_t", 16),
@@ -194,8 +232,8 @@ def main():
         "#endif",
         "",
     ]
-    Path(args.out).write_text("\n".join(out))
-    print(f"wrote {args.out}")
+    Path(out_path).write_text("\n".join(out))
+    print(f"wrote {out_path}")
 
 
 if __name__ == "__main__":
