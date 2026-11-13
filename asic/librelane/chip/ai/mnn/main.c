@@ -7,50 +7,11 @@
 #include <stdint.h>
 #include "muriscv_nn_functions.h"
 #include "muriscv_nn_support_functions.h"
-
-#define UART_BASE 0x10000000UL
-#define UART_THR  (*(volatile uint8_t *)(UART_BASE + 0))
-#define UART_LSR  (*(volatile uint8_t *)(UART_BASE + 5))
+#include "common.h"
 
 #define IN   64
 #define OUT  64
 #define REPS 16
-
-static void putc_(char c)
-{
-    while ((UART_LSR & 0x20) == 0) {
-    }
-    UART_THR = (uint8_t)c;
-}
-
-static void puts_(const char *s)
-{
-    while (*s) {
-        putc_(*s++);
-    }
-}
-
-static void putu(uint32_t v)
-{
-    char d[10];
-    int n = 0;
-
-    do {
-        d[n++] = (char)('0' + v % 10);
-        v /= 10;
-    } while (v);
-    while (n) {
-        putc_(d[--n]);
-    }
-}
-
-static inline uint32_t mcycle_(void)
-{
-    uint32_t c;
-
-    __asm__ volatile("csrr %0, mcycle" : "=r"(c));
-    return c;
-}
 
 static int8_t  W[OUT * IN] __attribute__((aligned(4)));
 static int8_t  X[IN] __attribute__((aligned(4)));
@@ -58,16 +19,6 @@ static int32_t BIAS[OUT];
 static int8_t  Y[OUT], R[OUT];
 static int32_t ACC[OUT];
 static volatile int32_t sink;
-
-static uint32_t seed = 12345;
-
-static int8_t rnd8(void)
-{
-    seed ^= seed << 13;
-    seed ^= seed >> 17;
-    seed ^= seed << 5;
-    return (int8_t)(seed >> 8);
-}
 
 /* independent requantization: round(acc * mult / 2^31) (ties away from zero), then a rounding right shift by -shift (ties away from zero);
  * a positive shift is a left shift of acc first (TFLite's convention) */

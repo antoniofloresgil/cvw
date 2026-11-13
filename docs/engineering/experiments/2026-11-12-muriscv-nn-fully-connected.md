@@ -32,7 +32,9 @@ build. The image is 2.9 KB of code and 4.7 KB of data and stack for this layer.
   requantization is taken out, against 31). The unit's advantage over it is therefore 56 times for the layer alone, not 84.
 - The requantization is **not cheap**: 82 cycles per output, 6 % of the library's call and **3.5 times the time the unit takes for the whole
   layer**. A unit that returns the raw accumulator (the choice of the ADR) leaves this in software: a layer would take about 6 800 cycles
-  (1 504 + 5 263 + preparing the bias; not measured end to end), about 12 times faster than the library, not 56. Requantizing in the unit
+  by this count (1 504 + 5 263 + preparing the bias); measured end to end on 2026-11-13 it is 10 865
+  ([record](2026-11-13-wally-fc-s8.md)): 7.8 times faster than the library, not 56. The 82 cycles per output above were with the multiplier and the
+  shift as constants in `main.c`; with them unknown to the compiler it is 95. Requantizing in the unit
   (option 2 of the ADR, a 32 x 32 multiplier with the library's rounding) would bring it back towards 1 500 but costs area and cycle time.
 - The portable requantization is faster than the library's own inline-assembly one (its source says the portable one is probably more
   efficient; it is, here).

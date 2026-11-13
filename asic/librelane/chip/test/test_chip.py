@@ -234,6 +234,19 @@ async def ai_gemv(dut):
 
 
 @cocotb.test(skip=not AI_CHIP)
+async def ai_wally_fc(dut):
+    """muRISCV-NN's fully connected layer with the product done by the AI unit in RAW mode (../ai/mnn/wally_fc.h, requantization by the library
+    in software) against the library alone, byte for byte, on random layers (shapes, batches, offsets, multipliers, shifts, clamps)."""
+    program = (HERE.parent / "ai/mnn/build/unit.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    lines = await read_lines(dut, b"WALLY FC", timeout=30000000)
+    for line in lines:
+        dut._log.info(line.decode())
+    assert lines[1] == b"cases compared: 60, all equal", f"{lines!r}"
+    assert lines[-1] == b"WALLY FC OK", f"{lines!r}"
+
+
+@cocotb.test(skip=not AI_CHIP)
 async def ai_zephyr(dut):
     """The AI unit under Zephyr (../zephyr/ai, module/drivers/ai_wally.c): a 64 x 64 layer on the unit and in C, the same bytes, a second layer
     with another multiplier, ReLU off and no bias, and a job the unit refuses (-EINVAL)."""
@@ -852,6 +865,7 @@ def main():
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "pmp.elf", build / "pmp.bin"], check=True)
     subprocess.run(["make", "-C", HERE.parent / "ai/baseline"], check=True)
     subprocess.run(["make", "-C", HERE.parent / "ai/gemv"], check=True)
+    subprocess.run(["make", "-C", HERE.parent / "ai/mnn"], check=True)     # needs addins/muriscv-nn
     subprocess.run(["make", "-C", HERE.parent / "freertos"], check=True)     # needs addins/FreeRTOS-Kernel
     subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", build / "mcu.elf", build / "mcu.bin"], check=True)
 

@@ -65,5 +65,5 @@ in software. The unit writes each word as soon as the row ends (a byte-mode run 
 boot ROM) and a byte-mode run after the RAW ones, all passing in `chipsim-ai`; lint is clean for `asic_soc_rv32imac_ai`. The test found a bug of the first
 version: the check of a start used the old value of the RAW register, because the write that starts a run is the one that sets RAW; it now uses the bit
 being written. **On the board on 2026-11-12** (Vivado bitstream of the AI chip with the trace register and RAW: 12,712 LUTs, 7,692 flip-flops, 27 more of each than without RAW,
-worst slack +14.3 ns, a half-cycle path): `AI GEMV OK`, every RAW and byte-mode figure above identical to the simulation. The 64 x 64 layer in RAW plus the library's requantization (5 263 cycles, [record](2026-11-12-muriscv-nn-fully-connected.md)) is
-about 6 900 cycles.
+worst slack +14.3 ns, a half-cycle path): `AI GEMV OK`, every RAW and byte-mode figure above identical to the simulation. The 64 x 64 layer in RAW plus the library's requantization (5 263 cycles by itself, [record](2026-11-12-muriscv-nn-fully-connected.md)) measured end to end is
+10 865 cycles ([record](2026-11-13-wally-fc-s8.md)).

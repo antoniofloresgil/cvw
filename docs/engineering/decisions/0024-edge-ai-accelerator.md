@@ -252,20 +252,24 @@ Choice: **a mode of the unit that returns the int32 accumulator** (`sum(w * x) +
 requantization of the (at most 65 535, in practice tens or hundreds of) outputs stays in the library's software. It is bit-exact with the
 library for any model, needs a small RTL change (the writer and the Y checks, nothing in the multiplier) and costs the library's requantization in
 software: **measured on the board 2026-11-12, 82 cycles per output, 5 263 for a 64-output layer** (my first estimate, 30 to 40 per output, was half
-that), against 1 504 cycles of the unit for the layer itself. So a layer would take about 6 800 cycles (unit plus requantization, plus preparing the
-bias; not measured end to end) against 84 379 for the library's own kernel: about 12 times, not the 56 times of the unit alone. See
+that), against 1 504 cycles of the unit for the layer itself. **Measured end to end on the board 2026-11-12 (`wally_fc_s8`, the
+unit in RAW mode plus the library's requantization): 10 865 cycles for the 64 x 64 layer** against 84 393 for the library's own kernel, 7.8 times, not
+the 56 times of the unit alone (my estimate of 6 800 was low: the requantization with the multiplier and shift not known to the compiler is 95 cycles
+per output, 6 072 for the layer, and the loop around it, the clamp and the stores add about 3 000 more). The input offset costs a one-time
+preparation of the bias (68 121 cycles, once per layer, in `Prepare`). See
 [the record](../experiments/2026-11-12-muriscv-nn-fully-connected.md). **RTL and `gemv` test done 2026-11-12 in simulation** (CTRL bit 2, 64 x 64
 layer in 1 650 cycles, 146 more than in byte mode because it writes a word per row; [record](../experiments/2026-11-11-ai-unit-rtl.md)); **on the Nexys Video the same day** (Vivado
-bitstream, identical cycles); the driver and the wrapper over the library pending.
+bitstream, identical cycles); **the wrapper over the library (`ai/mnn/wally_fc.h`) done 2026-11-13**, bit-exact with the library
+on 60 random and extreme layers in simulation and on the board ([record](../experiments/2026-11-13-wally-fc-s8.md)); the Zephyr driver's RAW support pending.
 
 **Next, after the raw mode (decided 2026-11-12): requantize in the unit as the library does (option 2 of that discussion), in several passes of the
-multiplier it already has.** Software requantization is three quarters of the time of a layer with the raw mode (5 263 of about 6 800 cycles). My first note
+multiplier it already has.** Software requantization is three quarters of the time of a layer with the raw mode (6 072 and more of the 10 865 cycles measured). My first note
 said this option would "probably cost cycle time and area" because it assumed a 32 x 32 multiplier; that was wrong in kind. The requantization happens
 once per output, not per MAC, and the unit spends about 23 cycles per output (1 504 / 64), so there is time for a slow multiplier: split the Q31
 multiplier in two halves of 16 bits, use the existing 32 x 16 multiplier twice, add the two products (64 bits, over several cycles), then the
 rounding of `muriscv_nn_doubling_high_mult`, the rounding divide of `muriscv_nn_divide_by_power_of_two`, a signed shift, the output offset and the
 clamp. Estimate, not measured: 2 to 3 more cycles per output (150 to 200 for a 64 x 64 layer), some hundreds of LUTs of adders, no extra DSP48, the
-cycle time kept by spreading the 64-bit additions over cycles; a layer of about 1 700 cycles, bit-exact with the library. To be shown: that the
+cycle time kept by spreading the 64-bit additions over cycles; a layer of about 1 700 cycles (against 10 865 measured with the software requantization), bit-exact with the library. To be shown: that the
 two-pass product reproduces the library's rounding exactly (a differential test against `muriscv_nn_requantize` over random and extreme values), and
 that Fmax does not drop in either FPGA flow (the ASIC, in the 8 h physical flow, only if it is adopted). The raw mode stays, to compare the two.
 Software alternatives if this does not close: a hand-written requantization with `mul`/`mulh` (the core is bound by instruction fetch, IPC 0.23, so fewer
