@@ -247,6 +247,19 @@ async def ai_wally_fc(dut):
 
 
 @cocotb.test(skip=not AI_CHIP)
+async def ai_mlp(dut):
+    """A 64-64-32-10 int8 network (../ai/mnn/mlp.c) run three ways, the library on the core, the AI unit in RAW mode with the library's requantization
+    in software, and the unit in Q31 mode: every layer's bytes equal on eight random inputs; the cycles of each layer are logged."""
+    program = (HERE.parent / "ai/mnn/build/mlp.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    lines = await read_lines(dut, b"MLP ", timeout=60000000)
+    for line in lines:
+        dut._log.info(line.decode())
+    assert [line.startswith(b"input ") and b": equal" in line for line in lines[1:9]] == [True] * 8, f"{lines!r}"
+    assert lines[-1] == b"MLP OK", f"{lines!r}"
+
+
+@cocotb.test(skip=not AI_CHIP)
 async def ai_zephyr(dut):
     """The AI unit under Zephyr (../zephyr/ai, module/drivers/ai_wally.c): a 64 x 64 layer on the unit and in C, the same bytes, a second layer
     with another multiplier, ReLU off and no bias, the RAW mode (int32 accumulators), the Q31 mode (the requantization of muRISCV-NN, two layers, against an

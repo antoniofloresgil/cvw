@@ -99,12 +99,20 @@ What is known so far, and from where:
 | The repository already has an open physical flow: OpenROAD (ORFS in a container) on **ASAP7**, a predictive 7 nm PDK, for `RvvCoreMiniAxi` at about 200 MHz (work in progress): about 1.43 million standard cells, a die of 441.5 um x 441.5 um, 38 % placement density, with fake RAMs. | `synthesis/BUILDING_CORALNPU_WITH_OPENROAD.md` of the repository |
 | Our chip in IHP SG13G2 (130 nm): 90,429 cells, 1.21 mm2 of core, 40 ns, a die that cannot grow. | [experiment record](../experiments/2026-11-02-open-asic-flow.md) |
 | The scalar `CoreMini` alone, on the Nexys Video's Artix-7 200T (Vivado 2024.2, out of context, 50 MHz target): 48,771 LUTs, 11,795 registers, 10 RAMB36, 6 DSPs, a 27.8 ns critical path with a latch-based clock gate. | measured 2026-11-11, `/datos/tmp/coral-synth` (the variants with the vector and matrix units follow) |
+| Coral's matrix engine `Zvt` alone (`hdl/verilog/rvv/design/Zvt`, the engine of `VmeCoreMini`, without the RVV frontend and backend that feed it), `VLEN=128` (64 PEs, 16 tile registers in flip-flops), Artix-7 200T, Vivado 2024.2 synthesis, out of context: **508,898 LUTs** (378 % of the device) with the integer matrix multiply, 576,251 with BF16/FP32 added; 57,152 / 61,903 registers, 704 DSP48 (95 %) in both, no BRAM, about 31.8 ns of path before placement (WNS -11.8 ns at a 20 ns target). The integer-only variant still instantiates the floating-point lanes, so it is not a real integer-only engine. | measured 2026-11-13, `/datos/tmp/coral-zvt/{int,both}` |
 
 A first reading, to be confirmed: 1.43 million cells against our 90,429 is sixteen times more, and a 130 nm cell is much larger than
 a 7 nm one, so the vector variant would not fit the die of this chip, and the scalar one is a large part of it. The Coral NPU in
 IHP SG13G2 would be a different, bigger chip (a larger shuttle slot, a different package), not this microcontroller with an
 accelerator. That would make "move there" a change of project, and "bring pieces here" the reading of the idea at the scale of
 this chip (a small int8 unit, option A) with the Coral NPU as the reference.
+
+Reading of the `Zvt` measurement (2026-11-13): it does not fit even the Nexys Video, and it has about 23 times the LUTs of this whole chip with
+the AI unit (22,057 LUTs, 11 DSP48). In 130 nm, with a die that cannot grow, it is out of the question; it also computes a matrix-matrix product
+(GEMM on tiles), while the fully connected layers of this chip are matrix-vector. It is not reused. Only its integer lanes
+(`zvt_pe_mulbulk_int_lane.sv`, `zvt_pe_adder_int_lane.sv`) are worth reading as a reference for an int8 GEMM mode of our unit. To build it alone
+the synthesis needed `common/` without `fp_add.sv`, `fpnew_pkg`, `lzc` and `cf_math_pkg` from the Bazel cache, and without `zvt_acc.sv`, which is
+not instantiated and refers to a macro, `NUM_ACC`, that no file defines.
 
 Data to collect before the decision:
 
@@ -276,6 +284,28 @@ that Fmax does not drop in either FPGA flow (the ASIC, in the 8 h physical flow,
 Software alternatives if this does not close: a hand-written requantization with `mul`/`mulh` (the core is bound by instruction fetch, IPC 0.23, so fewer
 instructions is what counts; perhaps 30 to 40 % less than the library's 82 cycles per output, not measured), or power-of-two scales in the model (shift
 only, but then TFLM's exported models do not run as they are).
+
+## Step 3 with a small network of our own (2026-11-13, simulation of the chip)
+
+The models that ship with muRISCV-NN's TFLM integration do not fit this chip: the weights of `aww` are about 55 KB and those of `toy` about 290 KB
+(estimated from the size of their `*_model_data.cc` sources, nothing compiled), and the bootloader loads the image into the 56 KiB of RAM that the
+trace buffer leaves, together with the tensor arena and the stack; TFLM's C++ interpreter would not fit either. So step 3 starts with a network of
+our own that uses the same kernels: `chip/ai/mnn/mlp.c`, an int8 MLP 64-64-32-10 (ReLU on the first two layers) with random weights, run three ways on
+the same weights and eight random inputs: the library's `muriscv_nn_fully_connected_s8` on the core, `wally_fc_s8` (the unit in RAW mode, the library's
+requantization in software) and `wally_fc_s8_q31` (the unit requantizes). `make chipsim-ai` runs it as `ai_mlp`. The bytes of every layer are equal
+in the three ways on all eight inputs. Cycles per layer, mean over the inputs (the core's `mcycle`, around the whole call):
+
+| Layer | Library on the core | Unit, RAW | Unit, Q31 |
+| --- | --- | --- | --- |
+| 1, 64 x 64 | 105,323 | 9,279 | 1,883 |
+| 2, 64 x 32 | 53,167 | 4,812 | 1,099 |
+| 3, 32 x 10 | 9,260 | 1,652 | 471 |
+| Whole network | 167,751 | 15,743 | 3,453 |
+
+The one-time preparation (the input offset folded into the biases, TFLM's Prepare step) costs 168,258 cycles for the three layers, about one inference of the
+library, so it is paid back by the first inference with the unit. The image is 4.8 KB of code and 8 KB of data and bss, about 13 KB of the 56 KiB. Not
+measured: accuracy (the weights are random, so the classes mean nothing), a trained model, and the board. What is still not done is TFLM itself: a model
+small enough for this RAM would have to be built and its interpreter ported to freestanding C++.
 
 ## Steps and what ends each
 
