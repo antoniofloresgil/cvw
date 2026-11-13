@@ -260,6 +260,21 @@ async def ai_mlp(dut):
 
 
 @cocotb.test(skip=not AI_CHIP)
+async def ai_digits(dut):
+    """A trained network on the chip (../ai/mnn/digits.c, model/train_digits.py): the 64-64-32-10 int8 MLP on 200 test samples of the 8 x 8 digits, every
+    one on the unit in Q31 mode; its classes must be those of the host's bit-exact integer model, and the library, the RAW mode and the Q31 mode must
+    agree on every layer of the first eight."""
+    program = (HERE.parent / "ai/mnn/build/digits.bin").read_bytes()
+    await reset_chip(dut, flash=flash_image(program), ready="F")
+    lines = await read_lines(dut, b"DIGITS ", timeout=200000000)
+    for line in lines:
+        dut._log.info(line.decode())
+    assert b"equal in every layer on 8 of 8" in lines[1], f"{lines!r}"
+    assert b"different from the host's integer model on 0" in lines[2], f"{lines!r}"
+    assert lines[-1] == b"DIGITS OK", f"{lines!r}"
+
+
+@cocotb.test(skip=not AI_CHIP)
 async def ai_zephyr(dut):
     """The AI unit under Zephyr (../zephyr/ai, module/drivers/ai_wally.c): a 64 x 64 layer on the unit and in C, the same bytes, a second layer
     with another multiplier, ReLU off and no bias, the RAW mode (int32 accumulators), the Q31 mode (the requantization of muRISCV-NN, two layers, against an

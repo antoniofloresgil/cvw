@@ -3,6 +3,7 @@
 #   build/mnn.bin   a 64 x 64 int8 fully connected layer through the library's muriscv_nn_fully_connected_s8, its cycles, and the cost of
 #                   the library's requantization alone (any chip)
 #   build/mlp.bin   a 64-64-32-10 int8 network three ways (the library, the unit RAW, the unit Q31), same bytes, cycles per layer
+#   build/digits.bin the trained 64-64-32-10 MLP (model/train_digits.py, 8 x 8 digits): accuracy on the chip, equal to the host's integer model
 #   build/unit.bin  wally_fc.h: the same layer with the product done by the AI unit in RAW mode and the library's requantization in
 #                   software, compared byte for byte with the library on random layers (needs asic_soc_rv32imac_ai)
 # The library is used as it is (git submodule update --init addins/muriscv-nn); the sources compiled are the ones the layer needs.
@@ -20,11 +21,11 @@ DEFS  ?=
 CFLAGS := $(ARCH) $(OPT) $(DEFS) -g -ffunction-sections -fdata-sections -mno-relax -ffreestanding -I$(MNN)/Include
 LIBOBJS := $(addprefix $(BUILD)/,$(notdir $(SRCS:.c=.o)))
 
-all: $(BUILD)/mnn.bin $(BUILD)/unit.bin $(BUILD)/mlp.bin
+all: $(BUILD)/mnn.bin $(BUILD)/unit.bin $(BUILD)/mlp.bin $(BUILD)/digits.bin
 
 $(BUILD)/%.bin: $(BUILD)/%.elf
 	$(CROSS)objcopy -O binary $< $@
-	test $$(stat -c %s $@) -le 57344
+	test $$(stat -c %s $@) -le 56320
 	$(CROSS)size $<
 
 # mnn.elf is made from main.o, unit.elf from unit.o
@@ -41,6 +42,13 @@ $(BUILD)/mlp.elf: $(BUILD)/mlp.o $(BUILD)/crt0.o $(LIBOBJS) ../baseline/link.ld
 	  -o $@ $(BUILD)/mlp.o $(BUILD)/crt0.o $(LIBOBJS) -lgcc
 
 $(BUILD)/mlp.o: mlp.c common.h wally_fc.h | $(BUILD)
+	$(CROSS)gcc $(CFLAGS) -Wall -Wextra -c -o $@ $<
+
+$(BUILD)/digits.elf: $(BUILD)/digits.o $(BUILD)/crt0.o $(LIBOBJS) ../baseline/link.ld
+	$(CROSS)gcc $(ARCH) -nostartfiles -nostdlib -Wl,--gc-sections -Wl,--no-warn-rwx-segments -Wl,-T,../baseline/link.ld -Wl,-Map,$(BUILD)/digits.map \
+	  -o $@ $(BUILD)/digits.o $(BUILD)/crt0.o $(LIBOBJS) -lgcc
+
+$(BUILD)/digits.o: digits.c common.h wally_fc.h model/digits_model.h | $(BUILD)
 	$(CROSS)gcc $(CFLAGS) -Wall -Wextra -c -o $@ $<
 
 $(BUILD)/main.o: main.c common.h | $(BUILD)

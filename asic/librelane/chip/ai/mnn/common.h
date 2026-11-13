@@ -55,7 +55,7 @@ static uint32_t rnd32(void)
     return seed;
 }
 
-static int8_t rnd8(void)
+static int8_t __attribute__((unused)) rnd8(void)
 {
     return (int8_t)(rnd32() >> 8);
 }
