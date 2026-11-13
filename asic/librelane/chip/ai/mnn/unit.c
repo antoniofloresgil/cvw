@@ -20,6 +20,8 @@ static int32_t FOLD[MAXOUT] __attribute__((aligned(4)));
 static int32_t ACC[MAXOUT] __attribute__((aligned(4)));
 static int8_t  YL[MAXB * MAXOUT] __attribute__((aligned(4)));
 static int8_t  YU[MAXB * MAXOUT] __attribute__((aligned(4)));
+static int8_t  YQ[MAXB * MAXOUT] __attribute__((aligned(4)));
+static int q31_cases;
 static volatile int32_t sink;
 
 static const struct { int in, out, batch; } SHAPES[] = {
@@ -40,6 +42,7 @@ static int compare(int in, int out, int batch, const int32_t *bias, int32_t in_o
     for (int i = 0; i < MAXB * MAXOUT; i++) {
         YL[i] = 0x55;
         YU[i] = 0x55;
+        YQ[i] = 0x55;
     }
     if (muriscv_nn_fully_connected_s8(&ctx, &fc, &q, &in_d, X, &f_d, W, &b_d, bias, &o_d, YL) != MURISCV_NN_SUCCESS) {
         return -1;
@@ -52,6 +55,16 @@ static int compare(int in, int out, int batch, const int32_t *bias, int32_t in_o
 
     for (int i = 0; i < MAXB * MAXOUT; i++) {
         diff += YL[i] != YU[i];     /* also catches a write past the end (0x55 elsewhere) */
+    }
+    /* the unit requantizing itself (CTRL Q31); a batch needs the output depth a multiple of four */
+    if (batch == 1 || (out & 3) == 0) {
+        if (wally_fc_s8_q31(&fc, &q, &in_d, X, &f_d, W, FOLD, &o_d, YQ) != MURISCV_NN_SUCCESS) {
+            return -1;
+        }
+        q31_cases++;
+        for (int i = 0; i < MAXB * MAXOUT; i++) {
+            diff += YL[i] != YQ[i];
+        }
     }
     return diff;
 }
@@ -101,9 +114,53 @@ int main(void)
             puts_(d < 0 ? ") refused\n" : "): bytes differ\n");
         }
     }
+    /* wide ranges for the requantization: biases over the whole int32 (a small dot product leaves them as they are), multipliers over the whole
+     * Q31 range but INT32_MIN (the library's documented range), shifts -31..30, offsets and clamps over int32 */
+    for (int c = 0; c < 80; c++) {
+        int s = c % 5, in = SHAPES[s].in, out = SHAPES[s].out, batch = SHAPES[s].batch;
+
+        if (c % 2) {
+            in = 4;
+            out = 4 * (1 + (int)(rnd32() % 16u));
+            batch = 1 + (int)(rnd32() % 2u);
+        }
+        for (int i = 0; i < in * out; i++) {
+            W[i] = rnd8();
+        }
+        for (int i = 0; i < in * batch; i++) {
+            X[i] = rnd8();
+        }
+        for (int j = 0; j < out; j++) {
+            BIAS[j] = (int32_t)rnd32() >> (rnd32() % 24u);          /* every magnitude, both signs */
+        }
+        int32_t mult = (int32_t)rnd32() >> (rnd32() % 3u);
+        int32_t shift = (int32_t)(rnd32() % 62u) - 31;
+        int32_t a0 = (int32_t)(rnd32() >> (rnd32() % 32u)) * ((rnd32() & 1u) ? 1 : -1), a1 = (int32_t)(rnd32() >> (rnd32() % 32u));
+        int32_t amin = a0 < a1 ? a0 : a1, amax = a0 < a1 ? a1 : a0;
+
+        if (mult == INT32_MIN) {
+            mult = INT32_MAX;
+        }
+        if (c % 7 == 0) {
+            amin = -128;
+            amax = 127;
+        }
+        int d = compare(in, out, batch, BIAS, (int32_t)(rnd32() % 256u) - 128, (int32_t)rnd32() >> (rnd32() % 32u), mult, shift, amin, amax);
+
+        cases++;
+        if (d != 0) {
+            ok = 0;
+            puts_("MISMATCH wide case ");
+            putu((uint32_t)c);
+            puts_(d < 0 ? " refused\n" : ": bytes differ\n");
+        }
+    }
     puts_("cases compared: ");
     putu((uint32_t)cases);
-    puts_(ok ? ", all equal\n" : ", DIFFERENCES\n");
+    puts_(ok ? ", all equal" : ", DIFFERENCES");
+    puts_(" (with the unit requantizing: ");
+    putu((uint32_t)q31_cases);
+    puts_(")\n");
 
     /* the 64 x 64 layer of mnn/main.c: cycles */
     int in = 64, out = 64;
@@ -153,7 +210,18 @@ int main(void)
 
     sink = s;
 
+    uint32_t c6 = mcycle_();
+
+    for (int k = 0; k < REPS; k++) {
+        wally_fc_s8_q31(&fc, &q, &in_d, X, &f_d, W, FOLD, &o_d, YQ);
+    }
+    uint32_t c7 = mcycle_();
+    uint32_t unitq = wally_ai_cycles();
     int same = 1;
+
+    for (int j = 0; j < out; j++) {
+        same &= YL[j] == YQ[j];
+    }
 
     for (int j = 0; j < out; j++) {
         same &= YL[j] == YU[j];
@@ -171,6 +239,11 @@ int main(void)
     puts_("requantization of the 64 outputs alone, parameters at run time: ");
     putu((c5 - c4) / REPS);
     puts_(" cycles\n");
+    puts_("64 x 64 layer, the unit requantizing (Q31): ");
+    putu((c7 - c6) / REPS);
+    puts_(" cycles (the unit's own: ");
+    putu(unitq);
+    puts_(")\n");
     puts_(ok ? "WALLY FC OK\n" : "WALLY FC FAIL\n");
     for (;;) {
     }

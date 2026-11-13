@@ -30,7 +30,12 @@
 #define WALLY_AI_X      0x14
 #define WALLY_AI_BIAS   0x18
 #define WALLY_AI_Y      0x1C
+#define WALLY_AI_MULT   0x20
+#define WALLY_AI_SHIFT  0x24
 #define WALLY_AI_CYCLES 0x28
+#define WALLY_AI_OFFSET 0x2C
+#define WALLY_AI_AMIN   0x30
+#define WALLY_AI_AMAX   0x34
 
 /* the unit's cycles of the last run (its own counter), for measurements */
 static inline uint32_t wally_ai_cycles(void)
@@ -94,6 +99,49 @@ static inline muriscv_nn_status wally_fc_s8(const muriscv_nn_context *ctx, const
 
             v = v < fc->activation.min ? fc->activation.min : v;
             output[j] = (int8_t)(v > fc->activation.max ? fc->activation.max : v);
+        }
+        input += in;
+        output += out;
+    }
+    return MURISCV_NN_SUCCESS;
+}
+
+/* The same layer with the unit requantizing as the library does (CTRL Q31: muriscv_nn_requantize, the output offset and the clamp, in the
+ * unit): no scratch and no software requantization, the unit writes the bytes.  The output must be aligned to four bytes, and with a batch
+ * larger than one the output depth must be a multiple of four (every batch row starts a word).  Shifts outside -31..30 are refused by the
+ * unit.  Returns MURISCV_NN_ARG_ERROR where the unit cannot take the layer. */
+static inline muriscv_nn_status wally_fc_s8_q31(const muriscv_nn_fc_params *fc, const muriscv_nn_per_tensor_quant_params *quant,
+                                                const muriscv_nn_dims *input_dims, const q7_t *input, const muriscv_nn_dims *filter_dims,
+                                                const q7_t *kernel, const int32_t *folded_bias, const muriscv_nn_dims *output_dims,
+                                                q7_t *output)
+{
+    const int32_t in = filter_dims->n, out = output_dims->c;
+
+    if (!wally_fc_s8_unit_ok(fc, filter_dims, output_dims, kernel, input, folded_bias, output) ||
+        (input_dims->n > 1 && (out & 3) != 0)) {
+        return MURISCV_NN_ARG_ERROR;
+    }
+    for (int32_t batch = input_dims->n; batch > 0; batch--) {
+        WALLY_AI(WALLY_AI_IN) = (uint32_t)in;
+        WALLY_AI(WALLY_AI_OUT) = (uint32_t)out;
+        WALLY_AI(WALLY_AI_W) = (uint32_t)(uintptr_t)kernel;
+        WALLY_AI(WALLY_AI_X) = (uint32_t)(uintptr_t)input;
+        WALLY_AI(WALLY_AI_BIAS) = (uint32_t)(uintptr_t)folded_bias;
+        WALLY_AI(WALLY_AI_Y) = (uint32_t)(uintptr_t)output;
+        WALLY_AI(WALLY_AI_MULT) = (uint32_t)quant->multiplier;
+        WALLY_AI(WALLY_AI_SHIFT) = (uint32_t)quant->shift;
+        WALLY_AI(WALLY_AI_OFFSET) = (uint32_t)fc->output_offset;
+        WALLY_AI(WALLY_AI_AMIN) = (uint32_t)fc->activation.min;
+        WALLY_AI(WALLY_AI_AMAX) = (uint32_t)fc->activation.max;
+        WALLY_AI(WALLY_AI_CTRL) = 1u | 8u;          /* START, Q31 */
+        uint32_t st;
+
+        do {
+            st = WALLY_AI(WALLY_AI_STATUS);
+        } while (st & 1u);
+        WALLY_AI(WALLY_AI_STATUS) = 6u;
+        if ((st & 4u) != 0u) {
+            return MURISCV_NN_ARG_ERROR;
         }
         input += in;
         output += out;

@@ -24,6 +24,7 @@
 #define CTRL_START 1u
 #define CTRL_RELU  2u
 #define CTRL_RAW   4u
+#define CTRL_Q31   8u
 
 static void putc_(char c)
 {
@@ -275,6 +276,10 @@ int main(void)
     ok &= refuse_ctrl("raw Y runs into the trace buffer", 4, 4, (uint32_t)(uintptr_t)W, 0x8000DFFC, 8, CTRL_START | CTRL_RAW);
     ok &= refuse_ctrl("raw Y not aligned", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)YW + 1, 8, CTRL_START | CTRL_RAW);
     ok &= refuse_ctrl("raw W in the boot ROM", 4, 4, 0x1000, (uint32_t)(uintptr_t)YW, 8, CTRL_START | CTRL_RAW);
+    ok &= refuse_ctrl("Q31 with RAW", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y, 8, CTRL_START | CTRL_RAW | CTRL_Q31);
+    ok &= refuse_ctrl("Q31 shift 31", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y, 31, CTRL_START | CTRL_Q31);
+    ok &= refuse_ctrl("Q31 shift -32", 4, 4, (uint32_t)(uintptr_t)W, (uint32_t)(uintptr_t)Y, (uint32_t)-32, CTRL_START | CTRL_Q31);
+    ok &= refuse_ctrl("Q31 Y in the trace buffer", 4, 4, (uint32_t)(uintptr_t)W, 0x8000E000, (uint32_t)-6, CTRL_START | CTRL_Q31);
     ok &= check("byte mode again after raw", W, 64, 64, BIAS, 77, 14, 1);
 
     puts_(ok ? "AI GEMV OK\n" : "AI GEMV FAIL\n");

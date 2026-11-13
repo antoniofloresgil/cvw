@@ -4,7 +4,11 @@
 // Purpose: int8 matrix-vector unit with its own AHB master (docs/engineering/decisions/0024-edge-ai-accelerator.md).
 //          y = clamp(((W x + bias) * MULT) >> SHIFT): the layer of a neural network, in one command.  With RAW set the unit returns the
 //          int32 accumulator W x + bias, one word per output, and leaves the requantization to software (the scheme of CMSIS-NN and
-//          muRISCV-NN, which differs from the one above in the multiplier, the rounding and the zero points).
+//          muRISCV-NN, which differs from the one above in the multiplier, the rounding and the zero points).  With Q31 set the unit
+//          requantizes as that library does (muriscv_nn_requantize, then the output offset and the clamp), bit for bit:
+//          y = clamp(requantize(W x + bias, MULT, SHIFT) + OFFSET, ACT_MIN, ACT_MAX), MULT a 32-bit Q31 multiplier, SHIFT signed -31..30.
+//          The 32 x 32 product is made in two passes of the 32 x 16 multiplier (low half unsigned, high half signed) and the rest in a
+//          pipeline of five stages that runs while the next row is read, so a layer costs a few cycles more than in byte mode.
 //          W (OUT rows of IN int8, row-major) and the int32 bias stay in the RAM and are streamed by the unit's master one 32-bit word
 //          (four int8) per clock; the input vector x (IN bytes, up to X_BYTES) is read once into a small memory inside the unit, so the
 //          bus carries only W.  The results are int8, four to a word, written back to the RAM.
@@ -12,13 +16,16 @@
 // Registers (word accesses at the unit's PADDR, block 4 of mcu_apb):
 //   00 CTRL     [0] START (a write of 1 starts a run when idle)  [1] RELU: clamp to 0..127 instead of -128..127
 //               [2] RAW: write W x + bias as an int32 per output (Y is OUT words); MULT, SHIFT and RELU are then ignored
+//               [3] Q31: requantize as muRISCV-NN does (MULT 32-bit, SHIFT signed, OFFSET, ACT_MIN, ACT_MAX; RELU ignored); not with RAW
 //   04 STATUS   [0] BUSY  [1] DONE  [2] ERROR: write 1 to clear DONE and ERROR.  A start with bad arguments, or a bus error, sets ERROR
 //   08 IN       bytes of x and of a row of W: a multiple of 4, 4..X_BYTES
 //   0C OUT      rows, 1..65535
 //   10 W_ADDR   weights, word aligned          14 X_ADDR   input vector, word aligned
 //   18 BIAS_ADDR  OUT int32, word aligned; 0 means no bias      1C Y_ADDR   OUT int8 (OUT int32 with RAW), word aligned
-//   20 MULT     signed 16-bit multiplier (bits 15:0)            24 SHIFT    arithmetic right shift, 0..47
+//   20 MULT     signed 16-bit multiplier (bits 15:0), with Q31 a signed 32-bit Q31 multiplier
+//   24 SHIFT    arithmetic right shift, 0..47; with Q31 signed -31..30 (positive: left shift of the accumulator first)
 //   28 CYCLES   clocks of the last run (read only)
+//   2C OFFSET   Q31 only: added to the requantized value (int32)    30 ACT_MIN  34 ACT_MAX  Q31 only: clamp (int32), the low byte is stored
 // Every address must lie in the uncore RAM outside the trace buffer, else the start is refused (ERROR).  The registers are written
 // only while idle.  The core is stalled while the unit owns the bus (uncore.sv): the unit takes it only between two transfers of the
 // core, for the length of a row.
@@ -50,12 +57,12 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   localparam [39:0] RAM_BASE   = 40'(P.UNCORE_RAM_BASE);
   localparam [39:0] RAM_USABLE = 40'(P.UNCORE_RAM_RANGE) + 40'd1 - (P.TRACE_IN_RAM ? 40'(P.TRACE_RAM_WORDS) * 40'd4 : 40'd0);
 
-  typedef enum logic [2:0] {IDLE, LOADX, ROW, EPI0, EPI1, WR, WRWAIT, FIN} state_t;
+  typedef enum logic [3:0] {IDLE, LOADX, ROW, EPI0, EPI1, QDRAIN, WR, WRWAIT, FIN} state_t;
   state_t State;
 
   // registers
-  logic        Relu, Raw, Busy, Done, Err;
-  logic [31:0] InB, OutR, WAddr, XAddr, BiasAddr, YAddr, Mult, Shift, Cycles;
+  logic        Relu, Raw, QMode, Busy, Done, Err;
+  logic [31:0] InB, OutR, WAddr, XAddr, BiasAddr, YAddr, Mult, Shift, Cycles, Offset, ActMin, ActMax;
 
   // run state
   logic [31:0]  WPtr, BPtr, YPtr;
@@ -84,14 +91,17 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   endfunction
 
   // the start is the same write that sets RAW, so the check must use the bit being written, not the register's old value
-  logic Wr, Start, RawNow;
+  logic Wr, Start, RawNow, QNow;
   assign Wr     = PSEL & PENABLE & PWRITE;
   assign Start  = Wr & (PADDR[7:2] == 6'h00) & PWDATA[0];
   assign RawNow = Start ? PWDATA[2] : Raw;
+  assign QNow   = Start ? PWDATA[3] : QMode;
+  logic ShiftOk;
+  assign ShiftOk = RawNow | (QNow ? (signed'(Shift) >= -32'sd31 && signed'(Shift) <= 32'sd30) : Shift <= 32'd47);
 
   logic Valid;
   assign Valid = InB[1:0] == 2'b00 && InB != 32'd0 && InB <= 32'(X_BYTES)
-               && OutR != 32'd0 && OutR <= 32'hFFFF && (RawNow || Shift <= 32'd47)
+               && OutR != 32'd0 && OutR <= 32'hFFFF && ShiftOk && !(RawNow && QNow)
                && WAddr[1:0] == 2'b00 && XAddr[1:0] == 2'b00 && BiasAddr[1:0] == 2'b00 && YAddr[1:0] == 2'b00
                && inram(WAddr, OutR[15:0] * InB[10:0]) && inram(XAddr, InB)
                && (NoBias || inram(BiasAddr, {14'b0, OutR[15:0], 2'b00}))
@@ -100,11 +110,11 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
   // ---- APB registers ----
   always_ff @(posedge HCLK)
     if (~HRESETn) begin
-      Relu <= 1'b0; Raw <= 1'b0;
-      {InB, OutR, WAddr, XAddr, BiasAddr, YAddr, Mult, Shift} <= '0;
+      Relu <= 1'b0; Raw <= 1'b0; QMode <= 1'b0;
+      {InB, OutR, WAddr, XAddr, BiasAddr, YAddr, Mult, Shift, Offset, ActMin, ActMax} <= '0;
     end else if (Wr & ~Busy) begin
       case (PADDR[7:2])
-        6'h00: begin Relu <= PWDATA[1]; Raw <= PWDATA[2]; end
+        6'h00: begin Relu <= PWDATA[1]; Raw <= PWDATA[2]; QMode <= PWDATA[3]; end
         6'h02: InB      <= PWDATA;
         6'h03: OutR     <= PWDATA;
         6'h04: WAddr    <= PWDATA;
@@ -113,13 +123,16 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
         6'h07: YAddr    <= PWDATA;
         6'h08: Mult     <= PWDATA;
         6'h09: Shift    <= PWDATA;
+        6'h0B: Offset   <= PWDATA;
+        6'h0C: ActMin   <= PWDATA;
+        6'h0D: ActMax   <= PWDATA;
         default: ;
       endcase
     end
 
   always_comb
     case (PADDR[7:2])
-      6'h00:   PRDATA = {29'b0, Raw, Relu, 1'b0};
+      6'h00:   PRDATA = {28'b0, QMode, Raw, Relu, 1'b0};
       6'h01:   PRDATA = {29'b0, Err, Done, Busy};
       6'h02:   PRDATA = InB;
       6'h03:   PRDATA = OutR;
@@ -130,6 +143,9 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
       6'h08:   PRDATA = Mult;
       6'h09:   PRDATA = Shift;
       6'h0A:   PRDATA = Cycles;
+      6'h0B:   PRDATA = Offset;
+      6'h0C:   PRDATA = ActMin;
+      6'h0D:   PRDATA = ActMax;
       default: PRDATA = '0;
     endcase
 
@@ -154,10 +170,22 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
     return 32'(p0) + 32'(p1) + 32'(p2) + 32'(p3);
   endfunction
 
+  // the multiplier: byte mode multiplies the sum by the 16-bit MULT; Q31 mode multiplies the shifted sum by the low half of MULT (unsigned,
+  // stage Q1) and by its high half (signed, stage Q2)
+  typedef enum logic [2:0] {QIDLE, Q1, Q2, Q3, Q4, Q5} qstate_t;
+  qstate_t QSt;
+  logic signed [31:0] Vsh;
+  logic signed [31:0] MulA;
+  logic signed [16:0] MulB;
+  logic signed [48:0] Mul;
+  assign MulA = QMode ? Vsh : Sum;
+  assign MulB = QMode ? ((QSt == Q1) ? signed'({1'b0, Mult[15:0]}) : 17'(signed'(Mult[31:16]))) : 17'(signed'(Mult[15:0]));
+  assign Mul  = MulA * MulB;
+
   logic signed [47:0] Prod, Shifted;
   logic signed [47:0] Lo, Hi;
   logic signed [7:0]  Byte;
-  assign Prod    = Sum * signed'(Mult[15:0]);
+  assign Prod    = Mul[47:0];
   assign Shifted = Prod >>> Shift[5:0];
   assign Lo      = Relu ? 48'sd0 : -48'sd128;
   assign Hi      = 48'sd127;
@@ -168,6 +196,24 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
     if (State == LOADX && DataDone) XMem[RespCnt[7:0]] <= RData;
     XDout <= XMem[RespCnt[7:0]];
   end
+
+  // ---- Q31 requantization: muriscv_nn_requantize (doubling high multiply without saturation, rounding divide by a power of two),
+  //      the output offset and the clamp, as a pipeline of stages Q1..Q5 that starts when a row's sum is ready (EPI1) ----
+  logic signed [48:0] P0, P1;
+  logic signed [63:0] Full;
+  logic signed [31:0] Hq, Rq, Vo, Cl, Cl2, DivRes, DivMask, DivThr, DivRem;
+  logic [4:0]         LeftSh, RightSh;
+  logic [1:0]         QLane;
+  assign LeftSh  = Shift[31] ? 5'd0 : Shift[4:0];
+  assign RightSh = Shift[31] ? 5'(-Shift[4:0]) : 5'd0;          // Shift in -31..-1: 31..1
+  assign Full    = (64'(P1) <<< 16) + 64'(P0) + 64'sd1073741824;      // 2^30: the rounding of a shift by 31
+  assign DivMask = (32'sd1 <<< RightSh) - 32'sd1;                // for 31: 0x7FFFFFFF, as in C
+  assign DivRes  = Hq >>> RightSh;
+  assign DivRem  = Hq & DivMask;
+  assign DivThr  = (DivMask >> 1) + (DivRes[31] ? 32'sd1 : 32'sd0);
+  assign Vo      = Rq + signed'(Offset);
+  assign Cl      = (Vo < signed'(ActMin)) ? signed'(ActMin) : Vo;
+  assign Cl2     = (Cl > signed'(ActMax)) ? signed'(ActMax) : Cl;
 
   logic Fetching;
   assign Fetching = (State == LOADX) || (State == ROW);
@@ -184,6 +230,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
       State <= IDLE; Busy <= 1'b0; Done <= 1'b0; Err <= 1'b0; Cycles <= '0;
       WPtr <= '0; BPtr <= '0; YPtr <= '0; Row <= '0; IssueCnt <= '0; RespCnt <= '0;
       Acc <= '0; Sum <= '0; BiasReg <= '0; WReg <= '0; Pack <= '0; MacValid <= 1'b0; StrbReg <= '0;
+      QSt <= QIDLE; Vsh <= '0; P0 <= '0; P1 <= '0; Hq <= '0; Rq <= '0; QLane <= '0;
     end else begin
       if (Busy) Cycles <= Cycles + 32'd1;
       // a write of 1 clears DONE and ERROR
@@ -193,10 +240,27 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
       end
       MacValid <= 1'b0;
       if (MacValid) Acc <= Acc + dot4(WReg, XDout);
+      case (QSt)
+        Q1: begin P0 <= Mul; QSt <= Q2; end
+        Q2: begin P1 <= Mul; QSt <= Q3; end
+        Q3: begin Hq <= Full[62:31]; QSt <= Q4; end
+        Q4: begin Rq <= DivRes + ((DivRem > DivThr) ? 32'sd1 : 32'sd0); QSt <= Q5; end
+        Q5: begin
+          case (QLane)
+            2'd0: Pack[7:0]   <= Cl2[7:0];
+            2'd1: Pack[15:8]  <= Cl2[7:0];
+            2'd2: Pack[23:16] <= Cl2[7:0];
+            2'd3: Pack[31:24] <= Cl2[7:0];
+          endcase
+          QSt <= QIDLE;
+        end
+        default: ;
+      endcase
       if (Fetching && Accept) IssueCnt <= IssueCnt + 10'd1;
       if (Fetching && DataDone) RespCnt <= RespCnt + 10'd1;
       if (BusErr && State != IDLE && State != FIN) begin
         Err <= 1'b1;
+        QSt <= QIDLE;
         State <= FIN;
       end else
       case (State)
@@ -223,7 +287,25 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
           Sum <= Acc + (NoBias ? 32'sd0 : BiasReg);
           State <= EPI1;
         end
-        EPI1: begin
+        EPI1: if (QMode) begin
+          // Q31: the pipeline takes the sum (it must be free: the previous row's result is stored by now unless the rows are very short);
+          // a word is written when its last byte is stored
+          if (QSt == QIDLE) begin
+            Vsh   <= Sum <<< LeftSh;
+            QLane <= Row[1:0];
+            QSt   <= Q1;
+            if (Row[1:0] == 2'd3 || LastRow) begin
+              StrbReg <= 4'b1111 >> (2'd3 - Row[1:0]);
+              State <= QDRAIN;
+            end else begin
+              Row <= Row + 16'd1;
+              WPtr <= WPtr + InB;
+              BPtr <= BPtr + 32'd4;
+              State <= ROW;
+              start_row();
+            end
+          end
+        end else begin
           if (Raw) Pack <= Sum;                       // a word per output: written at once
           else case (Row[1:0])
             2'd0: Pack[7:0]   <= Byte;
@@ -242,6 +324,7 @@ module ai_unit import cvw::*; #(parameter cvw_t P) (
             start_row();
           end
         end
+        QDRAIN: if (QSt == QIDLE) State <= WR;
         WR: if (Accept) State <= WRWAIT;
         WRWAIT: if (DataDone) begin
           YPtr <= YPtr + 32'd4;

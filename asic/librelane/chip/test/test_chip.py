@@ -242,7 +242,7 @@ async def ai_wally_fc(dut):
     lines = await read_lines(dut, b"WALLY FC", timeout=30000000)
     for line in lines:
         dut._log.info(line.decode())
-    assert lines[1] == b"cases compared: 60, all equal", f"{lines!r}"
+    assert lines[1].startswith(b"cases compared: 140, all equal"), f"{lines!r}"
     assert lines[-1] == b"WALLY FC OK", f"{lines!r}"
 
 
