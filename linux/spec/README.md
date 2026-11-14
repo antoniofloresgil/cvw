@@ -11,7 +11,8 @@ and writes a staging directory outside git; `perf-run.sh` and `report.py` hold n
    `./stage.py --spec <cpu2026_install> --size test --out /datos/tmp/spec-stage [--bench 782.lbm_r ...]`
    makes `<out>/<benchmark>/` (stripped executable, inputs of `data/all` and `data/<size>`, `cmds`), `<out>/events` and `<out>/perf-run.sh`.
    Benchmarks whose `invoke` it does not understand (control files, `<name>.in`, no arguments are) are listed and skipped.
-2. Copy `<out>` to the board's SD card (the benchmarks you choose; check their memory against the 512 MiB first).
+2. Copy `<out>` to the board's SD card (the benchmarks you choose; check their memory against the 512 MiB first). For a small benchmark without
+   touching the card, `uart-upload.py` puts a file on the running Linux through the console UART (verified chunks; about 800 KB in 16 minutes, see its header).
 3. On the board, as root, idle: `sh perf-run.sh <out on the board> /root/results [benchmark ...]`: every command under
    `perf stat -x, -e cycles,instructions,r3,...,r1a`, one CSV per run. All events count at once (each has its own counter); `report.py` flags any that were multiplexed.
 4. Copy `results` back and run `./report.py results`: a table with CPI and the clock-independent rates.
