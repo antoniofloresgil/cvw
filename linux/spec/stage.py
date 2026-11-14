@@ -6,8 +6,8 @@
 The SPEC installation is only read, never changed.  SPEC CPU 2026 belongs to its licensees: the staged directory holds the benchmarks and their inputs,
 so keep it outside git (stage.py refuses an output directory inside a git work tree) and do not publish it.
 
-The command lines come from each benchmark's Spec/object.pm.  Three kinds of `invoke` are understood: arguments in the lines of a `control` file,
-arguments in the file <name>.in, and no arguments.  Others are reported as unsupported (they need a port of their invoke by hand).
+The command lines come from each benchmark's Spec/object.pm.  Five kinds of `invoke` are understood: arguments in the lines of a `control` file,
+arguments in the file <name>.in, no arguments, gem5's `control.cmd` (the statistics are not post-processed) and femflow's <size>.prm.  Others are reported as unsupported (they need a port of their invoke by hand).
 Standard library only:   stage.py --spec <cpu2026_install> --size test --out /datos/tmp/spec-stage [--bench 782.lbm_r ...]
 """
 
@@ -44,6 +44,11 @@ def commands(bench_dir, size, exename, benchname):
     if re.search(r'read_file\(\s*"\$\{name\}\.in"\s*\)', pm):
         f = find(f"{benchname}.in")
         return [shlex.split(f.read_text().strip())] if f else None
+    if re.search(r"read_file\(\s*'control\.cmd'\s*\)", pm):  # gem5: --stats-file=<name>.stats.txt, then the line of control.cmd
+        ctl = find("control.cmd")
+        return [[f"--stats-file={re.sub(r'[^A-Za-z0-9._-]', '_', '_'.join(shlex.split(ln)))}.stats.txt", *shlex.split(ln)] for ln in read_lines(ctl)] if ctl else None
+    if re.search(r"\$me->size\(\)\s*\.\s*\"\.prm\"", pm):  # femflow: one argument, <size>.prm
+        return [[f"{size}.prm"]] if find(f"{size}.prm") else None
     if re.search(r"'args'\s*=>\s*\[\s*\]", pm):
         return [[]]
     return None
@@ -55,7 +60,7 @@ def stage(spec, size, out, bench):
     exename = re.search(r"\$exename\s*=\s*'([^']+)'", pm).group(1)
     benchname = bench.split(".", 1)[1].rsplit("_", 1)[0]
     exes = re.search(r"@base_exe\s*=\s*\(([^)]*)\)", pm)
-    if exes and "," in exes.group(1):
+    if exes and "," in exes.group(1) and "control.cmd" not in pm:  # gem5's second executable (gem5stats) only reads the statistics afterwards
         return f"{bench}: more than one executable, not supported"
     exe = bench_dir / "exe" / f"{exename}_base.trixie.stripped"
     if not exe.is_file():

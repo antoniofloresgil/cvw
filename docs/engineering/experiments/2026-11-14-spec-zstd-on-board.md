@@ -20,8 +20,16 @@ on the Nexys Video, and is its output correct?
 - The output is identical to SPEC's `data/test/output/zstd.b3_verbose_i1.out` (last checksum `ad7d1279`, 2,985,407 bytes compressed, ratio 3.350). The MB/s lines in that file are fixed
   by SPEC's modification of zstd, they are not measurements.
 
+- `./sqlite_r --memdb --size 10 --testset main --verify` (708.sqlite_r, `test`): exit status 0, **3 min 27 s** wall (204.5 s user, 1.4 s system), maximum resident set 4.7 MB,
+  1,221 minor page faults. Its output (35 lines) has the same `cksum` as SPEC's `data/test/output/sqlite_r.main.out` (2776649599, 2366 bytes). The upload (879 KB gzipped,
+  147 chunks, 15 retries) took 20 minutes.
+
+- `./sealcrypto_r test country_capital_test.csv Ecuador` (750.sealcrypto_r, `test`; homomorphic encryption with SEAL): exit status 0, **2 h 40 min** wall (9,527 s user, 21 s system),
+  maximum resident set 106 MB, 26,171 minor page faults. Its output (10 lines) has the same `cksum` as SPEC's reference (1990753691, 264 bytes). The upload (995 KB gzipped,
+  167 chunks, 45 retries) took 26 minutes. The console is busy while a benchmark runs, so progress cannot be seen from the UART.
+
 ## Limits and next steps
 
 - Not measured: any hardware counter (needs the new image on the SD card), the other benchmarks, the multiplexing of events.
 - Upload by UART is only for files of a few hundred KB; larger binaries and inputs go on the SD card.
-- Next: flash the new image, check `perf stat -e cycles,instructions true`, run `perf-run.sh` on zstd, sqlite, sealcrypto, then the rest that fit in 512 MiB.
+- Next: flash the new image, check `perf stat -e cycles,instructions true`, run `perf-run.sh` on zstd, sqlite, sealcrypto, then the rest that fit in 512 MiB. A `test` run can take hours at 20 MHz (sealcrypto 2 h 40 min), so run long ones unattended with a time limit.
