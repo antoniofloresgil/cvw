@@ -13,7 +13,7 @@ on the Nexys Video, and is its output correct?
 
 ## Observations
 
-- UART transfer: the UART has no FIFO. At 16 bytes per burst characters were lost or doubled; at 2 bytes per millisecond about one error per 20 KB remained, so each 8 KB
+- UART transfer: the UART (`uartPC16550D.sv`) has 16-byte FIFOs and Linux detects a 16550A, yet at 16 bytes per burst characters were lost or doubled (cause not found; `/proc/tty/driver/serial` shows the `oe:` overrun count); at 2 bytes per millisecond about one error per 20 KB remained, so each 8 KB
   chunk is checked with md5sum and resent: 25 retries in 100 chunks, 800 KB (gzip + base64) in 16 minutes. The gzip's sha256 on the board equals the PC's.
 - `./zstd -b3 --verbose -i1` (the `test` workload; 10 MB of generated text, no input file): exit status 0, **2 min 54 s** wall (165.4 s user, 7.6 s system, 99 % CPU),
   maximum resident set 31 MB, 7,625 minor page faults, 872 involuntary context switches.

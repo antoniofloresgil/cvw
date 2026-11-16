@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 """Put a file on the board's Linux through the console UART, with no SD card: for a small binary or input while the root file system is the initramfs.
 
-Wally's UART has no FIFO: a burst of more than a few characters at 115200 baud overruns it and a character is now and then lost or doubled (about one per 20 KB
-at 2 bytes per millisecond).  So the file is gzipped, sent as base64 in chunks of 8 KB, each chunk is checked on the board with md5sum and sent again if it differs.
+Over the console UART (16550A with 16-byte FIFOs, so the cause is not known) a burst of more than a few characters at 115200 baud loses or doubles characters
+(about one per 20 KB at 2 bytes per millisecond).  So the file is gzipped, sent as base64 in chunks of 8 KB, each chunk is checked on the board with md5sum and sent again if it differs.
 About 800 KB take 16 minutes; use it only for small files.  Standard library only (the board needs BusyBox base64, md5sum, gzip, which the image has).
 
 Two commands share a log file and a FIFO, so a person or another script can type on the console too:
