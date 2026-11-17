@@ -79,7 +79,11 @@ four groups agree within 0.4 % (sqlite 1783.7-1789.9 M, zstd 2017.4-2037.1 M).
 
 ## Next
 
-1. The UART: `/proc/tty/driver/serial` showed `oe:46` (overruns) after 14 MB received at 2 bytes per millisecond: the UART has 16-byte FIFOs and Linux detects a 16550A, so
-   see why characters are still lost (interrupt latency, the RX FIFO in `uartPC16550D.sv`, or the host side).
+1. ~~The UART~~ (done 2026-11-17, not an RTL fault).  Test: `stty raw -echo; head -c 20000 > file` on the console, 20,000 random bytes sent from the PC, md5 and
+   `/proc/tty/driver/serial` compared.  Up to 8 bytes per millisecond (7.4 KB/s, 65 % of the 115200-baud line rate) nothing is lost (bursts of 2, 8 and 16; also with the tty
+   cooked and echoing, 2 x 40 KB).  Sent without pauses (line rate) there are 9-12 overruns (`oe`, no `fe`/`pe`) per 20 KB.  Lowering the RX trigger level by writing FCR
+   (8 -> 4 -> 1) gives 12, 9 and 5 per 20 KB, and the UART interrupt count stays at about 1800 per 20,000 characters (about 11 characters per interrupt): the 20 MHz core
+   spends about one character time (87 us, roughly 1700 cycles) per character in the 8250 driver and the tty layer, so at line rate it is saturated and the 16-byte FIFO
+   overflows now and then.  The "doubled characters" seen before did not reproduce.  `uart-upload.py` now sends 8 bytes per millisecond (it was 2): 232 KB in 123 s, 0 retries.
 2. More benchmarks, the `train` size where it fits, and the same counters in simulation.
 3. Why a context switch under `perf` costs so much more on this bitstream (SBI path in OpenSBI, or the core): measure the cycles of one `sbi_pmu_counter_config_matching` call.

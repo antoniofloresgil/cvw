@@ -2,12 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 """Put a file on the board's Linux through the console UART, with no SD card: for a small binary or input while the root file system is the initramfs.
 
-Over the console UART (16550A with 16-byte FIFOs, so the cause is not known) a burst of more than a few characters at 115200 baud loses or doubles characters
-(about one per 20 KB at 2 bytes per millisecond).  So the file is gzipped, sent as base64 in chunks of 8 KB, each chunk is checked on the board with md5sum and sent again if it differs.
-About 800 KB take 16 minutes; use it only for small files.  Standard library only (the board needs BusyBox base64, md5sum, gzip, which the image has).
+The board's CPU (20 MHz) cannot keep up with the console UART at 115200 baud: Linux's 8250 driver takes about one character time per character, the 16-byte RX FIFO
+overruns (`oe` in /proc/tty/driver/serial; no framing or parity errors) about once per 2000 characters when the host sends without pauses, whatever the FIFO trigger
+level (8, 4 or 1: 12, 9 and 5 per 20 KB).  It is not an RTL fault.  Up to 8 characters per millisecond (7.4 KB/s, 65 % of the line rate) nothing was lost in 80 KB with
+the tty cooked and echoing, as here (2026-11-17, idle board).  Under load (SD writes) it was not measured, so the file is gzipped, sent as base64 in chunks of 8 KB,
+each chunk is checked on the board with md5sum and sent again if it differs.  Standard library only (the board needs BusyBox base64, md5sum, gzip, which the image has).
 
 Two commands share a log file and a FIFO, so a person or another script can type on the console too:
-  uart-upload.py bridge <serial device> <log> <fifo>      # keeps running: logs what the board prints, writes what you put in the FIFO (2 bytes per ms)
+  uart-upload.py bridge <serial device> <log> <fifo>      # keeps running: logs what the board prints, writes what you put in the FIFO (8 bytes per ms)
   uart-upload.py put <file> <remote path on the board> <log> <fifo>
 `put` leaves <remote path> (the file, decompressed) on the board and checks its sha256 (printed on the console) against the PC's; the board must be at a shell prompt.
 """
@@ -23,7 +25,7 @@ import termios
 import time
 
 CHUNK_LINES = 105  # 105 base64 lines of 76 characters, about 8 KB
-BURST, GAP = 2, 0.001  # characters per write and seconds between writes
+BURST, GAP = 8, 0.001  # characters per write and seconds between writes (2 was used before the 2026-11-17 measurement)
 
 
 def bridge(port, log, fifo):
@@ -76,7 +78,7 @@ def put(path, remote, log, fifo):
             send(b"rm -f /tmp/up.c; cat > /tmp/up.c\n")
             time.sleep(0.6)
             send(chunk)
-            time.sleep(len(chunk) / 1500.0)
+            time.sleep(len(chunk) / 6000.0)
             send(b"\004")  # end of input, at the start of a line
             time.sleep(0.4)
             send(b"echo CKR%d $(md5sum < /tmp/up.c)\n" % i)
