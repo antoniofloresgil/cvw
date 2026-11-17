@@ -86,4 +86,19 @@ four groups agree within 0.4 % (sqlite 1783.7-1789.9 M, zstd 2017.4-2037.1 M).
    spends about one character time (87 us, roughly 1700 cycles) per character in the 8250 driver and the tty layer, so at line rate it is saturated and the 16-byte FIFO
    overflows now and then.  The "doubled characters" seen before did not reproduce.  `uart-upload.py` now sends 8 bytes per millisecond (it was 2): 232 KB in 123 s, 0 retries.
 2. More benchmarks, the `train` size where it fits, and the same counters in simulation.
-3. Why a context switch under `perf` costs so much more on this bitstream (SBI path in OpenSBI, or the core): measure the cycles of one `sbi_pmu_counter_config_matching` call.
+3. Why a context switch under `perf` costs more than in October (measured 2026-11-17, partly answered).  Test: `dd bs=512 count=2000 | dd` (a pipe, about 4000 context switches)
+   under `perf stat -e <N events>`, wall time of the pipeline on the board, two repeats:
+
+   | bitstream | no perf | 2 events | 8 events | 24 events |
+   |---|---|---|---|---|
+   | 2026-10-20 (October) | 3.2 s | 4.2 s | 4.4 s | 5.9 s |
+   | 2026-11-16 | 2.5 s | 4.5 s | 4.3 s | 8.0 s |
+   | 2026-11-16, EBU commits reverted | 3.3 s | 4.0 s | 4.5 s | 7.6 s |
+   | 2026-11-16, SPI commits reverted | 2.8 s | 3.7 s | 4.3 s | 6.8 s |
+
+   The cost grows linearly with the number of events and does not depend on which counters (8 events in r3-r8, r13-r18 or r19-r1a: the same 4.0-4.7 s), so it is per event and per
+   context switch (about 40 us, 800 cycles, per event on the new bitstream; 2.5 times the October slope: 0.23 s per event against 0.09 s).  With `HZ=250` (4 ms tick) 28 events
+   plus the cold caches after a switch are enough to exceed the tick in the real benchmark.  Without `perf` the new bitstream is not slower.  Reverting the EBU commits does not
+   restore the October slope; the SPI revert is in between and within the noise (+-0.5 s), so no single commit is identified.  What is left: the CSR/SBI path (`mhpmevent`
+   and counter writes through OpenSBI, `pmucountercontrol`), whose RTL changed between the two builds (events 25/26, counter control).  To find it, measure the cycles of one
+   `sbi_pmu_counter_config_matching` call (a bare-metal loop in M mode, or the ILA with a trigger on the ecall).
