@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from events import EVENTS
+from events import GROUPS
 
 
 def read_lines(path):
@@ -94,7 +94,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     here = Path(__file__).resolve().parent
     shutil.copy2(here / "perf-run.sh", out / "perf-run.sh")
-    (out / "events").write_text(",".join(EVENTS) + "\n")
+    (out / "events").write_text("".join(",".join(g) + "\n" for g in GROUPS))
     for b in benches:
         print(stage(args.spec, args.size, out, b))
 

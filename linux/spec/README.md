@@ -13,9 +13,12 @@ and writes a staging directory outside git; `perf-run.sh` and `report.py` hold n
    Benchmarks whose `invoke` it does not understand (control files, `<name>.in`, no arguments are) are listed and skipped.
 2. Copy `<out>` to the board's SD card (the benchmarks you choose; check their memory against the 512 MiB first). For a small benchmark without
    touching the card, `uart-upload.py` puts a file on the running Linux through the console UART (verified chunks; about 800 KB in 16 minutes, see its header).
-3. On the board, as root, idle: `sh perf-run.sh <out on the board> /root/results [benchmark ...]`: every command under
-   `perf stat -x, -e cycles,instructions,r3,...,r1a`, one CSV per run. All events count at once (each has its own counter); `report.py` flags any that were multiplexed.
-4. Copy `results` back and run `./report.py results`: a table with CPI and the clock-independent rates.
+3. On the board, as root, idle: `sh perf-run.sh <out on the board> /root/results [benchmark ...]`: every command runs once per line of `<out>/events`
+   (four groups of `cycles,instructions` and six counters, `events.py`) under `perf stat -x,`, one CSV per run and group. The groups are separate runs because
+   Linux reprograms all of a task's events through SBI at every context switch: with all 26 counters at once a benchmark stops making progress on the board
+   (see `docs/engineering/experiments/2026-11-16-spec-perf-on-board.md`). So a benchmark takes four times as long; each counter has its own hardware counter, so none is multiplexed.
+4. Copy `results` back and run `./report.py results`: a table with CPI and the clock-independent rates; every ratio is taken inside one group,
+   and `report.py` notes when the instruction counts of the groups differ by more than 5 %.
 
 Reading the numbers: counters include M, S and U mode (no `:u` filter in the base configuration), and the timer interrupt and page faults of the benchmark are in them.
 At 20 MHz against DDR3 a cache miss costs few core cycles, so CPI understates the memory stalls of a fast chip: compare the misses and mispredictions per thousand

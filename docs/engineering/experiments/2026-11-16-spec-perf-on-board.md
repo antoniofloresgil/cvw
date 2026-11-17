@@ -33,14 +33,53 @@ and 2.7 % (zstd): the counters include the kernel's timer interrupts and, in zst
   `InstrValidM == 1`: the core ran, at PC 0 with a trap every cycle): `fpga/generator/Makefile` had `config := fpga$(board)`, evaluated before the target-specific `board`
   is set, so the ZSBL was built from `config/deriv/fpga` (EXT_MEM_RANGE 2 GiB) with its stack at 0xFFFFFFF8, outside the 512 MiB of DDR3: the first store faulted.
   `wsim fpganexysvideo --test fpga` shows it in simulation.  Fixed with `config = fpga$(board)`; the bitstream of 2026-11-16
-  (`/datos/cvw-artifacts/nexysvideo-vivado-20261116-spec/`, slack +0.725 ns) boots and counts events 25 and 26.  The same benchmarks were run again with it
-  (results3 and results4 on the board; the table is to be added here).
+  (`/datos/cvw-artifacts/nexysvideo-vivado-20261116-spec/`, slack +0.725 ns) boots and counts events 25 and 26; its results are in the section below.
 - CPI at 20 MHz against DDR3 understates memory stalls; the MPKI columns do not depend on the clock.
-- `test` size; sealcrypto takes 3 hours.  The other 20 benchmarks of the stage directory have not been run.
+- `test` size; sealcrypto takes 3 hours (four times that with the groups).  The other 20 benchmarks of the stage directory have not been run.
+
+## The 2026-11-16 bitstream: `perf stat` with all counters livelocks
+
+With the new bitstream the same `perf-run.sh` (26 counters plus cycles and instructions in one `perf stat`) never finished: the benchmark stayed in state R for
+hours with no user time, 43,000 involuntary context switches, and a stack in `sifive_spi_transfer_one` (where it had been preempted: the SD is read by the task
+itself).  What it is not: reverting the two EBU commits of 2026-11-09 (886b55244, 18538ff6d) and then the SPI commits of 2026-11-01/06 (663795a09, 60d1ded32)
+and rebuilding did not change it; the SPI registers were idle (IP = 3, IE = 0, no interrupts).  What it is: the ILA of the design (no reprogramming, trigger
+`InstrValidM`, PCs mapped with `addr2line` on the kernel's `vmlinux`) showed the core executing `__schedule`, `perf_event_task_sched_out`, `event_sched_in`,
+`pmu_sbi_ctr_get_idx` and `__sbi_ecall` into OpenSBI.  Linux reprograms every event of a task through SBI at each context switch; with 28 events that costs more than
+the task gets to run, so it is preempted again before executing an instruction.
+
+| `perf stat` with | zstd | sqlite |
+|---|---|---|
+| no perf | 297 s | |
+| 4 events | 177 s | |
+| 15 events | | 1205 s (October bitstream, 26 events: 317 s) |
+| 28 events (cycles, instructions, 26 counters) | does not finish | does not finish |
+| 4 groups of 8 events (below) | 197-206 s per group | 239-244 s per group |
+
+Why the same 26 events worked on the October bitstream is not known; there events 25 and 26 did not exist, which may have made two of the SBI calls cheap.
+
+Fix: `perf-run.sh` runs each command once per group of `cycles`, `instructions` and six counters (`events.py`, `GROUPS`), and `report.py` takes every ratio inside one group.
+
+## Results of the 2026-11-16 bitstream (four groups, pass 1, counters of group 1 for instructions and cycles)
+
+| benchmark | instr (M) | cycles (M) | CPI | br/instr % | mispred MPKI | dir MPKI | L1I MPKI | L1D MPKI | L1D miss % | load stall % | I$ stall % |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 708.sqlite_r | 1788.4 | 4378.9 | 2.45 | 12.8 | 66.18 | 14.49 | 22.46 | 13.59 | 3.5 | 3.1 | 25.0 |
+| 777.zstd_r | 2037.1 | 3632.4 | 1.78 | 8.3 | 24.40 | 5.36 | 4.61 | 11.08 | 2.9 | 1.9 | 7.1 |
+
+All eight runs ended with status 0 and printed the same output as SPEC's reference (zstd) or the pass-1 output of the October run (sqlite).  The instruction counts of the
+four groups agree within 0.4 % (sqlite 1783.7-1789.9 M, zstd 2017.4-2037.1 M).
+
+- The instruction counts are 20 % (sqlite) and 15 % (zstd) lower than the October ones (2225.5 M and 2381.2 M) and the wall time per pass is lower (240 s against 317 s),
+  while the rates that do not depend on the instruction count (direction MPKI 14.5 against 13.8, L1I and L1D misses per instruction within 10 %) are close.  The difference is most likely `perf`'s own
+  context-switch work (SBI calls, scheduler) counted in the task's counters with 26 events in October: the October table overstated the instructions by that overhead.
+- Branches: 18.7 % (sqlite) and 12.2 % (zstd) of the instructions are control transfers (r19 = r3 + r4 + r5 within 1 %).  The mispredicted ones are 66 per thousand
+  instructions in sqlite and 24 in zstd (35 % and 20 % of the control transfers), and r1a is consistent with its parts (r7 direction 14.5 + r8 target 47.1 + r9 return stack 3.5 = 65.1 per thousand in sqlite).
+  Most of the mispredictions are target mispredictions, not direction ones, so the BTB (1024 entries) and the indirect jumps matter more than the gshare predictor here.
+  Counters r6 and r10 (any cause, instruction class) are larger than the sum of the parts (109 and 141 per thousand in sqlite); their meaning has not been checked.
 
 ## Next
 
-1. Add the results of the 2026-11-16 bitstream (the branch counters).
-2. `/proc/tty/driver/serial` showed `oe:46` (overruns) after 14 MB received at 2 bytes per millisecond: the UART has 16-byte FIFOs and Linux detects a 16550A, so
+1. The UART: `/proc/tty/driver/serial` showed `oe:46` (overruns) after 14 MB received at 2 bytes per millisecond: the UART has 16-byte FIFOs and Linux detects a 16550A, so
    see why characters are still lost (interrupt latency, the RX FIFO in `uartPC16550D.sv`, or the host side).
-3. More benchmarks, the `train` size where it fits, and the same counters in simulation.
+2. More benchmarks, the `train` size where it fits, and the same counters in simulation.
+3. Why a context switch under `perf` costs so much more on this bitstream (SBI path in OpenSBI, or the core): measure the cycles of one `sbi_pmu_counter_config_matching` call.

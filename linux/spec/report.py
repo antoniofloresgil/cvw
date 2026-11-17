@@ -9,6 +9,7 @@ Standard library only:   report.py <results directory> [--markdown]"""
 
 import argparse
 import csv
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -33,11 +34,19 @@ def read_csv(path):
     return out
 
 
+NAME = re.compile(r"^(?P<bench>.+)\.(?P<run>\d+)(?:\.g(?P<group>\d+))?\.csv$")
+
+
 def collect(results):
-    totals = defaultdict(lambda: defaultdict(int))
+    """bench -> group -> event -> count summed over the runs of the benchmark.  perf-run.sh runs each command once per group of counters (events.py), each group with
+    cycles and instructions, so every ratio below is taken inside one group; CSVs of an older single run have no group (group 0)."""
+    totals = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     flags = defaultdict(set)
     for p in sorted(results.glob("*.csv")):
-        bench = p.name.rsplit(".", 2)[0]
+        m = NAME.match(p.name)
+        if not m:
+            continue
+        bench, group = m["bench"], int(m["group"] or 0)
         info = p.with_suffix(".info")
         if info.exists() and not info.read_text().startswith("rc=0"):
             flags[bench].add("exit status not 0")
@@ -46,18 +55,32 @@ def collect(results):
             if name not in ev:
                 flags[bench].add(f"{name} missing")
         for name, (count, pct) in ev.items():
-            totals[bench][name] += count
+            totals[bench][group][name] += count
             if pct < 99.9:
                 flags[bench].add(f"{name} multiplexed ({pct:.0f} %)")
+    for bench, groups in totals.items():
+        ins = [g[INS] for g in groups.values() if g.get(INS)]
+        if ins and max(ins) > 1.05 * min(ins):
+            flags[bench].add(f"instructions differ {100 * (max(ins) / min(ins) - 1):.0f} % between groups")
     return totals, flags
 
 
-def per_k(ev, name, base=INS):
-    return f"{1000 * ev.get(name, 0) / ev[base]:.2f}" if ev.get(base) and name in ev else "-"
+def rate(groups, name, base, scale=1.0):
+    """scale * event / base, from the first group that counted the event with a non-zero base."""
+    for g in groups.values():
+        if name in g and g.get(base):
+            return scale * g[name] / g[base]
+    return None
 
 
-def pct_of(ev, name, base):
-    return f"{100 * ev[name] / ev[base]:.1f}" if ev.get(base) and name in ev else "-"
+def per_k(groups, name):
+    r = rate(groups, name, INS, 1000)
+    return "-" if r is None else f"{r:.2f}"
+
+
+def pct_of(groups, name, base):
+    r = rate(groups, name, base, 100)
+    return "-" if r is None else f"{r:.1f}"
 
 
 def main():
@@ -69,23 +92,24 @@ def main():
     print("| " + " | ".join(cols) + " |")
     print("|" + "---|" * len(cols))
     for bench in sorted(totals):
-        ev = totals[bench]
-        if not ev.get(INS):
+        groups = totals[bench]
+        first = groups[min(groups)]
+        if not first.get(INS):
             print(f"| {bench} | no instructions counted |" + " |" * (len(cols) - 2))
             continue
         row = [
             bench,
-            f"{ev[INS] / 1e6:.1f}",
-            f"{ev.get(CYC, 0) / 1e6:.1f}",
-            f"{ev[CYC] / ev[INS]:.2f}" if ev.get(CYC) else "-",
-            pct_of(ev, BR, INS),
-            per_k(ev, MISP),
-            per_k(ev, DIRW),
-            per_k(ev, L1I_M),
-            per_k(ev, L1D_M),
-            pct_of(ev, L1D_M, L1D_A),
-            pct_of(ev, LD_STALL, CYC),
-            pct_of(ev, IC_STALL, CYC),
+            f"{first[INS] / 1e6:.1f}",
+            f"{first.get(CYC, 0) / 1e6:.1f}",
+            f"{first[CYC] / first[INS]:.2f}" if first.get(CYC) else "-",
+            pct_of(groups, BR, INS),
+            per_k(groups, MISP),
+            per_k(groups, DIRW),
+            per_k(groups, L1I_M),
+            per_k(groups, L1D_M),
+            pct_of(groups, L1D_M, L1D_A),
+            pct_of(groups, LD_STALL, CYC),
+            pct_of(groups, IC_STALL, CYC),
             "; ".join(sorted(flags[bench])),
         ]
         print("| " + " | ".join(row) + " |")
