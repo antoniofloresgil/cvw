@@ -102,3 +102,13 @@ four groups agree within 0.4 % (sqlite 1783.7-1789.9 M, zstd 2017.4-2037.1 M).
    restore the October slope; the SPI revert is in between and within the noise (+-0.5 s), so no single commit is identified.  What is left: the CSR/SBI path (`mhpmevent`
    and counter writes through OpenSBI, `pmucountercontrol`), whose RTL changed between the two builds (events 25/26, counter control).  To find it, measure the cycles of one
    `sbi_pmu_counter_config_matching` call (a bare-metal loop in M mode, or the ILA with a trigger on the ecall).
+
+   Parked (2026-11-17); the groups of six counters avoid the problem.  Ruled out so far:
+   - The configuration: the effective `fpganexysvideo` parameters of the two builds (82d0b80f7 and 2a0c6f659, `derivgen.pl` in a worktree) differ only in options that are
+     off and in `BIGENDIAN_SUPPORTED` 1 -> 0 (add5053df, upstream: rv64gc little-endian only until Sail and ACT can test big-endian; Linux never uses it).
+   - Both bitstreams were built with Vivado 2024.2 at 20 MHz (not the open flow).
+   - OpenSBI: ILA captures from a kernel `ecall` (24 events under `perf` in a loop) give the same CPI (1.2-1.5) and the same instruction count (short calls about 500 instructions,
+     660 cycles) on both bitstreams.
+   - Extra traps: 30 traps captured on each bitstream have the same mix (15-16 kernel `ecall`, 9-10 syscalls, the rest interrupts); no `hpmcounter` read traps to OpenSBI.
+   Still open: the number of SBI calls per context switch, or the kernel code between them.  Next: count kernel `ecall`s per second (ILA in count mode), or time `__schedule` to the
+   return to user mode on both bitstreams.  Scripts (outside git): `ila5.tcl` (trigger on ecall), `ila6.tcl` (trigger on TrapM), `sbi.py`, `traps.py` in the session scratchpad.
