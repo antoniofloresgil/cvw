@@ -77,6 +77,32 @@ four groups agree within 0.4 % (sqlite 1783.7-1789.9 M, zstd 2017.4-2037.1 M).
   Most of the mispredictions are target mispredictions, not direction ones, so the BTB (1024 entries) and the indirect jumps matter more than the gshare predictor here.
   Counters r6 and r10 (any cause, instruction class) are larger than the sum of the parts (109 and 141 per thousand in sqlite); their meaning has not been checked.
 
+## First pass of the other benchmarks (2026-11-17/18, `test` size, group 1 of the counters)
+
+Eleven benchmarks are on the board (the 8 below plus zstd, sqlite and sealcrypto), uploaded over the UART (`upload-stage.sh`).  Each command ran once under `perf stat` with group 1
+(cycles, instructions, branches, mispredictions), `PERF_GROUPS=1`; the output of every command that has a reference in SPEC's `data/test/output` passes SPEC's `specdiff`
+(flightdm with its own tolerances: `--abstol 0.09` and `0.01`, `--coterminal_angles`).  Raw files: `/datos/tmp/spec-results/results4`, `results5` (outside git).
+
+| benchmark | instr (M) | cycles (M) | CPI | br/instr % | mispred MPKI | dir MPKI | wall time | output |
+|---|---|---|---|---|---|---|---|---|
+| 707.ntest_r | 3316.9 | 5997.0 | 1.81 | 9.8 | 31.72 | 7.37 | 352 s | specdiff ok |
+| 709.cactus_r | 68346.2 | 271643.8 | 3.97 | 2.2 | 19.80 | 1.25 | 13960 s | specdiff ok |
+| 710.omnetpp_r (3 runs) | 2777.1 | 8044.2 | 2.90 | 13.8 | 68.33 | 13.62 | 336 + 375 + 8 s | specdiff ok (runs 2, 3) |
+| 727.cppcheck_r | 61.3 | 149.3 | 2.44 | 15.5 | 66.95 | 18.43 | 10 s | specdiff ok |
+| 748.flightdm_r (2 runs) | 25383.2 | 85739.9 | 3.38 | 10.7 | 60.79 | 12.52 | 666 + 3904 s | specdiff ok |
+| 767.nest_r (2 runs) | 45301.7 | 68383.0 | 1.51 | 13.8 | 20.80 | 4.08 | 802 + 2953 s | specdiff ok |
+
+- Do not fit in the 512 MiB of the board: 782.lbm_r (`could not allocate 817.9 MByte`, 1 s) and 749.fotonik3d_r (killed by the OOM killer with 465 MB resident after 6662 s of paging, `rc=137`).
+  The first fotonik3d run of 106 s with `rc=0` had no input: `stage.py` did not decompress `OBJ-values.dat.xz`, and the program printed `Failed to open file OBJ-values.dat` and still exited with 0 (so `rc` alone is not a check).
+- Two bugs of `stage.py` found by `specdiff`/the output: omnetpp is invoked as `-f <ini> -c <configuration>` (it was staged as `<ini> <configuration> 0`: `Cannot open ini file 'General'`), and cppcheck needs `--platform=unix64`
+  (its test-size `testrunner_r` run is not staged).  `control_fixup` and the decompression of the `.xz` inputs (fotonik3d, vpr, gem5) fix both.
+- Instruction counts against NEMU (xiangshan-04, same binaries and inputs, application = total - 274 M of boot): the board counts 7-22 % more in the long runs (cactus 68.3 G against 56.2 G,
+  ntest 3.32 against 2.90, flightdm 3.58 against 2.87, nest 40.9 against 38.3).  The difference grows with the run time, about 3.5-4.5 thousand instructions per timer tick (`HZ=250`: SBI timer
+  call, kernel tick), and in short runs with I/O it is the SD card read by the task itself with the SPI driver polling (`perf-run.sh` now reads the files once before measuring).
+  For tiny runs NEMU's number is not usable (its boot count depends on the initramfs size).
+- Speed: cactus 56.2 G instructions in 13,960 s is 4.0 M instructions per second (CPI 3.97 at 20 MHz); ntest 8-9 M/s, nest 13 M/s in its long run.
+- Only group 1: the cache columns (groups 2-4) are missing.  Each group costs the same time again (about 6.3 h for these six benchmarks).
+
 ## Next
 
 1. ~~The UART~~ (done 2026-11-17, not an RTL fault).  Test: `stty raw -echo; head -c 20000 > file` on the console, 20,000 random bytes sent from the PC, md5 and

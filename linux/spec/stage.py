@@ -7,11 +7,12 @@ The SPEC installation is only read, never changed.  SPEC CPU 2026 belongs to its
 so keep it outside git (stage.py refuses an output directory inside a git work tree) and do not publish it.
 
 The command lines come from each benchmark's Spec/object.pm.  Five kinds of `invoke` are understood: arguments in the lines of a `control` file,
-arguments in the file <name>.in, no arguments, gem5's `control.cmd` (the statistics are not post-processed) and femflow's <size>.prm.  Others are reported as unsupported (they need a port of their invoke by hand).
+arguments in the file <name>.in, no arguments, gem5's `control.cmd` (the statistics are not post-processed) and femflow's <size>.prm.  Others are reported as unsupported (they need a port of their invoke by hand).  `control_fixup` corrects omnetpp (-f/-c) and cppcheck (--platform=unix64; its test-size `testrunner_r` run is not staged); fotonik3d, vpr and gem5 get their .xz inputs decompressed.
 Standard library only:   stage.py --spec <cpu2026_install> --size test --out /datos/tmp/spec-stage [--bench 782.lbm_r ...]
 """
 
 import argparse
+import lzma
 import re
 import shlex
 import shutil
@@ -54,6 +55,19 @@ def commands(bench_dir, size, exename, benchname):
     return None
 
 
+# Benchmarks whose invoke builds the command line from the `control` lines in a way that the plain "the line is the argument list" rule gets wrong.
+def control_fixup(benchname, args):
+    if benchname == "omnetpp":  # object.pm: -f <ini> -c <configuration>; the third field of the line is not an argument
+        return ["-f", args[0], "-c", args[1]]
+    if benchname == "cppcheck":  # object.pm: the line, then --platform=unix64
+        return [*args, "--platform=unix64"]
+    return args
+
+
+# Benchmarks whose generate_inputs runs `specxz -d` on their inputs: the board has no xz, so they are decompressed here (the .xz files stay).
+XZ_INPUTS = ("fotonik3d", "vpr", "gem5")
+
+
 def stage(spec, size, out, bench):
     bench_dir = spec / "benchspec" / "CPU" / bench
     pm = (bench_dir / "Spec" / "object.pm").read_text()
@@ -66,6 +80,8 @@ def stage(spec, size, out, bench):
     if not exe.is_file():
         return f"{bench}: {exe.name} not found"
     cmds = commands(bench_dir, size, exename, benchname)
+    if cmds is not None:
+        cmds = [control_fixup(benchname, a) for a in cmds]
     if cmds is None:
         return f"{bench}: invoke or input of size {size} not understood, port it by hand"
     dest = out / bench
@@ -75,6 +91,9 @@ def stage(spec, size, out, bench):
         if d.is_dir():
             shutil.copytree(d, dest, dirs_exist_ok=True)
     shutil.copy2(exe, dest / exename)
+    if benchname in XZ_INPUTS:
+        for f in sorted(dest.rglob("*.xz")):
+            f.with_suffix("").write_bytes(lzma.open(f).read())
     (dest / "cmds").write_text("".join(shlex.join(["./" + exename, *args]) + "\n" for args in cmds))
     return f"{bench}: {len(cmds)} run(s), {sum(p.stat().st_size for p in dest.rglob('*') if p.is_file()) / 1e6:.1f} MB"
 
