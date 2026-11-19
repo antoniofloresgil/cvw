@@ -76,6 +76,11 @@ source "$WALLY"/bin/installation/qemu-install.sh
 source "$WALLY"/bin/installation/spike-install.sh
 
 
+# SimPoint (https://cseweb.ucsd.edu/~calder/simpoint/)
+# SimPoint picks the representative intervals of a program from its basic block vectors (linux/checkpoint).
+source "$WALLY"/bin/installation/simpoint-install.sh
+
+
 # Whisper (https://github.com/tenstorrent/whisper)
 # Whisper is a RISC-V instruction set simulator (ISS) developed by Tenstorrent.
 # The boost libraries (needed for Whisper) do not compile correctly on Ubuntu 20.04
