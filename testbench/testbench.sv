@@ -77,6 +77,7 @@ module testbench;
   integer      INSTR_LIMIT;
   string       UART_LOG_FILE;
   integer      UART_LOG;
+  string       LinuxRam, LinuxBootmem; // buildroot: other RAM and BOOTROM images, e.g. a checkpoint (linux/checkpoint)
 
   // DUT signals
   logic [P.AHBW-1:0]    HRDATAEXT;
@@ -154,6 +155,10 @@ module testbench;
       UART_LOG = (TEST == "buildroot"); // Default to true for buildroot test, false otherwise
     if (!$value$plusargs("UART_LOG_FILE=%s", UART_LOG_FILE))
       UART_LOG_FILE = {"logs/", TEST, "_uart.out"};
+    if (!$value$plusargs("LinuxRam=%s", LinuxRam))
+      LinuxRam = "";
+    if (!$value$plusargs("LinuxBootmem=%s", LinuxBootmem))
+      LinuxBootmem = "";
     //$display("TEST = %s ElfFile = %s", TEST, ElfFile);
 
     if (!$value$plusargs("ElfList=%s", ElfList))
@@ -308,9 +313,9 @@ module testbench;
       end
     if(SelectTest) begin
       if(TEST == "buildroot") begin
-        memfilename = {RISCV_DIR, "/linux-testvectors/ram.bin"};
+        memfilename = (LinuxRam != "") ? LinuxRam : {RISCV_DIR, "/linux-testvectors/ram.bin"};
         elffilename = "buildroot";
-        bootmemfilename = {RISCV_DIR, "/linux-testvectors/bootmem.bin"};
+        bootmemfilename = (LinuxBootmem != "") ? LinuxBootmem : {RISCV_DIR, "/linux-testvectors/bootmem.bin"};
         ProgramAddrMapFile = {RISCV_DIR, "/buildroot/output/images/disassembly/vmlinux.objdump.addr"};
         ProgramLabelMapFile = {RISCV_DIR, "/buildroot/output/images/disassembly/vmlinux.objdump.lab"};
       end else if(TEST == "fpga") begin

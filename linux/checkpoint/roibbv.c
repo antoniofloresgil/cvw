@@ -21,7 +21,16 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
 typedef struct { uint64_t pc; uint32_t id; uint32_t ninsns; uint64_t count; } Block;
 
-static GHashTable *blocks;      /* pc -> Block */
+/* A block is its start address and length: the same virtual address can start blocks of other lengths (another
+ * process, or QEMU translating a shorter block there), and counting them with the first length found is wrong. */
+static guint block_hash(gconstpointer k) { const Block *b = k; return g_int64_hash(&b->pc) ^ b->ninsns; }
+static gboolean block_equal(gconstpointer a, gconstpointer b)
+{
+    const Block *x = a, *y = b;
+    return x->pc == y->pc && x->ninsns == y->ninsns;
+}
+
+static GHashTable *blocks;      /* (pc, ninsns) -> Block */
 static GPtrArray *order;        /* blocks by id */
 static uint64_t total;          /* instructions since boot (block granularity) */
 static uint64_t in_interval, interval = 10000000, roi_start_insn, roi_insns;
@@ -72,14 +81,13 @@ static void marker(unsigned int vcpu, void *udata)
 
 static void tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
 {
-    uint64_t pc = qemu_plugin_tb_vaddr(tb);
-    Block *b = g_hash_table_lookup(blocks, &pc);
+    Block key = { .pc = qemu_plugin_tb_vaddr(tb), .ninsns = qemu_plugin_tb_n_insns(tb) };
+    Block *b = g_hash_table_lookup(blocks, &key);
     if (!b) {
         b = g_new0(Block, 1);
-        b->pc = pc;
+        *b = key;
         b->id = order->len + 1;
-        b->ninsns = qemu_plugin_tb_n_insns(tb);
-        g_hash_table_insert(blocks, &b->pc, b);
+        g_hash_table_insert(blocks, b, b);
         g_ptr_array_add(order, b);
     }
     qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec, QEMU_PLUGIN_CB_NO_REGS, b);
@@ -100,7 +108,7 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
         else { fprintf(stderr, "roibbv: unknown option %s\n", argv[i]); return -1; }
     }
     if (!outname || !(out = fopen(outname, "w"))) { fputs("roibbv: outfile=<file> needed\n", stderr); return -1; }
-    blocks = g_hash_table_new(g_int64_hash, g_int64_equal);
+    blocks = g_hash_table_new(block_hash, block_equal);
     order = g_ptr_array_new();
     qemu_plugin_register_vcpu_tb_trans_cb(id, tb_trans);
     return 0;
