@@ -101,7 +101,45 @@ Eleven benchmarks are on the board (the 8 below plus zstd, sqlite and sealcrypto
   call, kernel tick), and in short runs with I/O it is the SD card read by the task itself with the SPI driver polling (`perf-run.sh` now reads the files once before measuring).
   For tiny runs NEMU's number is not usable (its boot count depends on the initramfs size).
 - Speed: cactus 56.2 G instructions in 13,960 s is 4.0 M instructions per second (CPI 3.97 at 20 MHz); ntest 8-9 M/s, nest 13 M/s in its long run.
-- Only group 1: the cache columns (groups 2-4) are missing.  Each group costs the same time again (about 6.3 h for these six benchmarks).
+- The cache columns (groups 2-4) were measured afterwards: next section.
+
+## All four counter groups (2026-11-18/19)
+
+Groups 2-4 of the eight benchmarks ran on the board unattended (`PERF_SKIP=1`, about 19 h; cactus alone took 3.8 h per group), then the first group of cppcheck, ntest and omnetpp
+again (the first run predates the warm-up read of the inputs).  All 40 runs ended with `rc=0` and print the same output in the four groups.  Counters of the four groups (`report.py`,
+instructions and cycles of group 1, every ratio inside one group; raw files `/datos/tmp/spec-results/all`, outside git):
+
+| benchmark | instr (M) | cycles (M) | CPI | br/instr % | mispred MPKI | dir MPKI | L1I MPKI | L1D MPKI | L1D miss % | load stall % | I$ stall % |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 707.ntest_r | 3313.0 | 5951.4 | 1.80 | 9.8 | 31.52 | 7.25 | 6.00 | 12.67 | 4.7 | 2.6 | 9.3 |
+| 709.cactus_r | 68346.2 | 271643.8 | 3.97 | 2.2 | 19.80 | 1.25 | 49.06 | 43.58 | 10.6 | 1.3 | 34.2 |
+| 710.omnetpp_r (3 runs) | 2900.3 | 8429.4 | 2.91 | 13.8 | 68.28 | 13.61 | 24.66 | 13.02 | 3.0 | 3.1 | 23.7 |
+| 727.cppcheck_r | 60.8 | 147.7 | 2.43 | 15.5 | 67.00 | 18.45 | 18.63 | 13.74 | 3.8 | 2.7 | 21.2 |
+| 748.flightdm_r (2 runs) | 25383.2 | 85739.9 | 3.38 | 10.7 | 60.79 | 12.52 | 26.60 | 38.43 | 8.7 | 2.5 | 21.2 |
+| 767.nest_r (2 runs) | 45301.7 | 68383.0 | 1.51 | 13.8 | 20.80 | 4.08 | 4.40 | 5.91 | 2.1 | 2.4 | 7.9 |
+
+How far the groups agree (instructions of the same command in each group, M, and wall time; the program does the same work every time):
+
+| run | g1 | g2 | g3 | g4 | spread |
+|---|---|---|---|---|---|
+| cactus | 68346 / 13960 s | 67794 / 13784 s | 67899 / 13822 s | 67839 / 13741 s | 1 % |
+| nest run 2 | 40912 / 2953 s | 40727 / 2920 s | 40700 / 2918 s | 40661 / 2878 s | 1 % |
+| flightdm run 2 | 21805 / 3904 s | 21436 / 3777 s | 21506 / 3863 s | 21527 / 3763 s | 2 % |
+| ntest | 3313 / 349 s | 3104 / 290 s | 3138 / 301 s | 3146 / 301 s | 7 % |
+| flightdm run 1 | 3578 / 666 s | 3302 / 586 s | 3339 / 596 s | 3327 / 597 s | 8 % |
+| nest run 1 | 4390 / 802 s | 3908 / 653 s | 3948 / 665 s | 4012 / 683 s | 12 % |
+| omnetpp run 1 | 1619 / 414 s | 1467 / 350 s | 2290 / 565 s | 2262 / 557 s | 56 % |
+| omnetpp run 2 | 1218 / 338 s | 57 / 9 s | 1133 / 298 s | 58 / 9 s | 20x |
+| omnetpp run 3 | 63 / 10 s | 63 / 9 s | 206 / 48 s | 448 / 115 s | 7x |
+| cppcheck | 61 / 10 s | 60 / 9 s | 60 / 10 s | 261 / 66 s | 4x |
+
+- The long runs are reproducible to 1-2 %.  Group 1 is 6-12 % above the others in the runs of a few hundred seconds, also after repeating it with the inputs already in the page cache; not explained.
+- The short runs of omnetpp and cppcheck are not reproducible: the same command with the same output (omnetpp's OneFifo is 206 events) takes 9 s or 338 s, with the instruction count following the time
+  (3.6 M instructions per second while it runs, so the task is executing, not waiting).  The ratios of the long runs are not affected, but the short runs' rows carry this noise and the
+  `report.py` note "instructions differ N % between groups" marks them.  A possible cause, not tested: the console log of the whole run shows 138 `soft lockup` reports in kernel workers
+  and the stacks of `mmc_rescan` and `mmc_sd_detect` (the kernel polls the SD card for its presence), so the SD card's SPI polling may take the CPU and the counters in some runs.
+  Next try: mark the card `non-removable` in the device tree (no polling) and repeat a short run several times.
+- Whether a counter ratio is trustworthy therefore needs the spread of the instructions across groups next to it (the table above); use cactus, nest and flightdm run 2 as the clean data.
 
 ## Next
 
