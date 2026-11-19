@@ -110,7 +110,9 @@ qmtechk7: FPGA_QMTECHK7
 ifeq ($(FLOW),opensource)
 config := $(OPENCONFIG)
 else
-config := fpga$(board)
+# Recursive on purpose: `board` is a target-specific variable, set only when a recipe runs, so a `:=` here would read the generic config/deriv/fpga
+# (EXT_MEM_RANGE of 2 GiB) and build the ZSBL with its stack at 4 GiB, outside the DDR3.
+config = fpga$(board)
 endif
 EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/$(config)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')
 
