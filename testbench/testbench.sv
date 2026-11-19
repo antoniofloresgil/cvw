@@ -721,12 +721,26 @@ module testbench;
 
   // The privileged unit, and with it minstret, only exists when ZICSR is supported
   if (P.ZICSR_SUPPORTED) begin : instrlimit
-    logic [P.XLEN-1:0] Minstret;
+    logic [P.XLEN-1:0] Minstret, PrevMinstret;
+    integer HPM_WARMUP, HPM_PERIOD;  // extra counter reports: at the end of a warm-up, every HPM_PERIOD instructions
     assign Minstret = testbench.dut.core.priv.priv.csr.counters.HPMCOUNTER_REGW[2];
+    initial begin
+      if (!$value$plusargs("HPM_WARMUP=%d", HPM_WARMUP)) HPM_WARMUP = 0;
+      if (!$value$plusargs("HPM_PERIOD=%d", HPM_PERIOD)) HPM_PERIOD = 0;
+    end
+    // "HPM <minstret> <counter 0> ... <counter COUNTERS-1>", absolute values, for linux/checkpoint/measure.py
+    function automatic string hpmLine();
+      string s = $sformatf("HPM %0d", Minstret);
+      for (int c = 0; c < P.COUNTERS; c++) s = {s, $sformatf(" %0d", testbench.dut.core.priv.priv.csr.counters.HPMCOUNTER_REGW[c])};
+      return s;
+    endfunction
     always @(negedge clk) begin
-      if (INSTR_LIMIT > 0) begin
+      PrevMinstret <= Minstret;
+      if (INSTR_LIMIT > 0 & Minstret != PrevMinstret) begin  // once per instruction count, not on every stalled cycle
         if((Minstret != 0) & (Minstret % 'd100000 == 0)) $display("Reached %d instructions", Minstret);
-        if((Minstret == INSTR_LIMIT) & (INSTR_LIMIT!=0)) begin $finish; end
+        if ((HPM_WARMUP > 0 & Minstret == HPM_WARMUP) | (HPM_PERIOD > 0 & Minstret != 0 & Minstret % HPM_PERIOD == 0))
+          $display("%s", hpmLine());
+        if(Minstret == INSTR_LIMIT) begin $display("%s", hpmLine()); $finish; end
       end
     end
   end

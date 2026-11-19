@@ -9,11 +9,10 @@ Steps (status):
 1. **Profile** (done, `profile.sh`): basic block vectors of the benchmark's region of interest, SimPoint's intervals and weights.
 2. **Checkpoint** (done, `checkpoint.sh`): QEMU stops at the first instruction of each chosen interval and saves the
    hart's state, the device registers and the RAM; `mkrestore.py` makes the restore program.
-3. **Restore** (runs; measurement to do): Wally starts from the RAM image and the restore program, which loads the
-   state (registers, CSRs, CLINT, PLIC, UART) and returns to the interrupted code; to do: warm-up, then the interval,
-   counted by the HPM counters, read at the end of the simulation.
-4. **Weight** (to do): CPI and the other rates of the intervals weighted by SimPoint; validated against a full `test`
-   run on the FPGA.
+3. **Restore** (done): Wally starts from the RAM image and the restore program, which loads the state (registers,
+   CSRs, CLINT, PLIC, UART) and returns to the interrupted code; warm-up, then the interval, counted by the HPM counters.
+4. **Weight** (done, `measure.py`; validated on cppcheck against the whole region simulated on Wally): CPI and the
+   other rates of the intervals weighted by SimPoint.  To do: the larger benchmarks, and a comparison with the FPGA.
 
 ## Profile
 
@@ -77,3 +76,24 @@ svade,svadu`); it uses 16 HPM counters there, a subset of Wally's 29.
 First runs (2026-11-19, Verilator, `buildroot` configuration, about 100 K instructions per second): cppcheck's
 checkpoint 50 (in the kernel, 0.7 M instructions before the end of the region) and 47 (in the program, 3.7 M before)
 run on Wally to the end of the program, which prints `@@SPEC-CMD 1 rc=0`, and Linux goes on to the shell.
+
+## Measure and weight
+
+```
+./measure.py <checkpoint dir> [--jobs N] [--reference <wsim log of the whole region>]
+```
+
+Each checkpoint runs on Wally with `+INSTR_LIMIT=<warm-up + interval>` and `+HPM_WARMUP=<warm-up>`; the testbench
+prints every counter (`HPM <minstret> <counter 0> ...`) at the end of the warm-up and at the limit (and every
+`+HPM_PERIOD` instructions), and the difference is the interval's count (`<k>/hpm.txt`).  The weighted CPI estimates
+the region's, as the intervals are equally long.
+
+Validation on 727.cppcheck_r (2026-11-19, 1 M intervals, 8 points; Verilator): the whole region simulated on Wally from
+its start (checkpoint of interval 0, `+HPM_PERIOD=1000000`, 50.5 M instructions, 400 s) has a CPI of 1.641; the
+weighted points give 1.643 without warm-up, 1.640 with 100 K instructions of warm-up and 1.650 with 300 K (each point
+about 10 s of simulation).  The events per thousand instructions agree as well (branch mispredictions 104.4 against
+103.5, D-cache misses 10.7 against 11.0).  Single points differ more from the same interval in the whole run (CPI
+1.736 against 1.630 for interval 17): Wally counts the intervals from the restore with `minstret`, QEMU at block
+granularity, and the kernel runs other instructions on Wally (timer interrupts come at other points, as time follows
+cycles), so the windows drift apart along the region; the weighted sum averages that out.  With L1 caches only and
+1 M intervals the warm-up hardly matters; it has to be checked again with 10 M intervals.

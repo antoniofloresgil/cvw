@@ -6,9 +6,10 @@
 # plugin, which writes <checkpoint dir>/<interval>/{ram.bin,state.txt,info.txt} at the start of each chosen interval
 # (warm-up instructions earlier); mkrestore.py then makes each one's bootmem.bin.  Each checkpoint runs on Wally with
 #   wsim buildroot buildroot --sim verilator --args "+LinuxRam=<dir>/ram.bin +LinuxBootmem=<dir>/bootmem.bin +INSTR_LIMIT=<n>"
-# ram.bin is the whole RAM (256 MiB) per checkpoint.  Environment: IMAGES, QEMU as for profile.sh.
+# ram.bin is the whole RAM (256 MiB) per checkpoint.  Environment: IMAGES, QEMU as for profile.sh; POINTS: other
+# intervals than SimPoint's, one per line ("<interval> <anything>"), e.g. "0 0" for the start of the region.
 set -euo pipefail
-[ $# -ge 2 ] || { sed -n '2,10p' "$0" | sed 's/^# \?//'; exit 1; }
+[ $# -ge 2 ] || { sed -n '2,11p' "$0" | sed 's/^# \?//'; exit 1; }
 PROF=$(realpath "$1") OUT=$2 WARMUP=${3:-0}
 HERE=$(dirname "$(realpath "$0")")
 IMAGES=${IMAGES:-$RISCV/buildroot/output/images}
@@ -16,6 +17,7 @@ QEMU=${QEMU:-qemu-system-riscv64}
 for f in overlay.cpio wally-virt.dtb app.simpoints app.weights qemu.log; do
     [ -f "$PROF/$f" ] || { echo "no $PROF/$f: run profile.sh first" >&2; exit 1; }
 done
+POINTS=$(realpath "${POINTS:-$PROF/app.simpoints}")
 INTERVAL=$(grep -a -o "roibbv: ROI end .*interval [0-9]*" "$PROF/qemu.log" | grep -o "[0-9]*$")
 mkdir -p "$OUT"
 OUT=$(realpath "$OUT")
@@ -25,13 +27,17 @@ gcc -shared -fPIC -O2 -Wall -I"$RISCV/include" $(pkg-config --cflags glib-2.0) "
     -initrd "$PROF/overlay.cpio" \
     -cpu rva22s64,zicond=true,zfa=true,zfh=true,zcb=true,zbc=true,zkn=true,sstc=true,svadu=true,svnapot=true,pmp=on,debug=off \
     -icount shift=0,sleep=off \
-    -plugin "$OUT/libroickpt.so,interval=$INTERVAL,warmup=$WARMUP,points=$PROF/app.simpoints,outdir=$OUT" \
+    -plugin "$OUT/libroickpt.so,interval=$INTERVAL,warmup=$WARMUP,points=$POINTS,outdir=$OUT" \
     < /dev/null > "$OUT/qemu.log" 2>&1
 grep -a "roickpt:" "$OUT/qemu.log"
 grep -aq "roickpt: done" "$OUT/qemu.log" || { echo "not all checkpoints were taken (see $OUT/qemu.log)" >&2; exit 1; }
 
 # the restore programs, and each interval's SimPoint weight
-paste "$PROF/app.simpoints" "$PROF/app.weights" | while read -r k cluster weight cluster2; do
-    echo "weight $weight" >> "$OUT/$k/info.txt"
+if [ "$POINTS" = "$(realpath "$PROF/app.simpoints")" ]; then
+    paste "$PROF/app.simpoints" "$PROF/app.weights" | while read -r k cluster weight cluster2; do
+        echo "weight $weight" >> "$OUT/$k/info.txt"
+    done
+fi
+while read -r k rest; do
     python3 -I "$HERE/mkrestore.py" "$OUT/$k"
-done
+done < "$POINTS"
