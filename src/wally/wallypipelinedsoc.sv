@@ -178,6 +178,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   // control registers sit in a window that the uncore does not decode; they supply the read data
   // of a transfer there
   logic [P.AHBW-1:0] UncoreHRDATA;
+  logic              TraceWin;     // address phase of a transfer to the trace window: not an unmapped address for the uncore's default subordinate
   // The port of the trace sink to the uncore RAM (TRACE_IN_RAM), which is idle otherwise
   logic                                 TrReq, TrWe, TrGrant;
   logic [3:0]                           TrBwe;
@@ -187,10 +188,11 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     logic              TraceHSEL;
     logic [P.AHBW-1:0] TraceHRDATA;
     etrace #(.P(P), .NHARTS(NCORES)) etrace(.clk, .reset(PowerOnReset), .ITrace(CoreITrace), .HADDR, .HTRANS, .HWRITE,
-      .HREADY, .HWDATA, .TraceHSEL, .TraceHRDATA, .TrReq, .TrWe, .TrBwe, .TrAddr, .TrDin, .TrGrant, .TrDout);
+      .HREADY, .HWDATA, .TraceWin, .TraceHSEL, .TraceHRDATA, .TrReq, .TrWe, .TrBwe, .TrAddr, .TrDin, .TrGrant, .TrDout);
     assign HRDATA = TraceHSEL ? TraceHRDATA : UncoreHRDATA;
   end else begin : noetrace
     assign HRDATA = UncoreHRDATA;
+    assign TraceWin = 1'b0;
     assign {TrReq, TrWe, TrBwe, TrAddr, TrDin} = '0;
   end
 
@@ -198,7 +200,7 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   if (P.BUS_SUPPORTED) begin : uncoregen
     uncore #(.P(P), .NCORES(NCORES)) uncore(.HCLK, .HRESETn,
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HRDATAEXT,
-      .HREADYEXT, .HRESPEXT, .HRDATA(UncoreHRDATA), .HREADY, .HRESP, .HSELEXT,
+      .HREADYEXT, .HRESPEXT, .TraceWin, .HRDATA(UncoreHRDATA), .HREADY, .HRESP, .HSELEXT,
       .MTimerInt, .MSwInt, .MExtInt, .SExtInt, .GPIOIN, .GPIOOUT, .GPIOEN, .UARTSin,
       .UARTSout, .MTIME_CLINT, .SPIIn, .SPIOut, .SPICS, .SPICLK, .SDCIn, .SDCCmd, .SDCCS, .SDCCLK, .PWMGPIO, .WDTReset,
       .TrReq, .TrWe, .TrBwe, .TrAddr, .TrDin, .TrGrant, .TrDout);

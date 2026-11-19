@@ -38,6 +38,7 @@ module etrace import cvw::*; #(parameter cvw_t P, parameter int unsigned NHARTS 
   input  logic [1:0]                           HTRANS,
   input  logic                                 HWRITE, HREADY,
   input  logic [P.AHBW-1:0]                    HWDATA,
+  output logic                                 TraceWin,    // address phase: the transfer is to the window (the uncore must not answer ERROR)
   output logic                                 TraceHSEL,   // data phase of a transfer to the window
   output logic [P.AHBW-1:0]                    TraceHRDATA,
   // TRACE_IN_RAM: the port of hart 0's sink to the last TRACE_RAM_WORDS words of the uncore RAM
@@ -58,6 +59,7 @@ module etrace import cvw::*; #(parameter cvw_t P, parameter int unsigned NHARTS 
   logic [P.PA_BITS-1:0]   Offset;
   assign Offset   = HADDR - P.TRACE_BASE[P.PA_BITS-1:0];
   assign InWindow = HADDR >= P.TRACE_BASE[P.PA_BITS-1:0] & Offset < P.PA_BITS'(NHARTS * 32'h2000);
+  assign TraceWin = InWindow;
 
   logic        DWrite;
   logic [15:2] DAdr;                               // hart 15:13, sink 12, register 11:2

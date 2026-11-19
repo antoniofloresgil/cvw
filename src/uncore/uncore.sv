@@ -30,6 +30,7 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
   input  logic                 HMASTLOCK,
   input  logic [P.AHBW-1:0]    HRDATAEXT,
   input  logic                 HREADYEXT, HRESPEXT,
+  input  logic                 TraceWin,                 // address phase: a transfer to the trace window, decoded outside the uncore (no ERROR response)
   output logic [P.AHBW-1:0]    HRDATA,
   output logic                 HREADY, HRESP,
   output logic                 HSELEXT,
@@ -230,8 +231,9 @@ module uncore import cvw::*;  #(parameter cvw_t P, parameter int unsigned NCORES
                   HSELNoneD & ~HRESPNoPeriphErr1; // don't lock up the bus if no region is being accessed
 
   // Default subordinate: an IDLE or BUSY gets a zero-wait OKAY, but a NONSEQ or SEQ to an address with no subordinate
-  // gets the two-cycle ERROR response (HRESP high with HREADY low, then HRESP high with HREADY high)
-  flopr #(1) hrespnoperipherr1reg(HCLK, ~HRESETn, HREADY & HSELNone & HTRANS[1], HRESPNoPeriphErr1);
+  // gets the two-cycle ERROR response (HRESP high with HREADY low, then HRESP high with HREADY high), except in the trace window,
+  // which etrace.sv decodes outside the uncore
+  flopr #(1) hrespnoperipherr1reg(HCLK, ~HRESETn, HREADY & HSELNone & ~TraceWin & HTRANS[1], HRESPNoPeriphErr1);
   flopr #(1) hrespnoperipherr2reg(HCLK, ~HRESETn, HRESPNoPeriphErr1, HRESPNoPeriphErr2);
 
   // Address Decoder Delay (figure 4-2 in spec)
