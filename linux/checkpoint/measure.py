@@ -54,12 +54,14 @@ def run(d, sim):
     info = read_info(d)
     warmup, interval = info["warmup"], info["interval"]
     log = d / "wsim.log"
-    if not (d / "hpm.txt").exists():
+    have = log.exists() and warmup + interval in hpm_lines(log)  # e.g. a log fetched from the cluster (cluster.sh)
+    if not (d / "hpm.txt").exists() and not have:
         args = (f"+LinuxRam={d / 'ram.bin'} +LinuxBootmem={d / 'bootmem.bin'} +INSTR_LIMIT={warmup + interval} "
                 f"+UART_LOG_FILE={d / 'uart.out'}" + (f" +HPM_WARMUP={warmup}" if warmup else ""))
         with log.open("w") as f:
             subprocess.run(["wsim", "buildroot", "buildroot", "--sim", sim, "--args", args], stdout=f,
                            stderr=subprocess.STDOUT, check=False)
+    if not (d / "hpm.txt").exists():
         lines = hpm_lines(log)
         if warmup + interval not in lines or (warmup and warmup not in lines):
             raise RuntimeError(f"{d}: no HPM line at {warmup + interval} (see {log})")
@@ -82,7 +84,7 @@ def main():
     ap.add_argument("--sim", default="verilator")
     ap.add_argument("--reference", type=pathlib.Path)
     args = ap.parse_args()
-    points = sorted((d for d in args.dir.iterdir() if (d / "info.txt").exists()), key=lambda d: int(d.name))
+    points = sorted((d for d in args.dir.resolve().iterdir() if (d / "info.txt").exists()), key=lambda d: int(d.name))
     if not points:
         sys.exit(f"no checkpoints in {args.dir}")
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:

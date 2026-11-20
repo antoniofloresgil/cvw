@@ -74,7 +74,7 @@ module testbench;
 
   // Variables that can be overwritten with $value$plusargs at start of simulation
   string       TEST, ElfFile, ElfList, sim_log_prefix;
-  integer      INSTR_LIMIT;
+  longint      INSTR_LIMIT;  // 64 bits: a limit of 2^31 instructions or more is reached in a few hours
   string       UART_LOG_FILE;
   integer      UART_LOG;
   string       LinuxRam, LinuxBootmem; // buildroot: other RAM and BOOTROM images, e.g. a checkpoint (linux/checkpoint)
@@ -722,7 +722,7 @@ module testbench;
   // The privileged unit, and with it minstret, only exists when ZICSR is supported
   if (P.ZICSR_SUPPORTED) begin : instrlimit
     logic [P.XLEN-1:0] Minstret, PrevMinstret;
-    integer HPM_WARMUP, HPM_PERIOD;  // extra counter reports: at the end of a warm-up, every HPM_PERIOD instructions
+    longint HPM_WARMUP, HPM_PERIOD;  // extra counter reports: at the end of a warm-up, every HPM_PERIOD instructions
     assign Minstret = testbench.dut.core.priv.priv.csr.counters.HPMCOUNTER_REGW[2];
     initial begin
       if (!$value$plusargs("HPM_WARMUP=%d", HPM_WARMUP)) HPM_WARMUP = 0;

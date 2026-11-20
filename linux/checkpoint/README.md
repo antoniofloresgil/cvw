@@ -96,4 +96,30 @@ about 10 s of simulation).  The events per thousand instructions agree as well (
 1.736 against 1.630 for interval 17): Wally counts the intervals from the restore with `minstret`, QEMU at block
 granularity, and the kernel runs other instructions on Wally (timer interrupts come at other points, as time follows
 cycles), so the windows drift apart along the region; the weighted sum averages that out.  With L1 caches only and
-1 M intervals the warm-up hardly matters; it has to be checked again with 10 M intervals.
+1 M intervals the warm-up hardly matters; with 10 M intervals neither (777.zstd_r: weighted CPI 1.347 without warm-up,
+1.348 with 1 M).
+
+## On the cluster
+
+```
+IMAGES=<Buildroot images> ./prepare.sh <stage dir> <benchmark>     # profile, checkpoints, start of the region
+cluster/cluster.sh image                                           # once: the Apptainer image
+cluster/cluster.sh build                                           # once per change of the RTL or the testbench
+cluster/cluster.sh submit <benchmark>...                           # SimPoint's points, an array of 1-CPU tasks
+cluster/cluster.sh reference <benchmark>...                        # the whole region, one task each
+cluster/cluster.sh fetch <benchmark> <benchmark>-ref               # the logs back; measure.py reads them
+```
+
+`prepare.sh` writes the checkpoints of `<benchmark>` and of `<benchmark>-ref` (the start of the region) under one
+directory (`WROOT`).  The cluster's nodes reach it through a read-only key (`rrsync -ro` in the PC's
+`authorized_keys`): each task copies only its own `ram.bin`, `bootmem.bin` and `info.txt` to the node's local disk
+(up to 8 tries with a random pause: the PC's `sshd` refuses connections when many tasks start together), runs the
+simulator, copies back `wsim.log`, `uart.out` and `time.log`, and deletes the checkpoint, so the SPEC data stay on
+the PC.  The cluster's hosts have no Verilator and an old C library: the simulator is built and run inside
+Verilator's own Docker image of the PC's version (5.036), pulled by digest into Apptainer.  A task's verdict is the
+testbench's counter line at the instruction limit, not its exit code or Slurm's state.  The nodes' address for the PC
+is not in the repository (`PC`, or `~/.wally-cluster-pc`).
+
+A checkpoint run on a node gives the same counters as on the PC, bit for bit (777.zstd_r, interval 35); a node
+simulates about 66 K instructions per second (the PC 110-170 K), and a simulation needs 270 MB.  `INSTR_LIMIT` (and
+`HPM_WARMUP`, `HPM_PERIOD`) are 64-bit: a whole region can be longer than 2^31 instructions.
