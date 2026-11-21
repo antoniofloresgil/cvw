@@ -40,6 +40,11 @@ def coverageDir(config):
 coveragesim = "questa"     # Simulator for code/functional coverage: questa or vcs (--coveragesim)
 defaultsim = "verilator"   # Default simulator for all other tests
 lockstepsim = "questa"
+# Verilator models are built profile-guided (wsim --pgo): each takes about a minute more to build, once, and
+# then runs ACT 22-24% faster.  --nopgo builds them plainly.
+pgo = True
+def simArgs(sim):
+    return ["--sim", sim, *(["--pgo"] if pgo and sim == "verilator" else [])]
 testfloatsim = "questa"    # change to Verilator when Issue #707 about testfloat not running Verilator is resolved
 rvcp_summary = "RVCP-SUMMARY" # search string for RVCP summary line in logs
 
@@ -389,7 +394,7 @@ def addTests(testList, sim, coverStr, configs):
             tc = TestCase(
                     name=t,
                     variant=config,
-                    cmd=["wsim", "--sim", sim, *coverStr.split(), *shlex.split(flags.format(sim_log_prefix)), config, t],
+                    cmd=["wsim", *simArgs(sim), *coverStr.split(), *shlex.split(flags.format(sim_log_prefix)), config, t],
                     log=sim_log,
                     grepstr=gs,
                     grepfile=grepfile,
@@ -411,7 +416,7 @@ def addTestsByDir(testDir, config, sim, coverStr, configs, lockstepMode=0, breke
         sys.exit(1)
 
     sim_logdir = f"{regressionDir}/{sim}/logs/"
-    cmdPrefix = ["wsim", "--sim", sim, *coverStr.split(), *shlex.split(flags), config]
+    cmdPrefix = ["wsim", *simArgs(sim), *coverStr.split(), *shlex.split(flags), config]
     passed = "All tests ran without failures"
     if lockstepMode:
         gs = "Mismatches            : 0"
@@ -487,7 +492,7 @@ def addActTests(testList, sim, coverStr, configs):
             name = re.sub(r"[^\w.-]", "", suite.replace("/", "_"))
             prefix = f"{sim_logdir}{config}_{name}"
             configs.append(TestCase(name=name, variant=config,
-                                    cmd=["wsim", "--sim", sim, *coverStr.split(), *shlex.split(flags.format(prefix)),
+                                    cmd=["wsim", *simArgs(sim), *coverStr.split(), *shlex.split(flags.format(prefix)),
                                          config, *elfs, "--name", name],
                                     log=f"{prefix}.log", grepstr="All tests ran without failures",
                                     altcommand=[[a.format(prefix) for a in c] for c in checks] if checks else None,
@@ -499,7 +504,7 @@ def addTestGroup(name, testDir, tests, config, sim, coverStr, configs, flags="")
     sim_logdir = f"{regressionDir}/{sim}/logs/"
     elfs = [f"{testDir}/{t}{'' if t.endswith('.elf') else '.elf'}" for t in tests]
     configs.append(TestCase(name=name, variant=config,
-                            cmd=["wsim", "--sim", sim, *coverStr.split(), *shlex.split(flags), config, *elfs, "--name", name],
+                            cmd=["wsim", *simArgs(sim), *coverStr.split(), *shlex.split(flags), config, *elfs, "--name", name],
                             log=f"{sim_logdir}{config}_{name}.log", grepstr="All tests ran without failures",
                             elfs=tuple(elfs)))
 
@@ -795,13 +800,15 @@ def parse_args():
     parser.add_argument("--dryrun", help="Print commands invoked to console without running regression", action="store_true")
     parser.add_argument("--benchmark", help="Check for performance changes or discrepancies in embench and coremark", action="store_true")
     parser.add_argument("--cache", help="Run cache performance validation tests", action="store_true")
+    parser.add_argument("--nopgo", help="Build Verilator models without profile-guided optimization (wsim --pgo)", action="store_true")
     parser.add_argument("--multicore", help="Run only the bounded Verilator single-core/multicore CI matrix (no ACT or Linux)", action="store_true")
     return parser.parse_args()
 
 
 def process_args(args):
-    global coveragesim
+    global coveragesim, pgo
     coveragesim = args.coveragesim
+    pgo = not args.nopgo
     coverStr = ""
     # exercise all simulators in nightly; can omit a sim if no license is available
     sims = ["questa", "verilator", "vcs"] if args.nightly else [defaultsim]
