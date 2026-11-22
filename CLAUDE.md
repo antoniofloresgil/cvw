@@ -43,14 +43,14 @@ wsim buildroot buildroot                        # Linux boot from prebuilt memor
 wsim rv32gc bench.elf --test coremark           # ELF run with a special testbench mode (coremark, embench)
 ```
 
-Key options: `--sim {questa,verilator,vcs}`, `--gui`, `--ccov` (code coverage), `--fcov` (functional coverage), `--lockstep`/`--lockstepverbose`, `--vcd`, `--args`, `--params`, `--define`, `--name` (log/coverage file name), `--test` (special mode: buildroot, fpga, coremark, embench).
+Key options: `--sim {questa,verilator,vcs}`, `--gui`, `--ccov` (code coverage), `--fcov` (functional coverage), `--lockstep`/`--lockstepverbose`, `--vcd`, `--args`, `--params`, `--define`, `--name` (log/coverage file name), `--test` (special mode: buildroot, fpga, coremark, embench), `--pgo` (Verilator: profile-guided build trained on 60 of the configuration's ACT tests, 20-30 % faster runs for about a minute more of build; buildroot builds always use it, trained on the first 5 M instructions of a boot, in `sim/verilator/Makefile`; ignored in lock step).
 
 ### Run full regression
 ```bash
 regression-wally                        # rv32i, rv64i, rv32imc, rv32imcb, rv32gc, rv64gc ACT + periph tests + lint, Verilator by default
 regression-wally --nightly              # extended nightly suite
 ```
-`regression-wally` first builds the tests it needs with the root Makefile (`make -C $WALLY act zsbl periph coverage`, incremental; `make act` discards a configuration's ELFs when its `config/<cfg>/act` files change), then runs each leaf directory of ACT ELFs as one `wsim` session, in parallel across directories. Compiled designs in `sim/<sim>/wkdir` are kept between regressions and recompiled only when a source file is newer. Set `ACTDIR` to use a different riscv-arch-test checkout.
+`regression-wally` first builds the tests it needs with the root Makefile (`make -C $WALLY act zsbl periph coverage`, incremental; `make act` discards a configuration's ELFs when its `config/<cfg>/act` files change), then runs each leaf directory of ACT ELFs as one `wsim` session, in parallel across directories. Compiled designs in `sim/<sim>/wkdir` are kept between regressions and recompiled only when a source file is newer. Verilator models are built with `wsim --pgo` (`--nopgo` builds them plainly). Set `ACTDIR` to use a different riscv-arch-test checkout.
 
 ### Run code coverage
 ```bash

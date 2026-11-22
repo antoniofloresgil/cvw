@@ -66,6 +66,8 @@ def parseArgs():
     parser.add_argument("--lockstep", "-l", help="Run ImperasDV lock, step, and compare.", action="store_true")
     parser.add_argument("--lockstepverbose", "-lv", help="Run ImperasDV lock, step, and compare with tracing enabled", action="store_true")
     parser.add_argument("--rvvi", "-r", help="Simulate rvvi hardware interface and ethernet.", action="store_true")
+    parser.add_argument("--pgo", help="Verilator: build a profile-guided model, trained on a sample of the configuration's "
+                                      "ACT tests; about 30%% faster, built twice (always on for buildroot)", action="store_true")
     return parser.parse_args()
 
 
@@ -86,6 +88,9 @@ def validateArgs(args):
         # The covergroups read fields of riscv-arch-test's RVVI trace interface, while ImperasDV needs the
         # RVVI API tasks of its own, and only one of the two interfaces can be compiled in
         print("Functional coverage cannot run in lockstep: it needs riscv-arch-test's RVVI trace interface, not ImperasDV's")
+        sys.exit(1)
+    elif args.pgo and args.sim != "verilator":
+        print("--pgo only supported by Verilator")
         sys.exit(1)
     elif args.tb == "testbench_fp" and args.sim != "questa":
         print("Error: testbench_fp presently only supported by Questa, not VCS or Verilator, because of a touchy testbench")
@@ -384,11 +389,53 @@ def runQuesta(args, flags, env):
     return run(["vsim", *([] if args.gui else ["-c"]), "-do", run_do], sim_dir, env, successPattern(args))
 
 
+PGO_TRAINING_ELFS = 60              # ACT tests a profile-guided model is trained on
+PGO_TRAINING_LINUX = 5_000_000      # instructions of a Linux boot a buildroot model is trained on
+
+
+def pgoTraining(args):
+    """The +args of the run that trains a profile-guided model: for buildroot the start of a Linux boot, otherwise
+    an even sample of the configuration's built ACT tests (or of the ELFs being run, if it has none), so that
+    every unit gets exercised whatever the run itself does."""
+    if args.test == "buildroot":
+        return ["+TEST=buildroot", f"+INSTR_LIMIT={PGO_TRAINING_LINUX}"]
+    built = sorted(str(e) for e in (fcovWork(args.config) / "elfs").rglob("*.elf"))
+    pool = built or args.elfs
+    step = max(1, len(pool) // PGO_TRAINING_ELFS)
+    listdir = WALLY / "sim" / "verilator" / "testlists"
+    listdir.mkdir(parents=True, exist_ok=True)
+    listfile = listdir / f"{args.config}_{args.tb}_pgo_training.txt"
+    listfile.write_text("".join(f"{e}\n" for e in pool[::step][:PGO_TRAINING_ELFS]))
+    return ["+TEST=pgo_training", f"+ElfList={listfile}"]
+
+
+def compileVerilator(args, compile_cmd, binary, sim_dir, pgo):
+    """Build the model; a profile-guided one is built instrumented, trained, and built again with the profile."""
+    if not pgo:
+        return run(compile_cmd, sim_dir)
+    rc = run([*compile_cmd, "PGO=gen"], sim_dir)
+    if rc:
+        return rc
+    log = sim_dir / "logs" / f"{args.config}_{args.tb}_pgo_training.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Training the profile-guided model (log in {log})")
+    with open(log, "w") as f:
+        # Whether the training programs pass does not matter, only that they run
+        subprocess.run([str(binary), *pgoTraining(args)], cwd=sim_dir, stdout=f, stderr=subprocess.STDOUT)
+    return run([*compile_cmd, "PGO=use"], sim_dir)
+
+
 def runVerilator(args, env):
     print(f"Running Verilator on {args.config} {args.testsuite}")
     sim_dir = WALLY / "sim" / "verilator"
     speedopt = args.test == "buildroot"  # speed-optimized model only for Linux boots
-    bhash = buildHash(args.params, args.define, fcovKey(args), "speedopt" if speedopt else "")
+    # A lock-step model calls ImperasDV for every instruction, so it cannot be trained like a plain one and
+    # spends its time in the reference model anyway: build it without profile guidance
+    lockstep = args.lockstep or args.lockstepverbose
+    if args.pgo and lockstep:
+        print("Note: --pgo is ignored in lock step")
+    pgo = (args.pgo or speedopt) and not lockstep
+    bhash = buildHash(args.params, args.define, fcovKey(args), "speedopt" if speedopt else "", "pgo" if pgo else "")
     workdir = sim_dir / "wkdir" / f"{args.config}_{args.tb}{'_' + bhash if bhash else ''}"
     binary = workdir / f"V{args.tb}"
 
@@ -409,7 +456,7 @@ def runVerilator(args, env):
     with compileLock("verilator", f"{args.config}_{args.tb}{'_' + bhash if bhash else ''}"):
         current_mtime = targetMtime(binary)
         if needs_compile and current_mtime == target_mtime:
-            rc = run(compile_cmd, sim_dir)
+            rc = compileVerilator(args, compile_cmd, binary, sim_dir, pgo)
             if rc:
                 print(f"Error: Verilator compilation failed for {args.config} {args.tb}", file=sys.stderr)
                 return rc
@@ -468,10 +515,11 @@ def runVCS(args, flags, env):
 def main(args):
     validateArgs(args)
     if args.tb == "testbench_fp":  # TestFloat names its test rather than running ELFs
-        elfs = []
+        elfs = args.elfs = []
         args.testsuite = args.tests[0] if args.tests else args.name
     else:
         elfs, names = collectTests(args)
+        args.elfs = elfs
         args.runname = runName(args, elfs, names)
         # The testbench receives this as +TEST; it is the special mode when one is set, else the run name
         args.testsuite = args.test if args.test else args.runname
