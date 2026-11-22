@@ -195,3 +195,4 @@ sim/*/testlists/
 
 # Python venv for the Zephyr build (asic/librelane/chip/zephyr)
 .zephyr-venv/
+sim/gsim/work/
