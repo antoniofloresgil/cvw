@@ -38,6 +38,24 @@ static int roi;
 static FILE *out;
 static char *outname;
 
+/* notimer=1: at the start of the region clear mie.STIE and MTIE (as XiangShan's NEMU does before the workload): no timer
+ * interrupts in the region unless the kernel enables them again (it does when it programs a timer: counted below) */
+static int notimer;
+static struct qemu_plugin_register *mie_reg;
+static uint64_t roi_interrupts;
+static void timer_off(void)
+{
+    GByteArray *buf = g_byte_array_new();
+    uint64_t v = 0;
+    if (!mie_reg || !qemu_plugin_read_register(mie_reg, buf)) { fputs("no mie register\n", stderr); _exit(1); }
+    memcpy(&v, buf->data, buf->len < 8 ? buf->len : 8);
+    v &= ~((1ull << 5) | (1ull << 7));
+    g_byte_array_set_size(buf, 0);
+    g_byte_array_append(buf, (const guint8 *)&v, 8);
+    if (!qemu_plugin_write_register(mie_reg, buf)) { fputs("mie write failed\n", stderr); _exit(1); }
+    g_byte_array_free(buf, TRUE);
+}
+
 static void dump_interval(void)
 {
     fputs("T", out);
@@ -68,10 +86,12 @@ static void marker(unsigned int vcpu, void *udata)
     if ((uintptr_t)udata == ROI_START) {
         roi = 1;
         roi_start_insn = total;
+        if (notimer) timer_off();
         fprintf(stderr, "roibbv: ROI start at instruction %" PRIu64 "\n", total);
     } else if (roi) {
         if (in_interval >= interval / 2) dump_interval();
         fclose(out);
+        fprintf(stderr, "roibbv: %" PRIu64 " interrupts in the ROI%s\n", roi_interrupts, notimer ? " (timer off)" : "");
         fprintf(stderr, "roibbv: ROI end at instruction %" PRIu64 ", %" PRIu64 " in the ROI, interval %" PRIu64 "\n",
                 total, roi_insns, interval);
         fflush(stderr);
@@ -96,8 +116,24 @@ static void tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
         uint32_t word = 0;
         if (qemu_plugin_insn_size(insn) == 4) qemu_plugin_insn_data(insn, &word, 4);
         if (word == ROI_START || word == ROI_END)
-            qemu_plugin_register_vcpu_insn_exec_cb(insn, marker, QEMU_PLUGIN_CB_NO_REGS, (void *)(uintptr_t)word);
+            qemu_plugin_register_vcpu_insn_exec_cb(insn, marker, notimer ? QEMU_PLUGIN_CB_RW_REGS : QEMU_PLUGIN_CB_NO_REGS,
+                                                   (void *)(uintptr_t)word);
     }
+}
+
+static void discon(qemu_plugin_id_t id, unsigned int vcpu, enum qemu_plugin_discon_type type, uint64_t from, uint64_t to)
+{
+    if (roi) roi_interrupts++;
+}
+
+static void vcpu_init(qemu_plugin_id_t id, unsigned int vcpu)
+{
+    GArray *descs = qemu_plugin_get_registers();
+    for (guint i = 0; i < descs->len; i++) {
+        qemu_plugin_reg_descriptor *d = &g_array_index(descs, qemu_plugin_reg_descriptor, i);
+        if (!strcmp(d->name, "mie")) mie_reg = d->handle;
+    }
+    g_array_free(descs, TRUE);
 }
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv)
@@ -105,11 +141,14 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
     for (int i = 0; i < argc; i++) {
         if (!strncmp(argv[i], "interval=", 9)) interval = strtoull(argv[i] + 9, NULL, 10);
         else if (!strncmp(argv[i], "outfile=", 8)) outname = g_strdup(argv[i] + 8);
+        else if (!strncmp(argv[i], "notimer=", 8)) notimer = atoi(argv[i] + 8);
         else { fprintf(stderr, "roibbv: unknown option %s\n", argv[i]); return -1; }
     }
     if (!outname || !(out = fopen(outname, "w"))) { fputs("roibbv: outfile=<file> needed\n", stderr); return -1; }
     blocks = g_hash_table_new(block_hash, block_equal);
     order = g_ptr_array_new();
+    qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
+    qemu_plugin_register_vcpu_discon_cb(id, QEMU_PLUGIN_DISCON_INTERRUPT, discon);
     qemu_plugin_register_vcpu_tb_trans_cb(id, tb_trans);
     return 0;
 }

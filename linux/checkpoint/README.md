@@ -68,9 +68,10 @@ starts: about 2 KiB of M-mode code and data that restore the floating-point regi
 S-mode CSRs, `satp`, the CLINT, PLIC and UART registers, then `mstatus` (MPP = the interrupted mode), `mepc` = pc,
 OpenSBI's `mtvec`, the integer registers, and `mret`.  OpenSBI's state is in the RAM image, so later SBI calls work.
 On purpose not restored: the counters (`mcycle`, `minstret`, `mhpmcounter3-31` start at 0, `mcountinhibit` is 0 and
-`mhpmevent3-31` 1, so `INSTR_LIMIT` and every HPM counter count from the restore) and `stimecmp`, which QEMU does not
-expose to plugins: it is set to the restored `mtime`, so the kernel takes one early timer interrupt and programs the
-next one itself.  OpenSBI in QEMU found the same extensions as on the board (`sstc,zicntr,zihpm,zicboz,zicbom,svpbmt,
+`mhpmevent3-31` 1, so `INSTR_LIMIT` and every HPM counter count from the restore).  QEMU does not expose `stimecmp`
+to plugins: `roickpt.c` runs on after the last checkpoint to the first supervisor timer interrupt, when `mtime` has just
+reached `stimecmp`, and appends that `mtime` to each pending `state.txt` as `stimecmp` (checkpoints without it get the
+restored `mtime`, so the kernel takes one early timer interrupt and programs the next one itself).  OpenSBI in QEMU found the same extensions as on the board (`sstc,zicntr,zihpm,zicboz,zicbom,svpbmt,
 svade,svadu`); it uses 16 HPM counters there, a subset of Wally's 29.
 
 First runs (2026-11-19, Verilator, `buildroot` configuration, about 100 K instructions per second): cppcheck's
@@ -99,6 +100,35 @@ cycles), so the windows drift apart along the region; the weighted sum averages 
 1 M intervals the warm-up hardly matters; with 10 M intervals neither (777.zstd_r: weighted CPI 1.347 without warm-up,
 1.348 with 1 M).
 
+## Time
+
+Wally's CLINT advances `mtime` once per cycle, while the device tree gives Linux a 30 MHz timebase, so with `HZ=250`
+a timer tick comes about every 97 K instructions.  In QEMU's `virt` machine with `-icount shift=0`, `mtime` (10 MHz)
+advances once per 100 instructions, so a tick comes every 12 M instructions.  Started from a QEMU checkpoint, Wally
+therefore runs about 3 % more instructions (the kernel's tick handler), and its intervals drift away from QEMU's
+along the region.  The ticks also cost about 5.5 % of the CPI and most of the I-cache misses (727.cppcheck_r).
+`drift.py` finds where the two part: it compares QEMU's PC trace (`checkpoint.sh` with `TRACE=<n>`) with the
+testbench's (`+PC_TRACE=<file>`).
+
+Two remedies were compared on 727.cppcheck_r, 777.zstd_r and 707.ntest_r, each against the whole region simulated the
+same way:
+
+- **A, time follows the instructions** (`measure.py --time-insns 100`, testbench `+MTIME_INSNS=100
+  +MTIME_BASE=<the checkpoint's mtime>`, `stimecmp` from `roickpt`): Wally takes the timer interrupts where QEMU did.
+- **B, no timer interrupts in the region** (`NOTIMER=1` for `profile.sh` and `checkpoint.sh`): this is what XiangShan's
+  NEMU does before the workload.
+
+Results:
+
+- Each checkpoint reproduces its interval of the whole run within 0.6 % of CPI in both.
+- The weighted CPI is off the region's by a mean of 1.0 % with A (−1.2 %, −0.8 %, +1.0 %) and by 1.6 % with B
+  (+3.8 %, −0.5 %, −0.6 %).  What remains is SimPoint's sampling error.
+- B's 707.ntest_r checkpoints miss 4.7 % fewer D-cache lines than their intervals.
+- The region's CPI hardly differs between A and B (0.3 %).
+
+A stays: it is slightly closer, and it keeps the system as it is.  A warm-up of 1 M instructions changes nothing
+with 10 M intervals.
+
 ## On the cluster
 
 ```
@@ -111,7 +141,9 @@ cluster/cluster.sh fetch <benchmark> <benchmark>-ref               # the logs ba
 ```
 
 `prepare.sh` writes the checkpoints of `<benchmark>` and of `<benchmark>-ref` (the start of the region) under one
-directory (`WROOT`).  The cluster's nodes reach it through a read-only key (`rrsync -ro` in the PC's
+directory (`WROOT`); `SUFFIX=-A` writes another set, `<benchmark>-A` and `<benchmark>-A-ref`, from the same profile.
+With `MTIME=100`, `submit` and `reference` run with time following the instructions (mode A above); measure the
+fetched logs with `measure.py --time-insns 100`.  The cluster's nodes reach it through a read-only key (`rrsync -ro` in the PC's
 `authorized_keys`): each task copies only its own `ram.bin`, `bootmem.bin` and `info.txt` to the node's local disk
 (up to 8 tries with a random pause: the PC's `sshd` refuses connections when many tasks start together), runs the
 simulator, copies back `wsim.log`, `uart.out` and `time.log`, and deletes the checkpoint, so the SPEC data stay on

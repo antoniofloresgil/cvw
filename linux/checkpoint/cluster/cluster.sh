@@ -4,7 +4,8 @@
 #   cluster.sh image                     pull the Apptainer image (Verilator's, pinned) into ~/wally/wally-sim.sif
 #   cluster.sh build                     copy the sources, build the buildroot simulator in the image (once per source hash;
 #                                        AFTER=<job id> waits for that job, e.g. the image's)
-#   cluster.sh submit <bench>...         one array task per checkpoint of $WROOT/<bench>/ (THROTTLE, TIME, LIMIT, EXTRA)
+#   cluster.sh submit <bench>...         one array task per checkpoint of $WROOT/<bench>/ (THROTTLE, TIME, LIMIT, EXTRA;
+#                                        MTIME=100: time follows the instructions, as measure.py --time-insns 100)
 #   cluster.sh reference <bench>...      the whole region of each benchmark from $WROOT/<bench>-ref/0 (prepare.sh)
 #   cluster.sh fetch <bench>...          bring the logs back next to the checkpoints; then measure.py <dir> reads them
 #   cluster.sh status                    the jobs in the queue and the finished points
@@ -13,7 +14,7 @@
 # The nodes reach the PC as $PC (default: the contents of ~/.wally-cluster-pc).
 # On echo everything is under ~/wally: slurm/ (these scripts), src/<hash>/, bin/<hash>/, lists/, results/, logs/.
 set -euo pipefail
-[ $# -ge 1 ] || { sed -n '2,14p' "$0" | sed 's/^# \?//'; exit 1; }
+[ $# -ge 1 ] || { sed -n '2,15p' "$0" | sed 's/^# \?//'; exit 1; }
 HERE=$(dirname "$(realpath "$0")")
 WALLY=${WALLY:-$(realpath "$HERE/../../..")}
 WROOT=${WROOT:-/datos/xs-logs/spec-repro/out/wally}
@@ -62,7 +63,7 @@ submit)
     rsync -a "$list" "$HOST:wally/lists/$name.txt"; rm -f "$list"
     remote "cd ~/wally/slurm && sbatch --parsable --array=1-$n%$THROTTLE --time=$TIME \
             --output=$R/logs/%x-%A_%a.out \
-            --export=ALL,PC=$PC,LIST=$R/lists/$name.txt,SIF=$R/wally-sim.sif,BIN=$R/bin/$h,RES=$R/results,LIMIT=${LIMIT:-},EXTRA='${EXTRA:-}' \
+            --export=ALL,PC=$PC,LIST=$R/lists/$name.txt,SIF=$R/wally-sim.sif,BIN=$R/bin/$h,RES=$R/results,LIMIT=${LIMIT:-},EXTRA='${EXTRA:-}',MTIME=${MTIME:-} \
             array.sbatch"
     echo "$n tasks ($name), at most $THROTTLE at once"
     ;;

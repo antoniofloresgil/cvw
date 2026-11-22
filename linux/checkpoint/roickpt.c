@@ -8,6 +8,11 @@
  *   state.txt  "<name> <hex value>" for the registers, the CSRs and the CLINT, PLIC and UART registers (see dump_devices)
  *   info.txt   interval, instruction counts, warm-up
  * then stops QEMU after the last one.  mkrestore.py makes the restore program (bootmem.bin) from state.txt.
+ * QEMU does not show stimecmp to plugins: at the first supervisor timer interrupt after a checkpoint, when mtime has just
+ * reached stimecmp, it appends "stimecmp <mtime>" to that checkpoint's state.txt (and runs on until it has one for each).
+ * With trace=<n>,tracefile=<file> it instead goes on after the last checkpoint and writes the next n instructions it
+ * executes, one hex PC per line, and "T I <pc>" / "T E <pc>" at each interrupt / exception (the PC of the next
+ * instruction / of the faulting one), the format of the testbench's +PC_TRACE, to compare the two (drift.py).
  *   qemu-system-riscv64 ... -icount shift=0,sleep=off -plugin ./libroickpt.so,interval=10000000,points=app.simpoints,outdir=ckpt
  * Written for Wally's checkpoint study (no code from QEMU's contrib/plugins).
  */
@@ -39,7 +44,31 @@ static uint64_t total, roi_start_insn, roi_insns, interval = 10000000, warmup, r
 static int roi;
 static uint64_t *targets;       /* interval numbers, ascending */
 static size_t ntargets, next_target;
-static char *outdir, *points;
+static char *outdir, *points, *tracefile;
+static uint64_t trace_n, traced;  /* trace=<n>: instructions still to write after the last checkpoint */
+static FILE *tf;
+static int tracing;
+static struct qemu_plugin_register *scause_reg;
+static GPtrArray *pending;      /* state.txt files still waiting for their stimecmp */
+/* notimer=1: at the start of the region clear mie.STIE and MTIE (as XiangShan's NEMU does before the workload): no timer
+ * interrupts in the region unless the kernel enables them again (it does when it programs a timer: counted below) */
+static int notimer;
+static struct qemu_plugin_register *mie_reg;
+static uint64_t roi_interrupts;
+static void timer_off(void)
+{
+    GByteArray *buf = g_byte_array_new();
+    uint64_t v = 0;
+    if (!mie_reg || !qemu_plugin_read_register(mie_reg, buf)) { fputs("no mie register\n", stderr); _exit(1); }
+    memcpy(&v, buf->data, buf->len < 8 ? buf->len : 8);
+    v &= ~((1ull << 5) | (1ull << 7));
+    g_byte_array_set_size(buf, 0);
+    g_byte_array_append(buf, (const guint8 *)&v, 8);
+    if (!qemu_plugin_write_register(mie_reg, buf)) { fputs("mie write failed\n", stderr); _exit(1); }
+    g_byte_array_free(buf, TRUE);
+}
+static uint64_t roi_end_total;  /* instruction count at the end of the region, once all checkpoints were taken */
+static int irq_seen;            /* an interrupt was taken: look at scause in the handler's first block */
 
 static uint64_t reg_value(struct qemu_plugin_register *h, int *size)
 {
@@ -143,22 +172,74 @@ static void checkpoint(uint64_t k)
     g_free(name);
     fprintf(stderr, "roickpt: checkpoint %" PRIu64 " at instruction %" PRIu64 " (pc %" PRIx64 ", priv %" PRIu64 ")\n",
             k, total, reg_value(pc_reg, NULL), reg_value(priv_reg, NULL));
+    if (notimer) {  /* no timer interrupt to wait for: stimecmp as far as it goes (the kernel sets it before it enables one) */
+        FILE *sf = fopen(g_strdup_printf("%s/state.txt", dir), "a");
+        fputs("stimecmp ffffffffffffffff\n", sf);
+        fclose(sf);
+    } else
+        g_ptr_array_add(pending, g_strdup_printf("%s/state.txt", dir));
     g_free(dir);
+}
+
+static void maybe_exit(void)
+{
+    if (next_target < ntargets || pending->len || (trace_n && traced < trace_n)) return;
+    if (tf) fclose(tf);
+    fputs("roickpt: done\n", stderr); fflush(stderr); _exit(0);
+}
+
+/* in the first block of an interrupt handler: a supervisor timer interrupt gives the stimecmp of the pending checkpoints */
+static void after_interrupt(void)
+{
+    irq_seen = 0;
+    if (!pending->len || reg_value(scause_reg, NULL) != 0x8000000000000005ull) return;
+    uint64_t mtime = mem_read(CLINT + 0xbff8, 8);
+    for (guint i = 0; i < pending->len; i++) {
+        FILE *f = fopen(g_ptr_array_index(pending, i), "a");
+        if (!f) { perror(g_ptr_array_index(pending, i)); _exit(1); }
+        fprintf(f, "stimecmp %" PRIx64 "\n", mtime);
+        fclose(f);
+    }
+    fprintf(stderr, "roickpt: stimecmp %" PRIx64 " at instruction %" PRIu64 " for %u checkpoint(s)\n", mtime, total, pending->len);
+    g_ptr_array_set_size(pending, 0);
+    maybe_exit();
 }
 
 static void tb_exec(unsigned int vcpu, void *udata)
 {
     uint64_t n = (uintptr_t)udata;
+    if (irq_seen) after_interrupt();
+    if (roi_end_total && total > roi_end_total + 100000000) {  /* no timer interrupt within 100 M instructions */
+        fprintf(stderr, "roickpt: no timer interrupt after the region; %u checkpoint(s) without stimecmp\n", pending->len);
+        fputs("roickpt: done\n", stderr); fflush(stderr); _exit(0);
+    }
     if (roi && next_target < ntargets) {
         uint64_t k = targets[next_target];
         uint64_t at = k * interval > warmup ? k * interval - warmup : 0;
         if (roi_insns >= at && reg_value(priv_reg, NULL) != 3) {  /* never inside OpenSBI */
             checkpoint(k);
-            if (++next_target == ntargets) { fputs("roickpt: done\n", stderr); fflush(stderr); _exit(0); }
+            if (++next_target == ntargets) {
+                fputs("roickpt: all checkpoints taken\n", stderr); fflush(stderr);
+                if (trace_n) tracing = 1;  /* the instruction callbacks of this block write it, from its first instruction */
+                maybe_exit();              /* notimer=1 without a trace: nothing left to wait for */
+            }
         }
     }
     total += n;
     if (roi) roi_insns += n;
+}
+
+static void trace_insn(unsigned int vcpu, void *udata)
+{
+    if (!tracing) return;
+    fprintf(tf, "%" PRIx64 "\n", (uint64_t)(uintptr_t)udata);
+    if (++traced == trace_n) { tracing = 0; fputs("roickpt: trace done\n", stderr); fflush(stderr); maybe_exit(); }
+}
+
+static void discon(qemu_plugin_id_t id, unsigned int vcpu, enum qemu_plugin_discon_type type, uint64_t from, uint64_t to)
+{
+    if (tracing) fprintf(tf, "T %c %" PRIx64 "\n", type == QEMU_PLUGIN_DISCON_INTERRUPT ? 'I' : 'E', from);
+    if (type == QEMU_PLUGIN_DISCON_INTERRUPT) { irq_seen = 1; if (roi) roi_interrupts++; }
 }
 
 static void marker(unsigned int vcpu, void *udata)
@@ -166,7 +247,12 @@ static void marker(unsigned int vcpu, void *udata)
     if ((uintptr_t)udata == ROI_START) {
         roi = 1;
         roi_start_insn = total;
+        if (notimer) timer_off();
         fprintf(stderr, "roickpt: ROI start at instruction %" PRIu64 "\n", total);
+    } else if (roi && next_target == ntargets) {  /* all taken: run on to the next timer interrupt (stimecmp) */
+        roi = 0;
+        roi_end_total = total;
+        fprintf(stderr, "roickpt: ROI ended, waiting for the timer interrupt of %u checkpoint(s)\n", pending->len);
     } else if (roi) {
         fprintf(stderr, "roickpt: ROI ended with %zu of %zu checkpoints\n", next_target, ntargets);
         fflush(stderr);
@@ -182,8 +268,12 @@ static void tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
         struct qemu_plugin_insn *insn = qemu_plugin_tb_get_insn(tb, i);
         uint32_t word = 0;
         if (qemu_plugin_insn_size(insn) == 4) qemu_plugin_insn_data(insn, &word, 4);
+        if (trace_n)
+            qemu_plugin_register_vcpu_insn_exec_cb(insn, trace_insn, QEMU_PLUGIN_CB_NO_REGS,
+                                                   (void *)(uintptr_t)qemu_plugin_insn_vaddr(insn));
         if (word == ROI_START || word == ROI_END)
-            qemu_plugin_register_vcpu_insn_exec_cb(insn, marker, QEMU_PLUGIN_CB_NO_REGS, (void *)(uintptr_t)word);
+            qemu_plugin_register_vcpu_insn_exec_cb(insn, marker, notimer ? QEMU_PLUGIN_CB_RW_REGS : QEMU_PLUGIN_CB_NO_REGS,
+                                                   (void *)(uintptr_t)word);
     }
 }
 
@@ -197,9 +287,11 @@ static void vcpu_init(qemu_plugin_id_t id, unsigned int vcpu)
         g_array_append_val(regs, r);
         if (!strcmp(d->name, "pc")) pc_reg = d->handle;
         if (!strcmp(d->name, "priv")) priv_reg = d->handle;
+        if (!strcmp(d->name, "scause")) scause_reg = d->handle;
+        if (!strcmp(d->name, "mie")) mie_reg = d->handle;
     }
     g_array_free(descs, TRUE);
-    if (!pc_reg || !priv_reg) { fputs("roickpt: no pc or priv register\n", stderr); _exit(1); }
+    if (!pc_reg || !priv_reg || !scause_reg) { fputs("roickpt: no pc, priv or scause register\n", stderr); _exit(1); }
 }
 
 static int cmp_u64(const void *a, const void *b)
@@ -216,6 +308,9 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
         else if (!strncmp(argv[i], "ram=", 4)) ram_mib = strtoull(argv[i] + 4, NULL, 10);
         else if (!strncmp(argv[i], "points=", 7)) points = g_strdup(argv[i] + 7);
         else if (!strncmp(argv[i], "outdir=", 7)) outdir = g_strdup(argv[i] + 7);
+        else if (!strncmp(argv[i], "notimer=", 8)) notimer = atoi(argv[i] + 8);
+        else if (!strncmp(argv[i], "trace=", 6)) trace_n = strtoull(argv[i] + 6, NULL, 10);
+        else if (!strncmp(argv[i], "tracefile=", 10)) tracefile = g_strdup(argv[i] + 10);
         else { fprintf(stderr, "roickpt: unknown option %s\n", argv[i]); return -1; }
     }
     FILE *f = points ? fopen(points, "r") : NULL;
@@ -229,6 +324,11 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
     if (!ntargets) { fprintf(stderr, "roickpt: no points in %s\n", points); return -1; }
     qsort(targets, ntargets, sizeof *targets, cmp_u64);
     if (mkdir(outdir, 0777) && errno != EEXIST) { perror(outdir); return -1; }
+    pending = g_ptr_array_new_with_free_func(g_free);
+    qemu_plugin_register_vcpu_discon_cb(id, QEMU_PLUGIN_DISCON_INTERRUPT | QEMU_PLUGIN_DISCON_EXCEPTION, discon);
+    if (trace_n) {
+        if (!tracefile || !(tf = fopen(tracefile, "w"))) { fputs("roickpt: trace=<n> needs a writable tracefile=<file>\n", stderr); return -1; }
+    }
     qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
     qemu_plugin_register_vcpu_tb_trans_cb(id, tb_trans);
     return 0;

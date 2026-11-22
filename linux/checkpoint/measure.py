@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 """Run the checkpoints of checkpoint.sh on Wally and weight their HPM counts as SimPoint says.
 
-  measure.py <checkpoint dir> [--jobs N] [--sim verilator] [--reference <wsim log>]
+  measure.py <checkpoint dir> [--jobs N] [--sim verilator] [--reference <wsim log>] [--time-insns 100]
 
 Each <checkpoint dir>/<k>/ (with ram.bin, bootmem.bin, info.txt) runs as
   wsim buildroot buildroot --args "+LinuxRam=... +LinuxBootmem=... +INSTR_LIMIT=<warm-up + interval> +HPM_WARMUP=<warm-up>"
@@ -11,6 +11,9 @@ the difference is the interval's count (<k>/hpm.txt, <k>/wsim.log; a point alrea
 result is each interval's CPI and events per thousand instructions, and their sums weighted by SimPoint's weights
 (the intervals are equally long, so the weighted CPI estimates the region's).  --reference takes the log of a run of
 the whole region from its start with +HPM_PERIOD=<interval> and compares each point with that interval measured in place.
+--time-insns N makes time follow the instructions as in QEMU (+MTIME_INSNS=N +MTIME_BASE=<the checkpoint's mtime>; N =
+100 for QEMU's virt machine with -icount shift=0): Wally then runs the instructions QEMU ran, timer interrupts included,
+instead of a timer interrupt every 120 K cycles; the reference must be run the same way (README, "Time").
 """
 import argparse
 import concurrent.futures
@@ -50,14 +53,23 @@ def delta(lines, start, end):
     return {NAMES[c]: lines[end][c] - first[c] for c in NAMES if c < len(lines[end])}
 
 
-def run(d, sim):
+def mtime(d):
+    for line in (d / "state.txt").read_text().splitlines():
+        name, value = line.split()
+        if name == "clint.mtime":
+            return int(value, 16)
+    raise RuntimeError(f"{d}: no clint.mtime in state.txt")
+
+
+def run(d, sim, time_insns):
     info = read_info(d)
     warmup, interval = info["warmup"], info["interval"]
     log = d / "wsim.log"
     have = log.exists() and warmup + interval in hpm_lines(log)  # e.g. a log fetched from the cluster (cluster.sh)
     if not (d / "hpm.txt").exists() and not have:
         args = (f"+LinuxRam={d / 'ram.bin'} +LinuxBootmem={d / 'bootmem.bin'} +INSTR_LIMIT={warmup + interval} "
-                f"+UART_LOG_FILE={d / 'uart.out'}" + (f" +HPM_WARMUP={warmup}" if warmup else ""))
+                f"+UART_LOG_FILE={d / 'uart.out'}" + (f" +HPM_WARMUP={warmup}" if warmup else "")
+                + (f" +MTIME_INSNS={time_insns} +MTIME_BASE={mtime(d)}" if time_insns else ""))
         with log.open("w") as f:
             subprocess.run(["wsim", "buildroot", "buildroot", "--sim", sim, "--args", args], stdout=f,
                            stderr=subprocess.STDOUT, check=False)
@@ -83,12 +95,13 @@ def main():
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--sim", default="verilator")
     ap.add_argument("--reference", type=pathlib.Path)
+    ap.add_argument("--time-insns", type=int, default=0, help="instructions per mtime tick, as in QEMU (100); 0: cycles")
     args = ap.parse_args()
     points = sorted((d for d in args.dir.resolve().iterdir() if (d / "info.txt").exists()), key=lambda d: int(d.name))
     if not points:
         sys.exit(f"no checkpoints in {args.dir}")
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
-        results = list(pool.map(lambda d: run(d, args.sim), points))
+        results = list(pool.map(lambda d: run(d, args.sim, args.time_insns), points))
 
     ref = hpm_lines(args.reference) if args.reference else None
     header = f"{'interval':>8} {'weight':>6} {'cpi':>7} " + " ".join(f"{n:>12}" for n in SHOWN)

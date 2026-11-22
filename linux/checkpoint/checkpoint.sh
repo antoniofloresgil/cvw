@@ -8,8 +8,10 @@
 #   wsim buildroot buildroot --sim verilator --args "+LinuxRam=<dir>/ram.bin +LinuxBootmem=<dir>/bootmem.bin +INSTR_LIMIT=<n>"
 # ram.bin is the whole RAM (256 MiB) per checkpoint.  Environment: IMAGES, QEMU as for profile.sh; POINTS: other
 # intervals than SimPoint's, one per line ("<interval> <anything>"), e.g. "0 0" for the start of the region.
+# TRACE=<n>: after the last checkpoint QEMU writes the PCs of the next n instructions to <checkpoint dir>/qemu-trace.txt
+# (compare with the testbench's +PC_TRACE, drift.py).  NOTIMER=1 as for profile.sh (use the same for both).
 set -euo pipefail
-[ $# -ge 2 ] || { sed -n '2,11p' "$0" | sed 's/^# \?//'; exit 1; }
+[ $# -ge 2 ] || { sed -n '2,13p' "$0" | sed 's/^# \?//'; exit 1; }
 PROF=$(realpath "$1") OUT=$2 WARMUP=${3:-0}
 HERE=$(dirname "$(realpath "$0")")
 IMAGES=${IMAGES:-$RISCV/buildroot/output/images}
@@ -27,7 +29,7 @@ gcc -shared -fPIC -O2 -Wall -I"$RISCV/include" $(pkg-config --cflags glib-2.0) "
     -initrd "$PROF/overlay.cpio" \
     -cpu rva22s64,zicond=true,zfa=true,zfh=true,zcb=true,zbc=true,zkn=true,sstc=true,svadu=true,svnapot=true,pmp=on,debug=off \
     -icount shift=0,sleep=off \
-    -plugin "$OUT/libroickpt.so,interval=$INTERVAL,warmup=$WARMUP,points=$POINTS,outdir=$OUT" \
+    -plugin "$OUT/libroickpt.so,interval=$INTERVAL,warmup=$WARMUP,points=$POINTS,outdir=$OUT${NOTIMER:+,notimer=1}${TRACE:+,trace=$TRACE,tracefile=$OUT/qemu-trace.txt}" \
     < /dev/null > "$OUT/qemu.log" 2>&1
 grep -a "roickpt:" "$OUT/qemu.log"
 grep -aq "roickpt: done" "$OUT/qemu.log" || { echo "not all checkpoints were taken (see $OUT/qemu.log)" >&2; exit 1; }

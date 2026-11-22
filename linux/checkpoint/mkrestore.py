@@ -11,8 +11,9 @@ returns with mret to the interrupted instruction in the mode QEMU was in.  The R
 
 Not restored, on purpose: the counters (mcycle, minstret and mhpmcounter3-31 start at 0, mcountinhibit is 0 and
 mhpmevent3-31 is 1, so every counter counts its event in every mode for the measurement), M-mode trap state that the
-next trap overwrites (mepc, mcause, mtval), and stimecmp, which QEMU does not expose: it is set to the restored
-mtime, so the kernel takes one early timer interrupt and programs the next one itself.
+next trap overwrites (mepc, mcause, mtval).  QEMU does not expose stimecmp: roickpt records mtime at the first supervisor
+timer interrupt after the checkpoint ("stimecmp" in state.txt); older checkpoints without it get the restored mtime,
+so the kernel takes one early timer interrupt and programs the next one itself.
 """
 import argparse
 import pathlib
@@ -91,7 +92,9 @@ def program(s, pmp_entries, plic_sources):
     emit(f"    li      t1, {CLINT + 0xbff8:#x}")
     emit(f"    ld      t0, {val('mtime', s['clint.mtime'])}(x31)")
     emit("    sd      t0, 0(t1)")
-    emit("    csrw    stimecmp, t0")              # QEMU does not expose stimecmp: one early timer interrupt
+    if "stimecmp" in s:
+        emit(f"    ld      t0, {val('stimecmp', s['stimecmp'])}(x31)")
+    emit("    csrw    stimecmp, t0")              # without it, one early timer interrupt
     # PLIC
     emit(f"    li      t1, {PLIC:#x}")
     for i in range(1, plic_sources + 1):

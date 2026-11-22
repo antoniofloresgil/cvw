@@ -7,9 +7,11 @@
 # gets region_instructions).  Then on the cluster: cluster/cluster.sh submit <benchmark> and reference <benchmark>.
 # Environment: IMAGES as for profile.sh; WROOT (default /datos/xs-logs/spec-repro/out/wally, read by the cluster),
 # PROFROOT (default /datos/tmp/ckpt/prof).  Stops if a command of the benchmark did not end with rc=0 in QEMU.
+# SUFFIX=<s>: the checkpoints go to $WROOT/<benchmark><s>/ and <benchmark><s>-ref/ (e.g. -A for another set from the
+# same profile, after a change of roickpt).
 set -euo pipefail
-[ $# -ge 2 ] || { sed -n '2,9p' "$0" | sed 's/^# \?//'; exit 1; }
-STAGE=$1 BENCH=$2 INTERVAL=${3:-10000000}
+[ $# -ge 2 ] || { sed -n '2,11p' "$0" | sed 's/^# \?//'; exit 1; }
+STAGE=$1 BENCH=$2 INTERVAL=${3:-10000000} SUFFIX=${SUFFIX:-}
 HERE=$(dirname "$(realpath "$0")")
 WROOT=${WROOT:-/datos/xs-logs/spec-repro/out/wally}
 PROFROOT=${PROFROOT:-/datos/tmp/ckpt/prof}
@@ -23,12 +25,12 @@ fi
 grep -aq "roibbv: ROI end" "$P/qemu.log" || { echo "$BENCH: the region did not end (see $P/qemu.log)" >&2; exit 1; }
 REGION=$(grep -a -o "[0-9]* in the ROI" "$P/qemu.log" | grep -o "^[0-9]*")
 
-[ -f "$WROOT/$BENCH/.done" ] || { "$HERE/checkpoint.sh" "$P" "$WROOT/$BENCH" && touch "$WROOT/$BENCH/.done"; }
-if [ ! -f "$WROOT/$BENCH-ref/.done" ]; then
+[ -f "$WROOT/$BENCH$SUFFIX/.done" ] || { "$HERE/checkpoint.sh" "$P" "$WROOT/$BENCH$SUFFIX" && touch "$WROOT/$BENCH$SUFFIX/.done"; }
+if [ ! -f "$WROOT/$BENCH$SUFFIX-ref/.done" ]; then
     echo "0 0" > "$P/ref.points"
-    POINTS=$P/ref.points "$HERE/checkpoint.sh" "$P" "$WROOT/$BENCH-ref"
-    echo "region_instructions $REGION" >> "$WROOT/$BENCH-ref/0/info.txt"
-    touch "$WROOT/$BENCH-ref/.done"
+    POINTS=$P/ref.points "$HERE/checkpoint.sh" "$P" "$WROOT/$BENCH$SUFFIX-ref"
+    echo "region_instructions $REGION" >> "$WROOT/$BENCH$SUFFIX-ref/0/info.txt"
+    touch "$WROOT/$BENCH$SUFFIX-ref/.done"
 fi
-rm -f "$WROOT/$BENCH/libroickpt.so" "$WROOT/$BENCH-ref/libroickpt.so"
+rm -f "$WROOT/$BENCH$SUFFIX/libroickpt.so" "$WROOT/$BENCH$SUFFIX-ref/libroickpt.so"
 echo "$BENCH: region $REGION instructions, $(wc -l < "$P/app.simpoints") points"

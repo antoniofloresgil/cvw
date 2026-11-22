@@ -9,7 +9,8 @@
 # pulls only its own ram.bin, bootmem.bin and info.txt into node-local $TMPDIR with the read-only key (rrsync -ro on
 # the PC), runs warm-up + interval as measure.py does, copies back only the logs and deletes the checkpoint.
 # Task N = line N of $LIST, "<bench>/<interval>" relative to wally/ on the PC.  LIMIT overrides the instruction limit
-# (whole-region references) and EXTRA adds plusargs (e.g. +HPM_PERIOD=10000000).
+# (whole-region references) and EXTRA adds plusargs (e.g. +HPM_PERIOD=10000000).  MTIME=<n> makes time follow the
+# instructions as in QEMU (measure.py --time-insns): +MTIME_INSNS=<n> +MTIME_BASE=<the checkpoint's mtime>.
 set -uo pipefail
 : "${LIST:?LIST}" "${SIF:?SIF}" "${BIN:?BIN}" "${RES:?RES}"
 : "${PC:?PC (user@address of the PC, from cluster.sh)}"; KEY=${KEY:-$HOME/.ssh/pc-cpt-ro}
@@ -25,7 +26,7 @@ echo "== $(date -Is) host=$(hostname) task=$SLURM_ARRAY_TASK_ID $rel bin=$BIN"
 ok=0
 for try in 1 2 3 4 5 6 7 8; do
   rsync -e "ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20" -a \
-    --include=ram.bin --include=bootmem.bin --include=info.txt --exclude='*' "$PC:wally/$rel/" "$D/" \
+    --include=ram.bin --include=bootmem.bin --include=info.txt --include=state.txt --exclude='*' "$PC:wally/$rel/" "$D/" \
     && [ "$(stat -c %s "$D/ram.bin" 2>/dev/null)" = 268435456 ] && [ "$(stat -c %s "$D/bootmem.bin" 2>/dev/null)" = 4096 ] \
     && [ -s "$D/info.txt" ] && { ok=1; break; }   # whole files only (the RAM image and the BOOTROM of the buildroot configuration)
   echo "fetch try $try failed, retrying"; sleep $(( 10 + RANDOM % 50 ))
@@ -35,6 +36,11 @@ W=$(awk '$1 == "warmup" {print $2}' "$D/info.txt"); I=$(awk '$1 == "interval" {p
 LIMIT=${LIMIT:-$((W + I))}
 ARGS="+TEST=buildroot +LinuxRam=$D/ram.bin +LinuxBootmem=$D/bootmem.bin +INSTR_LIMIT=$LIMIT +UART_LOG_FILE=$D/uart.out"
 [ "$W" -gt 0 ] && ARGS+=" +HPM_WARMUP=$W"
+if [ -n "${MTIME:-}" ]; then
+  m=$(awk '$1 == "clint.mtime" {print $2}' "$D/state.txt")
+  [ -n "$m" ] || { echo "NO clint.mtime IN state.txt"; exit 2; }
+  ARGS+=" +MTIME_INSNS=$MTIME +MTIME_BASE=$((16#$m))"
+fi
 ARGS+=" ${EXTRA:-}"
 echo "fetched $(stat -c %s "$D/ram.bin") bytes; $ARGS"
 cd "$D"

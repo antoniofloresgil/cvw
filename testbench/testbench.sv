@@ -743,6 +743,39 @@ module testbench;
         if(Minstret == INSTR_LIMIT) begin $display("%s", hpmLine()); $finish; end
       end
     end
+    // +PC_TRACE=<file>: the PC of every retired instruction (the ones minstret counts), one hex value per line, and
+    // "T I <pc>" / "T E <pc>" at each interrupt / exception (the PC of the instruction in M, which does not retire),
+    // the format of linux/checkpoint's roickpt trace, to find where Wally and QEMU part (linux/checkpoint/drift.py)
+    string PcTraceFile;
+    integer PcTrace;
+    initial if ($value$plusargs("PC_TRACE=%s", PcTraceFile)) PcTrace = $fopen(PcTraceFile, "w"); else PcTrace = 0;
+    always @(posedge clk)
+      if (PcTrace != 0 & ~reset & ~dut.core.StallW) begin
+        if (dut.core.TrapM) $fwrite(PcTrace, "T %s %h\n", dut.core.priv.priv.InterruptM ? "I" : "E", PCM);
+        else if (dut.core.priv.priv.csr.InstrValidNotFlushedM) $fwrite(PcTrace, "%h\n", PCM);
+      end
+    final if (PcTrace != 0) $fclose(PcTrace);
+    // +MTIME_INSNS=<n> +MTIME_BASE=<mtime>: time follows the instructions, as in QEMU with -icount (n = 100 for its
+    // 10 MHz timer at 1 ns per instruction), not the cycles: from the end of a checkpoint's restore program (the first
+    // retired instruction outside M-mode) the CLINT's mtime is forced to MTIME_BASE + instructions since then / n, so
+    // timer interrupts come at the same instructions as in QEMU and Wally runs the same instructions (linux/checkpoint)
+    longint MTIME_INSNS, MTIME_BASE;
+    logic [P.XLEN-1:0] MtimeStart;
+    logic MtimeFollows = 0;
+    logic [63:0] MtimeInstr;
+    initial begin
+      if (!$value$plusargs("MTIME_INSNS=%d", MTIME_INSNS)) MTIME_INSNS = 0;
+      if (!$value$plusargs("MTIME_BASE=%d", MTIME_BASE)) MTIME_BASE = 0;
+    end
+    assign MtimeInstr = MTIME_BASE + (MTIME_INSNS > 0 ? (64'(Minstret) - 64'(MtimeStart)) / MTIME_INSNS : 0);
+    always @(posedge clk)
+      if (MTIME_INSNS > 0 & ~MtimeFollows & ~reset & dut.core.PrivilegeModeW != 2'b11) begin
+        MtimeStart <= Minstret;
+        MtimeFollows <= 1;
+      end
+    if (P.CLINT_SUPPORTED) begin : mtimefollows
+      always @(posedge clk) if (MtimeFollows) force dut.uncoregen.uncore.MTIME_CLINT = MtimeInstr;  // again every cycle: Verilator samples the value once  // the time CSR and Sstc (stimecmp) in the core
+    end
   end
 
 // RVVI trace for functional coverage and lockstep

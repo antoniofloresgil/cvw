@@ -8,10 +8,11 @@
 # picks the intervals and their weights.  Out dir: app.bb, app.simpoints, app.weights, qemu.log (the instruction
 # count since boot at the start of the region is in it: "roibbv: ROI start at instruction N"; interval k of
 # app.simpoints begins N + k * interval instructions after boot).
+# NOTIMER=1: no timer interrupts in the region (mie.STIE/MTIE cleared at its start, as XiangShan's NEMU does).
 # Environment: IMAGES (Buildroot images: fw_jump.bin, Image; default $RISCV/buildroot/output/images), SIMPOINT (default
 # simpoint, from bin/installation/simpoint-install.sh), QEMU (default qemu-system-riscv64 with plugin support).
 set -euo pipefail
-[ $# -ge 3 ] || { sed -n '2,13p' "$0" | sed 's/^# \?//'; exit 1; }
+[ $# -ge 3 ] || { sed -n '2,14p' "$0" | sed 's/^# \?//'; exit 1; }
 STAGE=$(realpath "$1") BENCH=$2 OUT=$3 INTERVAL=${4:-10000000} MAXK=${5:-30}
 HERE=$(dirname "$(realpath "$0")")
 IMAGES=${IMAGES:-$RISCV/buildroot/output/images}
@@ -54,7 +55,7 @@ chmod +x "$ROOT/etc/init.d/S99spec"
 "$QEMU" -M virt -m 256M -nographic -bios "$IMAGES/fw_jump.bin" -kernel "$IMAGES/Image" -dtb "$OUT/wally-virt.dtb" \
     -initrd "$OUT/overlay.cpio" \
     -cpu rva22s64,zicond=true,zfa=true,zfh=true,zcb=true,zbc=true,zkn=true,sstc=true,svadu=true,svnapot=true,pmp=on,debug=off \
-    -icount shift=0,sleep=off -plugin "$OUT/libroibbv.so,interval=$INTERVAL,outfile=$OUT/app.bb" < /dev/null > "$OUT/qemu.log" 2>&1
+    -icount shift=0,sleep=off -plugin "$OUT/libroibbv.so,interval=$INTERVAL,outfile=$OUT/app.bb${NOTIMER:+,notimer=1}" < /dev/null > "$OUT/qemu.log" 2>&1
 grep -a -E "@@SPEC-CMD|roibbv:" "$OUT/qemu.log"
 grep -aq "roibbv: ROI end" "$OUT/qemu.log" || { echo "the region did not end (see $OUT/qemu.log)" >&2; exit 1; }
 

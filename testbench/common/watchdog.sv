@@ -40,6 +40,9 @@ module watchdog #(parameter XLEN, WatchDogTimerThreshold, SameTrapPCThreshold = 
   // check above nor a minstret-frozen check would ever fire.  The invariant that *does* hold is
   // that the trapping PC is identical every time.  Count consecutive traps that capture the same
   // PCM; if the same instruction traps SameTrapPCThreshold times in a row, the core is livelocked.
+  // A trapping instruction that then retires is not livelocked (e.g. the first store to each new
+  // page in a memset over fresh memory takes a page fault per page, always at the same PC), so
+  // its retirement restarts the count.
   logic [XLEN-1:0]      LastTrapPC;
   integer               SameTrapPCCount;
   logic                 TrapMD, TrapEvent;
@@ -58,7 +61,8 @@ module watchdog #(parameter XLEN, WatchDogTimerThreshold, SameTrapPCThreshold = 
         if (PCM == LastTrapPC) SameTrapPCCount <= SameTrapPCCount + 1;
         else                   SameTrapPCCount <= 0;
         LastTrapPC <= PCM;
-      end
+      end else if (dut.core.InstrValidM & ~dut.core.StallW & ~dut.core.FlushW & PCM == LastTrapPC)
+        SameTrapPCCount <= 0;   // the instruction that trapped has now retired
     end
   end
 
