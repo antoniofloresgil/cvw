@@ -18,6 +18,9 @@
 ::sysinit:/bin/mount -o remount,rw /
 ::sysinit:/bin/mkdir -p /dev/pts /dev/shm
 ::sysinit:/bin/mount -a
+# The console UART's receive FIFO is 16 bytes; Linux's default trigger (8) loses characters while a benchmark keeps the
+# receive interrupt waiting for milliseconds.  Interrupt on every character instead.
+::sysinit:/bin/sh -c 'f=/sys/class/tty/ttyS0/rx_trig_bytes; [ -w $f ] && echo 1 > $f'
 ::sysinit:/sbin/swapon -a
 null::sysinit:/bin/ln -sf /proc/self/fd /dev/fd
 null::sysinit:/bin/ln -sf /proc/self/fd/0 /dev/stdin
