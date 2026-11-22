@@ -14,6 +14,9 @@ DEFINE_ARGS =               # Compile-time defines (e.g. +define+USE_IMPERAS_DV)
 BUILD_HASH ?=               # Hash suffix for workdir when PARAM_ARGS/DEFINE_ARGS vary;
                             # computed by wsim to avoid shell-escaping issues in Make
 FCOV       ?= 0             # 1 compiles in the riscv-arch-test covergroups (wsim --fcov)
+LOCKSTEP   ?= 0             # 1 compiles in ImperasDV for lock-step comparison (wsim --lockstep)
+SPEED_OPT  ?= 0             # 1 for long runs (wsim sets it for Linux boots): lock step then uses two threads
+PGO        ?=               # gen or use: the two builds of a profile-guided model (wsim --pgo)
 
 # ------ Verilator flags ------
 VERILATOR_FLAGS = --assert --no-trace-top --stats
@@ -22,6 +25,21 @@ VERILATOR_FLAGS = --assert --no-trace-top --stats
 # (CoreMark, ACT tests, and Linux boots) for 10-20% more compile CPU time.  -O3, with or without
 # Verilator's own -O3, is slower than -O2.
 VERILATOR_FLAGS += --MAKEFLAGS OPT_FAST=-O2 --MAKEFLAGS OPT_SLOW=-O1 --MAKEFLAGS OPT_GLOBAL=-O2
+
+# Profile-guided optimization (wsim --pgo, and every buildroot build) takes two builds in the same work
+# directory.  PGO=gen builds a model that counts its branches and calls and writes them, as it exits, to a
+# .gcda file beside each object; wsim runs it on a few programs; PGO=use then compiles every object again
+# with those counts.  GCC finds a .gcda by its object's path, so both builds must share the directory.
+# -fprofile-partial-training keeps code the training never ran optimized as usual instead of for size.
+# Trained on 60 ACT tests, the rv32gc model runs CoreMark (not among them) 28% faster and the rv64gc model
+# ACT directories 22-24% faster; trained on the first 5 M instructions of a Linux boot, the buildroot model
+# boots 19% faster.  The two builds and the training take about a minute more than one build.
+ifeq ($(strip $(PGO)),gen)
+    VERILATOR_FLAGS += -CFLAGS -fprofile-generate -CFLAGS -fprofile-update=prefer-atomic -LDFLAGS -fprofile-generate
+else ifeq ($(strip $(PGO)),use)
+    VERILATOR_FLAGS += -CFLAGS -fprofile-use -CFLAGS -fprofile-partial-training -CFLAGS -Wno-missing-profile \
+                       -LDFLAGS -fprofile-use
+endif
 
 # Compiling the generated C++ dominates the build, and Verilator does it serially by default.
 JOBS ?= $(shell nproc)
@@ -62,6 +80,31 @@ ifeq ($(strip $(FCOV)),1)
     SOURCES := $(FCOV_SRC)/rvviTrace.sv $(FCOV_SRC)/riscv_arch_test.sv $(SOURCES)
 endif
 
+# Lockstep (wsim --lockstep) compiles in ImperasDV's RVVI and IDV SystemVerilog packages and links the
+# ImperasDV DPI library, as -sv_lib does for Questa and VCS.  The library looks up the DPI scope
+# functions (svGetScope, svSetScope, ...) in the executable at run time, so the executable must export its
+# dynamic symbols (-rdynamic).  IMPERAS_VLNV selects the RISC-V model the library loads at run time.
+ifeq ($(strip $(LOCKSTEP)),1)
+    IDV_LIB = $(IMPERAS_HOME)/lib/Linux64/ImperasLib/imperas.com/verification/riscv/1.0
+    INCLUDE_PATH += "-I$(IMPERAS_HOME)/ImpPublic/include/host" "-I$(IMPERAS_HOME)/ImpPublic/include/host/rvvi" \
+                    "-I$(IMPERAS_HOME)/ImpProprietary/include/host" "-I$(IMPERAS_HOME)/ImpProprietary/include/host/idv"
+    LOCKSTEP_SOURCES = $(IMPERAS_HOME)/ImpPublic/source/host/rvvi/rvviApiPkg.sv \
+                       $(sort $(wildcard $(IMPERAS_HOME)/ImpProprietary/source/host/idv/*.sv))
+    # With functional coverage, riscv-arch-test's rvviTrace.sv takes the place of ImperasDV's
+    ifneq ($(strip $(FCOV)),1)
+        LOCKSTEP_SOURCES += $(IMPERAS_HOME)/ImpPublic/source/host/rvvi/rvviTrace.sv
+    endif
+    SOURCES := $(LOCKSTEP_SOURCES) $(SOURCES)
+    VERILATOR_FLAGS += -LDFLAGS "-rdynamic -L$(IDV_LIB) -l:model.so -Wl,-rpath,$(IDV_LIB) -Wl,-rpath,$(IMPERAS_HOME)/bin/Linux64"
+    # A second thread runs the ImperasDV calls (reference model step and compare) alongside the design,
+    # which makes a lock-step Linux boot about 1.5x faster; more threads gain little, and the design alone
+    # gains nothing from threads.  Only long runs (wsim sets SPEED_OPT=1 for Linux boots) use it, so that
+    # parallel regressions of short tests keep one core per simulation.
+    ifeq ($(strip $(SPEED_OPT)),1)
+        VERILATOR_FLAGS += --threads 2
+    endif
+endif
+
 # Convert PARAM_ARGS entries (e.g. "MAKE_VCD=1") into verilator -G flags (e.g. "-GMAKE_VCD=1")
 EXPANDED_PARAM_ARGS := $(patsubst %,-G%,$(PARAM_ARGS))
 
@@ -88,6 +131,14 @@ default: compile
 
 compile:
 	mkdir -p $(WORKDIR)
+# A PGO build recompiles every object, since only the compiler flags change; PGO=gen also drops the
+# profile of an earlier build, which no longer matches the code
+ifneq ($(strip $(PGO)),)
+	rm -f $(WORKDIR)/*.o $(WORKDIR)/*.a $(WORKDIR)/V$(TESTBENCH)
+endif
+ifeq ($(strip $(PGO)),gen)
+	rm -f $(WORKDIR)/*.gcda
+endif
 	verilator \
 	--Mdir $(WORKDIR) -o V${TESTBENCH} \
 	--binary -j $(JOBS) \

@@ -37,26 +37,27 @@ wsim rv64gc $ACT/rv64i/I --sim verilator        # run a whole ACT directory in o
 wsim rv64gc $ACT/rv64i/I/I-add-00.elf --gui     # one ELF, Questa with waveform GUI
 wsim rv32gc a.elf b.elf c.elf --sim verilator   # an explicit group of ELFs
 wsim rv64gc test.elf --sim verilator --vcd      # Generate VCD waveform
-wsim rv64gc test.elf --lockstep                 # Lock-step vs ImperasDV (Questa/VCS only; one ELF at a time)
+wsim rv64gc test.elf --lockstep                 # Lock-step vs ImperasDV (Questa, VCS or Verilator; one ELF at a time)
 wsim rv64gc $ACT/priv/Sv --fcov                 # Functional coverage (any simulator; not with --lockstep)
 wsim buildroot buildroot                        # Linux boot from prebuilt memory images (buildroot configuration)
 wsim rv32gc bench.elf --test coremark           # ELF run with a special testbench mode (coremark, embench)
 ```
 
-Key options: `--sim {questa,verilator,vcs}`, `--gui`, `--ccov` (code coverage), `--fcov` (functional coverage), `--lockstep`/`--lockstepverbose`, `--vcd`, `--args`, `--params`, `--define`, `--name` (log/coverage file name), `--test` (special mode: buildroot, fpga, coremark, embench).
+Key options: `--sim {questa,verilator,vcs}`, `--gui`, `--ccov` (code coverage), `--fcov` (functional coverage), `--lockstep`/`--lockstepverbose`, `--vcd`, `--args`, `--params`, `--define`, `--name` (log/coverage file name), `--test` (special mode: buildroot, fpga, coremark, embench), `--pgo` (Verilator: profile-guided build trained on 60 of the configuration's ACT tests, 20-30 % faster runs for about a minute more of build; buildroot builds always use it, trained on the first 5 M instructions of a boot, in `sim/verilator/Makefile`; ignored in lock step).
 
 ### Run full regression
 ```bash
 regression-wally                        # rv32i, rv64i, rv32imc, rv32imcb, rv32gc, rv64gc ACT + periph tests + lint, Verilator by default
 regression-wally --nightly              # extended nightly suite
 ```
-`regression-wally` first builds the tests it needs with the root Makefile (`make -C $WALLY act zsbl periph coverage`, incremental; `make act` discards a configuration's ELFs when its `config/<cfg>/act` files change), then runs each leaf directory of ACT ELFs as one `wsim` session, in parallel across directories. Compiled designs in `sim/<sim>/wkdir` are kept between regressions and recompiled only when a source file is newer. Set `ACTDIR` to use a different riscv-arch-test checkout.
+`regression-wally` first builds the tests it needs with the root Makefile (`make -C $WALLY act zsbl periph coverage`, incremental; `make act` discards a configuration's ELFs when its `config/<cfg>/act` files change), then runs each leaf directory of ACT ELFs as one `wsim` session, in parallel across directories. Compiled designs in `sim/<sim>/wkdir` are kept between regressions and recompiled only when a source file is newer. Verilator models are built with `wsim --pgo` (`--nopgo` builds them plainly). Set `ACTDIR` to use a different riscv-arch-test checkout.
 
 ### Run code coverage
 ```bash
 regression-wally --ccov rv64gc      # also rv32gc, rv32imc; results in sim/questa/cov/rv64gc_uncovered_hierarchical.rpt
 regression-wally --ccov rv64gc --coveragesim vcs   # VCS: sim/vcs/cov/rv64gc_coverage_hierarchical.rpt
 regression-wally --fcov rv64gc      # functional coverage; results in sim/questa/fcov/rv64gc_fcov.uncovered.log
+regression-wally --lockstep rv64gc     # ACT + coverage tests in lock step vs ImperasDV (also rv32gc, rv32imc, rv32imcb)
 ```
 Also possible to run individual files and merge them into the overall coverage.  Each simulation writes its own database (`sim/questa/ucdb/*.ucdb`, or `sim/vcs/ucdb/*.vdb` with VCS); `make -C sim QuestaCodeCoverage` (or `VcsCodeCoverage`) merges them for one configuration (`CONFIG=rv64gc`, the default, `rv32gc` or `rv32imc`) and applies `sim/questa/coverage-exclusions-<config>.do`, which `sim/vcs/exclusions2el` translates into a URG exclusion file for VCS (`sim/vcs/cov/exclusions-<config>.log` says what each exclusion became).
 
@@ -121,7 +122,7 @@ Five stages: Fetch (F), Decode (D), Execute (E), Memory (M), Writeback (W). Stal
 
 ### Simulators
 
-- **Verilator**: Default for regression; open-source; no license needed. Compiled per config in `sim/verilator/wkdir/`.
+- **Verilator**: Default for regression; open-source; no license needed. Compiled per config in `sim/verilator/wkdir/`. Also runs lockstep (needs an ImperasDV license); a lockstep Linux boot uses two threads.
 - **Questa** (Siemens): Required for testbench_fp and GUI waveforms; runs code/functional coverage and lockstep. Uses `sim/questa/wkdir/`.
 - **VCS** (Synopsys): Supports standard tests, lockstep, and code/functional coverage (merged and reported with `urg`).
 
