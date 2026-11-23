@@ -29,6 +29,35 @@ The bitstream is loaded on the board and Zephyr's isolation demo runs on it to `
 there on the same day, and `trace` (`FPGA_DUMP=1`, decoded with `chip/trace_decode.py`: 5,952 instructions, the checks of `chipsim` pass). `periph` (`FPGA_TIMING=1`, edges made by hand on SW4) ran to `PERIPH OK`, without a flash to read. FreeRTOS ran to `FREERTOS OK` (the static PMP causes match the simulation). Every firmware image of the chip has now run
 on the board; JTAG, which the FPGA build lacks, is not tested.
 
+## Pending: features not yet tried on the Nexys Video (2026-11-23)
+
+Verified only in simulation (RTL tests, Linux on RTL). The board configurations (`fpganexysvideo*`) leave every optional
+feature below at 0, so each one needs the feature enabled in a board configuration, a Vivado build that still meets
+20 MHz (or the open flow's 12.5 MHz), device tree or firmware support, and then the run on the board.
+
+1. **Starting the board from a SimPoint checkpoint** (branch `checkpoints`, `linux/checkpoint/sdimage.py`): rehearsed in
+   Verilator, not yet run on the board.
+2. **Receive trigger of one character on the console UART** (fork PR #99, `inittab`): measured by hand on the board;
+   the Buildroot image that sets it at boot is not built yet.
+3. **Sscofpmf** ([ADR 0014](decisions/0014-sscofpmf-counter-overflow.md)): overflow interrupt, `perf record` sampling and
+   `:u`/`:k` filters passed only in Linux on RTL ([experiment](experiments/2026-10-21-sscofpmf-linux.md)). It would
+   allow per-interval measurements of SPEC on the board.
+4. **Smcntrpmf** ([ADR 0015](decisions/0015-smcntrpmf-fixed-counter-filter.md)) and **Smcdeleg/Ssccfg**
+   ([ADR 0016](decisions/0016-smcdeleg-ssccfg-counter-delegation.md)): Linux on RTL only.
+5. **Privilege-mode attribution of early and multicycle PMU events**
+   ([experiment](experiments/2026-10-21-pmu-event-modes.md)): directed tests only.
+6. **Multicore**: no FPGA timing and no dual-core boot on the Nexys Video.
+7. **Pipelined AHB cache-line bursts** ([ADR 0010](decisions/0010-pipelined-cache-line-bursts.md)): no FPGA timing and
+   no DDR3 throughput measurement.
+8. **JTAG debug and E-Trace on the Wally core** ([debug](../debug.md), [trace](../trace.md)): no FPGA build brings out
+   the JTAG pins, and OpenOCD has only run against the simulation through remote_bitbang. The chip's trace on the
+   FPGA (read back from RAM) has run on the board.
+9. **Single-hart peripheral isolation** ([ADR 0014](decisions/0014-single-hart-peripheral-isolation.md)): no board run.
+
+Already run on the board, for reference: Linux with the Vivado and open flows, `fpganexysvideoopen` (stage 0 DDR3
+initialization through `EXT_IO`), `perf stat` with the base PMU, SPEC CPU 2026 test inputs, and every firmware image of
+the chip on the FPGA.
+
 The `opensource-fpga-bitstream` branch was merged into `main` (PR #22, then
 continued by `wally-ddr3-init`, PR #23) and deleted (local and `origin`) on
 2026-11-01. Its commits, including those cited in these documents as
