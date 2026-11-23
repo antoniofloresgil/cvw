@@ -33,3 +33,7 @@
         path = addins/zephyr
         url = https://github.com/zephyrproject-rtos/zephyr.git
         shallow = true
+[submodule "addins/cover-float"]
+  path = addins/cover-float
+  url = https://github.com/cover-float/cover-float
+  ignore = untracked
