@@ -11,6 +11,7 @@ Steps (status):
    hart's state, the device registers and the RAM; `mkrestore.py` makes the restore program.
 3. **Restore** (done): Wally starts from the RAM image and the restore program, which loads the state (registers,
    CSRs, CLINT, PLIC, UART) and returns to the interrupted code; warm-up, then the interval, counted by the HPM counters.
+   The same checkpoint also starts the FPGA board from its SD card (`sdimage.py`, below; not yet tried on the board).
 4. **Weight** (done, `measure.py`; validated on cppcheck against the whole region simulated on Wally): CPI and the
    other rates of the intervals weighted by SimPoint.  To do: the larger benchmarks, and a comparison with the FPGA.
 
@@ -82,6 +83,7 @@ run on Wally to the end of the program, which prints `@@SPEC-CMD 1 rc=0`, and Li
 
 ```
 ./measure.py <checkpoint dir> [--jobs N] [--reference <wsim log of the whole region>]
+./summary.py <WROOT> <benchmark>... [--suffix -A] [--markdown]     # a whole campaign in one table, runs nothing
 ```
 
 Each checkpoint runs on Wally with `+INSTR_LIMIT=<warm-up + interval>` and `+HPM_WARMUP=<warm-up>`; the testbench
@@ -99,6 +101,34 @@ granularity, and the kernel runs other instructions on Wally (timer interrupts c
 cycles), so the windows drift apart along the region; the weighted sum averages that out.  With L1 caches only and
 1 M intervals the warm-up hardly matters; with 10 M intervals neither (777.zstd_r: weighted CPI 1.347 without warm-up,
 1.348 with 1 M).
+
+## On the FPGA board
+
+```
+./sdimage.py <checkpoint dir>/<k> <image>          # about 257 MiB, 2 s
+sudo dd if=<image> of=/dev/sdX bs=4M conv=fsync status=progress
+```
+
+The board's ZSBL (`fpga/zsbl`) and bitstream stay as they are: the ZSBL loads the card's first three GPT partitions,
+the first at the top of the DDR3 less 16 MiB (`FDT_ADDRESS`), the second at 0x80000000, the third at 0x80200000, and
+jumps to 0x80000000.  `sdimage.py` puts there the restore program (`mkrestore.py --fpga`, linked at `FDT_ADDRESS`:
+0x9F000000 for `fpganexysvideo`), the whole RAM in plain byte order with its first doubleword replaced by
+`auipc t0, ...; jr t0` to the restore program, which writes it back and executes `fence.i`, and one block of the same RAM.
+The restore program is the simulator's with three changes: that doubleword, the UART's divisor for 115200 baud with
+the board's clock (`--sysclock`, 20 MHz for the Vivado build; in QEMU the console runs at 9600 baud, as `wally-virt.dts`
+gives no speed, which on the board would slow down every message the kernel prints), and a receive FIFO that
+interrupts on every character instead of Linux's 8 of 16 (the board loses typed characters otherwise while a benchmark
+runs; the driver writes the FCR again only when the line settings change).  The ZSBL reads the RAM through SPI at
+10 MHz, about 7.5 minutes.  On the board `mtime` counts at the board's clock while the kernel's device tree
+says 30 MHz, so Linux's time runs slower than real time; the timer ticks come further apart.  The HPM counters start
+at 0 at the restore as in simulation, but nothing stops the board after a given number of instructions.
+
+Tried on 2026-11-23 with point 47 of 727.cppcheck_r (mode A checkpoints) on the Nexys Video, Vivado build of
+`fpganexysvideo` at 20 MHz: the ZSBL loaded the card in 453 s, the restore program returned to the checkpoint, the
+benchmark ended with `@@SPEC-CMD 1 rc=0`, its `hello_bogey.txt` has the md5 of SPEC's reference output, and Linux went
+on to its shell with no receive overrun on the console.  If the board shows Digilent's demo instead of the ZSBL, the
+FPGA has lost its configuration: load the bitstream again (`openFPGALoader -b nexysVideo <fpgaTop.bit>`), which also
+starts the ZSBL.
 
 ## Time
 

@@ -3,11 +3,20 @@
 """Restore program of a roickpt checkpoint for Wally's buildroot configuration.
 
   mkrestore.py <checkpoint dir> [--pmp-entries 16] [--plic-sources 53]
+  mkrestore.py <checkpoint dir> --fpga [--sysclock 20000000] [--ext-mem-range 0x20000000]
 
 Reads <checkpoint dir>/state.txt (written by roickpt) and writes <checkpoint dir>/restore.S and bootmem.bin: the
 BOOTROM image (0x1000, 4 KiB, in the testbench's byte order) that Wally runs from reset.  The program restores in
 M-mode the CSRs, the floating-point registers, the CLINT, PLIC and UART registers, then the integer registers, and
 returns with mret to the interrupted instruction in the mode QEMU was in.  The RAM is the checkpoint's ram.bin.
+
+With --fpga it writes restore-fpga.S and restore-fpga.bin (plain byte order) for the FPGA's ZSBL instead, which loads
+the SD card's first partition at the top of the DDR3 less 16 MiB (where it puts the device tree), the second at
+0x80000000 and jumps there (sdimage.py makes the card): the program is linked at that address, puts back the first
+doubleword of the RAM (which sdimage.py replaced with a jump to the program) and sets the UART's divisor for --baud
+(115200) with the board's clock (--sysclock).  In QEMU the console runs at 9600 baud (wally-virt.dts gives no speed),
+which on the board would slow down every message the kernel prints; Linux keeps the divisor it believes is 9600 at
+3.6864 MHz unless something sets the terminal's speed again.
 
 Not restored, on purpose: the counters (mcycle, minstret and mhpmcounter3-31 start at 0, mcountinhibit is 0 and
 mhpmevent3-31 is 1, so every counter counts its event in every mode for the measurement), M-mode trap state that the
@@ -23,7 +32,13 @@ import tempfile
 
 BOOTROM_BASE = 0x1000
 BOOTROM_SIZE = 0x1000
+RAM_BASE = 0x80000000
 CLINT, PLIC, UART = 0x02000000, 0x0C000000, 0x10000000
+
+
+def fpga_base(ext_mem_range):
+    """Where the FPGA's ZSBL loads the SD card's first partition (FDT_ADDRESS in fpga/zsbl/system.h)."""
+    return RAM_BASE + ext_mem_range + 1 - 0x1000000
 
 GPRS = ["zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "fp", "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
         "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"]
@@ -42,7 +57,10 @@ def read_state(path):
     return state
 
 
-def program(s, pmp_entries, plic_sources):
+def program(s, pmp_entries, plic_sources, ram0=None, uart_divisor=None):
+    """ram0: the RAM's first doubleword to put back (FPGA); uart_divisor: the board's instead of QEMU's, and with it the
+    receive FIFO interrupts on every character (Linux sets 8 of 16, which loses characters on the board while a benchmark
+    runs; the driver writes the FCR again only when the line settings change)."""
     data = []  # (label, value)
 
     def val(label, value):  # offset of a new data word from x31 (= data)
@@ -57,6 +75,11 @@ def program(s, pmp_entries, plic_sources):
     emit("    la      t0, fail")
     emit("    csrw    mtvec, t0")
     emit("    la      x31, data")
+    if ram0 is not None:                          # the jump that brought us here, back to the RAM's own bytes
+        emit(f"    li      t1, {RAM_BASE:#x}")
+        emit(f"    ld      t0, {val('ram0', ram0)}(x31)")
+        emit("    sd      t0, 0(t1)")
+        emit("    fence.i")
     emit("    li      t0, 0x6000")            # mstatus.FS on, for the floating-point registers
     emit("    csrs    mstatus, t0")
     for i, r in enumerate(FPRS):
@@ -110,8 +133,9 @@ def program(s, pmp_entries, plic_sources):
         emit("    sw      t0, 0(t1)")
     # UART (16550): divisor through LCR.DLAB, then LCR, the FIFOs as Linux's 8250 driver sets them, IER, MCR, SCR
     emit(f"    li      t1, {UART:#x}")
-    for off, value in [(3, s["uart.lcr"] | 0x80), (0, s["uart.dll"]), (1, s["uart.dlm"]), (3, s["uart.lcr"]),
-                       (2, 0x81), (1, s["uart.ier"]), (4, s["uart.mcr"]), (7, s["uart.scr"])]:
+    divisor = s["uart.dll"] | s["uart.dlm"] << 8 if uart_divisor is None else uart_divisor
+    for off, value in [(3, s["uart.lcr"] | 0x80), (0, divisor & 0xff), (1, divisor >> 8), (3, s["uart.lcr"]),
+                       (2, 0x81 if uart_divisor is None else 0x01), (1, s["uart.ier"]), (4, s["uart.mcr"]), (7, s["uart.scr"])]:
         emit(f"    li      t0, {value}")
         emit(f"    sb      t0, {off}(t1)")
     # back to the interrupted code: mstatus with MPP = the mode, MPIE = its MIE; mtvec; mepc = pc
@@ -144,18 +168,36 @@ def main():
     ap.add_argument("dir", type=pathlib.Path)
     ap.add_argument("--pmp-entries", type=int, default=16)
     ap.add_argument("--plic-sources", type=int, default=53)
+    ap.add_argument("--fpga", action="store_true", help="restore-fpga.bin for the FPGA's ZSBL (sdimage.py)")
+    ap.add_argument("--sysclock", type=int, default=20000000, help="the board's clock in Hz (20000000: Vivado)")
+    ap.add_argument("--baud", type=int, default=115200, help="the board console's baud rate (115200)")
+    ap.add_argument("--ext-mem-range", type=lambda x: int(x, 0), default=0x1FFFFFFF,
+                    help="EXT_MEM_RANGE of the board's configuration (0x1FFFFFFF: fpganexysvideo)")
     args = ap.parse_args()
     state = read_state(args.dir / "state.txt")
-    src, ndata = program(state, args.pmp_entries, args.plic_sources)
+    if args.fpga:
+        with open(args.dir / "ram.bin", "rb") as f:
+            ram0 = int.from_bytes(f.read(8), "big")   # the testbench's byte order: most significant byte first
+        divisor = (args.sysclock + 8 * args.baud) // (16 * args.baud)   # as the ZSBL's init_uart
+        src, ndata = program(state, args.pmp_entries, args.plic_sources, ram0, divisor)
+        base, name = fpga_base(args.ext_mem_range), "restore-fpga"
+    else:
+        src, ndata = program(state, args.pmp_entries, args.plic_sources)
+        base, name = BOOTROM_BASE, "restore"
     if ndata * 8 > 2040:
         sys.exit("too much data: the offsets from data must stay within a 12-bit immediate")
-    (args.dir / "restore.S").write_text(src)
+    (args.dir / f"{name}.S").write_text(src)
     with tempfile.TemporaryDirectory() as tmp:
         elf, binary = pathlib.Path(tmp, "restore.elf"), pathlib.Path(tmp, "restore.bin")
         subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv64gc_zicsr", "-mabi=lp64d", "-nostdlib", "-static",
-                        f"-Wl,-Ttext={BOOTROM_BASE:#x}", "-Wl,--no-relax", "-o", elf, args.dir / "restore.S"], check=True)
+                        f"-Wl,-Ttext={base:#x}", "-Wl,--no-relax", "-o", elf, args.dir / f"{name}.S"], check=True)
         subprocess.run(["riscv64-unknown-elf-objcopy", "-O", "binary", elf, binary], check=True)
         image = binary.read_bytes()
+    if args.fpga:
+        (args.dir / "restore-fpga.bin").write_bytes(image)
+        print(f"{args.dir / 'restore-fpga.bin'}: {len(image)} bytes at {base:#x}, resumes at {state['pc']:#x} "
+              f"in {'USM'[state['priv']]}-mode")
+        return
     if len(image) > BOOTROM_SIZE:
         sys.exit(f"restore program is {len(image)} bytes, the BOOTROM {BOOTROM_SIZE}")
     image = image.ljust(BOOTROM_SIZE, b"\0")
