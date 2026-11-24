@@ -15,14 +15,14 @@ logic analyzer out, whose probes name single-core nets.
 cd fpga/generator
 make nexysvideo VIVADOCONFIG=fpganexysvideosmp NHARTS=2 NO_ILA=1 \
   SOCGENERICS="NCORES=2 PRIVATE_DCACHE=1'b1 PRIVATE_ICACHE=1'b1 LOCAL_DCACHE_READS=1'b1 LOCAL_DCACHE_WRITES=1'b1 \
-  CACHE_TO_CACHE=1'b1 CACHE_BURSTS=1'b1 COHERENCE_BANKS=2 PRIVATE_DCACHE_WORDS=64 PRIVATE_ICACHE_WORDS=64 \
+  CACHE_TO_CACHE=1'b1 CACHE_BURSTS=1'b1 COHERENCE_BANKS=2 PRIVATE_DCACHE_WORDS=1024 PRIVATE_ICACHE_WORDS=1024 \
   PRIVATE_DCACHE_LINE_WORDS=4 PRIVATE_ICACHE_LINE_WORDS=4"
 ```
 
-With these 512-byte caches the build takes 114k LUT and 36 RAMB18 and meets 20 MHz (WNS +0.59 ns, 2026-11-23). The
-private caches cannot be larger yet: their data arrays read combinationally through several ports, so Vivado builds
-them from flip-flops and multiplexers (8 KiB per cache needed 514k LUT, 382 % of the XC7A200T). Branch
-`multicore-bram` moves them to block RAM.
+With 8 KiB private D- and I-caches per hart the build takes 90.6k LUT (68 %) and 57 block RAMs and meets 20 MHz
+(WNS +0.54 ns, 2026-11-24). The caches' data are in block RAM and their tags in LUT RAM
+([ADR 0025](engineering/decisions/0025-multicore-caches-in-block-ram.md)); before that, the arrays were flip-flops
+and multiplexers, and even 512-byte caches took 114k LUT (8 KiB needed 514k).
 
 ## SD card
 
@@ -37,8 +37,8 @@ make ARCH=riscv CROSS_COMPILE=<buildroot output>/host/bin/riscv64-buildroot-linu
 linux/smp/board/build.sh <buildroot output> $K/arch/riscv/boot/Image <out dir> <out dir>/sd-smp.img
 ```
 
-**`HZ=100` is required.** With the board kernel's `HZ=250` (a tick every 80,000 cycles at 20 MHz) both harts spend
-all their time in the timer tick with these small caches, and the boot stops after the unaligned-access probe with
+**`HZ=100` was required with 512-byte caches.** With the board kernel's `HZ=250` (a tick every 80,000 cycles at
+20 MHz) both harts spent all their time in the timer tick with those small caches, and the boot stops after the unaligned-access probe with
 `watchdog: BUG: soft lockup - CPU#0 stuck`. Linux SMP on the RTL with the board's SoC parameters shows the same
 (`linux/smp/run.py`, 2026-11-24): `HZ=250` alone hangs, the board kernel's other options (`NO_HZ_IDLE`, the
 unaligned-access probe, the soft-lockup detector) with `HZ=100` reach `WALLY_SMP_PASS` after 495 M cycles.

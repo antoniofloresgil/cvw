@@ -61,7 +61,6 @@ module ahbmsicache import cvw::*; #(
   typedef enum logic [2:0] {EVICT, FLUSH, FILL, BYPASS, IFILL} transfer_t;
   // One independently tagged/stateful data bank per hart, not a shared cache.
   msi_t [NCORES-1:0][N_LINES-1:0] States;
-  logic [TAG-1:0] Tags[NCORES][N_LINES];
   state_t State;
   transfer_t Transfer;
   logic [HART_BITS-1:0] Owner, Snooper, FlushOwner, Supplier;
@@ -110,6 +109,8 @@ module ahbmsicache import cvw::*; #(
   // synopsys translate_on
 
   localparam MAX_WORDS = LINE_WORDS > IFILL_WORDS ? LINE_WORDS : IFILL_WORDS;
+  // The D lines an IFU line fill covers (it may be larger than a D line).
+  localparam ILINES = IFILL_WORDS > LINE_WORDS ? IFILL_WORDS / LINE_WORDS : 1;
   localparam BC = $clog2(MAX_WORDS+1);
   localparam IO = OFFSET+$clog2(IFILL_WORDS);
   logic [P.PA_BITS-1:0] SAddr, BAddr;
@@ -123,19 +124,46 @@ module ahbmsicache import cvw::*; #(
   logic IBufferValid, IFillClean;
   logic [P.PA_BITS-1:0] IBufferBase;
   logic [P.AHBW-1:0] IBuffer[IFILL_WORDS];
-  logic [P.PA_BITS-1:0] ProbeIAddr;
+  logic [ILINES-1:0][P.PA_BITS-1:0] ProbeIAddr;
+  // Tags: one LUT RAM per hart (multicore_tag_ram), read combinationally at
+  // the hart's local address, the controller's line and the IFU fill's lines;
+  // written in COMPLETE for the owner.
+  logic [NCORES-1:0][TAG-1:0] LocalTag, IndexTag;
+  logic [NCORES-1:0][ILINES-1:0][TAG-1:0] ITag;
+  for (genvar l = 0; l < ILINES; l++) begin : ifilllines
+    assign ProbeIAddr[l] = ((Addr >> IO) << IO) + (P.PA_BITS'(l) << LINE_OFFSET);
+  end
+  for (genvar h = 0; h < NCORES; h++) begin : tagrams
+    logic [ILINES+1:0][INDEX-1:0] ra;
+    logic [ILINES+1:0][TAG-1:0] rd;
+    assign ra[0] = CacheReadAddr[h][LINE_OFFSET +: INDEX];
+    assign ra[1] = Index;
+    for (genvar l = 0; l < ILINES; l++) begin : ilines
+      assign ra[2+l] = ProbeIAddr[l][LINE_OFFSET +: INDEX];
+      assign ITag[h][l] = rd[2+l];
+    end
+    assign LocalTag[h] = rd[0];
+    assign IndexTag[h] = rd[1];
+    multicore_tag_ram #(.DEPTH(N_LINES), .WIDTH(TAG), .READS(ILINES+2)) tags(.HCLK,
+      .we(HRESETn && State == COMPLETE && Prot[0] && Owner == HART_BITS'(h)), .wa(Index), .wd(Tag), .ra, .rd);
+  end
+  // synopsys translate_off
+  wire [TAG-1:0] Tags[NCORES][N_LINES];   // the flat view of tests/multicore's observers
+  for (genvar h = 0; h < NCORES; h++) begin : tagview
+    for (genvar l = 0; l < N_LINES; l++) begin : line
+      assign Tags[h][l] = tagrams[h].tags.Mem[l];
+    end
+  end
+  // synopsys translate_on
   always_comb begin
     IFillClean = 1'b1;
-    ProbeIAddr = '0;
     // Prefetch IFU words only when the ENTIRE I line is current in RAM.
     // Other D lines in a larger I region may have different dirty owners.
-    for (int w = 0; w < IFILL_WORDS; w++) begin
-      ProbeIAddr = ((Addr >> IO) << IO) + (P.PA_BITS'(w) << OFFSET);
+    for (int l = 0; l < ILINES; l++)
       for (int h = 0; h < NCORES; h++)
-        if (States[h][ProbeIAddr[LINE_OFFSET +: INDEX]] == M &&
-            Tags[h][ProbeIAddr[LINE_OFFSET +: INDEX]] == ProbeIAddr[P.PA_BITS-1:LINE_OFFSET+INDEX])
+        if (States[h][ProbeIAddr[l][LINE_OFFSET +: INDEX]] == M &&
+            ITag[h][l] == ProbeIAddr[l][P.PA_BITS-1:LINE_OFFSET+INDEX])
           IFillClean = 1'b0;
-    end
   end
   assign UseBurst = CACHE_BURSTS &&
     (Transfer == IFILL || (LINE_WORDS > 1 &&
@@ -169,7 +197,7 @@ module ahbmsicache import cvw::*; #(
         ProbeHit[h] = HRESETn &&
           multicore_cacheable(P, 64'(CacheReadAddr[h])) &&
           States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] != I &&
-          Tags[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == CacheReadAddr[h][P.PA_BITS-1:LINE_OFFSET+INDEX];
+          LocalTag[h] == CacheReadAddr[h][P.PA_BITS-1:LINE_OFFSET+INDEX];
         CacheReadHit[h] = LOCAL_READS && ProbeHit[h] && LocalReadValid[h];
         CacheReadData[h] = LOCAL_READS ? LocalReadData[h] : '0;
         CacheWriteHit[h] = LOCAL_WRITES && ProbeHit[h] &&
@@ -194,7 +222,7 @@ module ahbmsicache import cvw::*; #(
     Supplier = '0;
     Snooper = '0;
     for (int h = 0; h < NCORES; h++) begin
-      Hit[h] = States[h][Index] != I && Tags[h][Index] == Tag;
+      Hit[h] = States[h][Index] != I && IndexTag[h] == Tag;
       if (Hit[h] && HART_BITS'(h) != Owner) PeerHit = 1'b1;
       if (Hit[h] && !AnyHit) begin
         AnyHit = 1'b1;
@@ -268,7 +296,7 @@ module ahbmsicache import cvw::*; #(
           WriteData <= UpHWDATA;
           Strobes <= UpHWSTRB;
           if (Cacheable && Prot[0] && !Hit[Owner] && States[Owner][Index] == M) begin
-            SAddr <= {Tags[Owner][Index], Index, {LINE_OFFSET{1'b0}}};
+            SAddr <= {IndexTag[Owner], Index, {LINE_OFFSET{1'b0}}};
             SWData <= LineReadData[0];
             SStrb <= '1;
             SWrite <= 1'b1;
@@ -415,8 +443,7 @@ module ahbmsicache import cvw::*; #(
         COMPLETE: begin
           UpHRDATA <= Filled ? (Prot[0] ? FillLine[(int'(Addr) >> OFFSET) & (LINE_WORDS-1)] : FillData) :
             WordReadData;
-          if (Prot[0]) begin
-            Tags[Owner][Index] <= Tag;
+          if (Prot[0]) begin   // the owner's tag is written in tagrams
             if (Write) begin
               States[Owner][Index] <= M;
               for (int h = 0; h < NCORES; h++)

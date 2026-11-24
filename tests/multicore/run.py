@@ -79,8 +79,9 @@ def main():
         for parent, dependencies in {
             'src/ebu/ahbmulticore.sv': ('src/ebu/corebus_contract.sv', 'src/ebu/multicore_reservations.sv',
                                         'src/ebu/multicore_icache_bank.sv'),
-            'src/ebu/ahbmsicache.sv': ('src/ebu/multicore_dcache_data.sv',),
-            'src/ebu/multicore_icache_bank.sv': ('src/generic/mem/ram2p1r1wbe.sv', 'src/generic/flop/flopen.sv'),
+            'src/ebu/ahbmsicache.sv': ('src/ebu/multicore_dcache_data.sv', 'src/ebu/multicore_tag_ram.sv'),
+            'src/ebu/multicore_icache_bank.sv': ('src/generic/mem/ram2p1r1wbe.sv', 'src/generic/flop/flopen.sv',
+                                                 'src/ebu/multicore_tag_ram.sv'),
             'src/ebu/multicore_dcache_data.sv': ('src/generic/mem/ram2p2rwbe.sv',),
         }.items():   # in dependency order: a dependency added here is itself looked up below
             if root / parent in sources:
