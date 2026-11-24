@@ -28,7 +28,9 @@
 
 import cvw::*;
 
-module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
+// The SoC's multicore parameters (config/shared/multicore-config.vh), default one hart: the build sets them through
+// SOCGENERICS (fpga/generator/Makefile), e.g. "NCORES=2 PRIVATE_DCACHE=1'b1" (docs/fpga-multicore.md)
+module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0, `CVW_MULTICORE_PARAMS(64))
   (input logic           default_100mhz_clk,
    input logic           resetn,
    //input logic           south_reset,
@@ -281,9 +283,26 @@ module fpgaTop #(parameter logic RVVI_SYNTH_SUPPORTED = 0)
 
   `include "parameter-defs.vh"
 
+  // JTAG debug (DEBUG_SUPPORTED) through the FPGA's own TAP, the USB port that configures it: BSCANE2 USER3 is the
+  // DTM's dtmcs and USER4 its dmi (src/debug/dtm.sv, BSCAN; OpenOCD: fpga/debug/openocd-nexysvideo.cfg)
+  logic BscanTCK, BscanTDI, BscanTDO, Sel3, Sel4, Capture, Shift, Update;
+  if (P.DEBUG_SUPPORTED) begin : bscan
+    logic RawTCK;
+    BSCANE2 #(.JTAG_CHAIN(3)) user3(.CAPTURE(Capture), .DRCK(), .RESET(), .RUNTEST(), .SEL(Sel3), .SHIFT(Shift),
+      .TCK(RawTCK), .TDI(BscanTDI), .TMS(), .UPDATE(Update), .TDO(BscanTDO));
+    BSCANE2 #(.JTAG_CHAIN(4)) user4(.CAPTURE(), .DRCK(), .RESET(), .RUNTEST(), .SEL(Sel4), .SHIFT(),
+      .TCK(), .TDI(), .TMS(), .UPDATE(), .TDO(BscanTDO));
+    BUFG tckbuf(.I(RawTCK), .O(BscanTCK));
+  end else begin : nobscan
+    assign {BscanTCK, BscanTDI, Sel3, Sel4, Capture, Shift, Update} = '0;
+  end
+
   // Wally
-  wallypipelinedsoc  #(P)
+  wallypipelinedsoc  #(.P(P), `CVW_MULTICORE_CONNECT, .DEBUG_BSCAN(P.DEBUG_SUPPORTED))
   wallypipelinedsoc(.clk(CPUCLK), .reset_ext(bus_struct_reset), .reset(),
+                    .TCK(BscanTCK), .TMS(1'b0), .TDI(BscanTDI), .TDO(BscanTDO),
+                    .BscanDTMCS(Sel3), .BscanDMI(Sel4), .BscanCapture(Capture), .BscanShift(Shift),
+                    .BscanUpdate(Update),
                     .HRDATAEXT, .HREADYEXT, .HRESPEXT, .HSELEXT,
                     .HCLK(HCLKOpen), .HRESETn(HRESETnOpen),
                     .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,

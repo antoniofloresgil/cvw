@@ -14,7 +14,7 @@
 
 `timescale 1ns/1ps
 
-module openocd_tb #(parameter int unsigned NHARTS = 1);
+module openocd_tb #(parameter int unsigned NHARTS = 1, parameter bit BSCAN = 0);  // BSCAN: through xilinx_tap.sv
   import cvw::*;
   `include "config.vh"
   `include "parameter-defs.vh"
@@ -24,7 +24,7 @@ module openocd_tb #(parameter int unsigned NHARTS = 1);
 
   logic        clk, reset_ext, reset;
   bit          TCK, TMS, TDI;
-  logic        TDO;
+  logic        TDO, SocTDO, Sel3, Sel4, Capture, Shift, Update;
   logic [31:0] GPIOOUT, GPIOEN;
   logic        HSELEXT, HCLK, HRESETn, HWRITE, HMASTLOCK, HREADY;
   logic [P.PA_BITS-1:0] HADDR;
@@ -36,12 +36,23 @@ module openocd_tb #(parameter int unsigned NHARTS = 1);
   logic        UARTSout, SPIOut, SPICLK, SDCCmd, SDCCLK;
   int          Port, Cycle;
 
-  wallypipelinedsoc #(.P(P), .NCORES(NHARTS)) dut(.clk, .reset_ext, .reset, .ExternalStall(1'b0),
+  wallypipelinedsoc #(.P(P), .NCORES(NHARTS), .DEBUG_BSCAN(BSCAN)) dut(.clk, .reset_ext, .reset, .ExternalStall(1'b0),
     .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT,
     .HCLK, .HRESETn, .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT,
     .HTRANS, .HMASTLOCK, .HREADY, .GPIOIN('0), .GPIOOUT, .GPIOEN,
     .UARTSin(1'b1), .UARTSout, .SPIIn(1'b0), .SPIOut, .SPICS, .SPICLK, .SDCIn(1'b1), .SDCCmd,
-    .SDCCS, .SDCCLK, .PWMGPIO, .TCK, .TMS, .TDI, .TDO);
+    .SDCCS, .SDCCLK, .PWMGPIO, .TCK, .TMS(BSCAN ? 1'b0 : TMS), .TDI, .TDO(SocTDO),
+    .BscanDTMCS(Sel3), .BscanDMI(Sel4), .BscanCapture(Capture), .BscanShift(Shift), .BscanUpdate(Update));
+
+  // With BSCAN the FPGA's TAP model is the only TAP on the chain, as on the board
+  if (BSCAN) begin : fpgatap
+    logic XTDO;
+    xilinx_tap tap(.TCK, .TMS, .TDI, .TDO(XTDO), .Sel3, .Sel4, .Capture, .Shift, .Update, .UserTDO(SocTDO));
+    assign TDO = XTDO;
+  end else begin : socpins
+    assign {Sel3, Sel4, Capture, Shift, Update} = '0;
+    assign TDO = SocTDO;
+  end
 
   always begin
     clk = 1'b1; #5; clk = 1'b0; #5;

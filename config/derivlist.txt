@@ -67,6 +67,33 @@ EXT_MEM_RANGE       64'h07FFFFFF
 deriv fpganexysvideo fpga
 EXT_MEM_RANGE       64'h1FFFFFFF
 
+# Nexys Video (Vivado) with the optional PMU extensions, for the board run of
+# Sscofpmf, Smcntrpmf and Smcdeleg/Ssccfg (make nexysvideo VIVADOCONFIG=fpganexysvideopmu).
+deriv fpganexysvideopmu fpganexysvideo
+SSCOFPMF_SUPPORTED  1
+SMCNTRPMF_SUPPORTED 1
+SMCDELEG_SUPPORTED  1
+
+# The same with the JTAG debug port (through the FPGA's TAP, BSCANE2 USER3/USER4) and the E-Trace instruction
+# trace with its RAM sink, for the board run of debug and trace (make nexysvideo VIVADOCONFIG=fpganexysvideodbg).
+deriv fpganexysvideodbg fpganexysvideopmu
+DEBUG_SUPPORTED     1
+DEBUG_TRIGGERS      32'd4
+TRACE_SUPPORTED     1
+
+# Nexys Video (Vivado) with two harts and the SoC's multicore memory system (private MSI caches, pipelined
+# cache-line bursts): the core's own caches and bursts off, software PTE A/D updates, no CMOs (multicore-config.vh).
+# make nexysvideo VIVADOCONFIG=fpganexysvideosmp NHARTS=2 SOCGENERICS="NCORES=2 PRIVATE_DCACHE=1 ..." (docs/fpga-multicore.md)
+deriv fpganexysvideosmp fpganexysvideo
+DCACHE_SUPPORTED    0
+ICACHE_SUPPORTED    0
+BURST_EN            0
+SVADU_SUPPORTED     0
+SVPBMT_SUPPORTED    0
+ZICBOM_SUPPORTED    0
+ZICBOZ_SUPPORTED    0
+ZICBOP_SUPPORTED    0
+
 # Open-source flow, RV64 Linux, Wally initializes the DDR3: the LiteDRAM control
 # registers sit in an uncached I/O window right above the 512 MiB of DDR3.
 deriv fpganexysvideoopen fpganexysvideo

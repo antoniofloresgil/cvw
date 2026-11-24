@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-/* Linux/SBI Sscofpmf integration: overflow samples and S/U event filtering. */
+/* Linux/SBI Sscofpmf integration: overflow samples and S/U event filtering.
+ * Built as the init of the RTL image by delegation_build.py; with -DWALLY_PMU_BOARD it is an ordinary program for a
+ * running system (the board): perf and the workload are PERF_PATH and WORKLOAD_PATH, and it exits with 0 or 1. */
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
@@ -17,11 +19,21 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#ifndef PERF_PATH
+#define PERF_PATH "/perf"
+#endif
+#ifndef WORKLOAD_PATH
+#define WORKLOAD_PATH "/workload"
+#endif
+
 static volatile uint64_t data[64];
 
 static void fail(const char *where) {
     printf("WALLY_PMU_FAIL %s errno=%d\n", where, errno);
     fflush(stdout);
+#ifdef WALLY_PMU_BOARD
+    exit(1);
+#endif
     for (;;) pause();
 }
 
@@ -101,10 +113,10 @@ static void check_fixed_filters(void) {
         instructions_user <= instructions_kernel * 4)
         fail("fixed-mode-filter");
 
-    char *user_args[] = {"/perf", "stat", "-e", "cycles:u,instructions:u",
-                         "--", "/workload", NULL};
-    char *kernel_args[] = {"/perf", "stat", "-e", "cycles:k,instructions:k",
-                           "--", "/workload", NULL};
+    char *user_args[] = {PERF_PATH, "stat", "-e", "cycles:u,instructions:u",
+                         "--", WORKLOAD_PATH, NULL};
+    char *kernel_args[] = {PERF_PATH, "stat", "-e", "cycles:k,instructions:k",
+                           "--", WORKLOAD_PATH, NULL};
     run_perf(user_args);
     run_perf(kernel_args);
     puts("WALLY_PMU_FIXED_FILTER_PASS cycles_and_instructions");
@@ -166,7 +178,7 @@ static int run_perf(char *const argv[]) {
     pid_t child = fork();
     if (child < 0) fail("fork");
     if (child == 0) {
-        execv("/perf", argv);
+        execv(PERF_PATH, argv);
         _exit(127);
     }
     int status = 0;
@@ -202,6 +214,7 @@ static unsigned recorded_samples(void) {
 }
 
 int main(void) {
+#ifndef WALLY_PMU_BOARD
     int console = open("/dev/console", O_RDWR);
     if (console >= 0) {
         dup2(console, STDOUT_FILENO);
@@ -211,6 +224,7 @@ int main(void) {
         mount("sysfs", "/sys", "sysfs", 0, NULL) ||
         mount("tmpfs", "/tmp", "tmpfs", 0, "size=8m"))
         fail("mount");
+#endif
     puts("WALLY_PMU_SAMPLING_BEGIN");
     fflush(stdout);
 
@@ -231,14 +245,17 @@ int main(void) {
     printf("WALLY_PMU_SAMPLE samples=%u\n", samples);
     fflush(stdout);
 
-    char *stat_args[] = {"/perf", "stat", "-e", "branches:u,branches:k", "--", "/workload", NULL};
+    char *stat_args[] = {PERF_PATH, "stat", "-e", "branches:u,branches:k", "--", WORKLOAD_PATH, NULL};
     run_perf(stat_args);
-    char *record_args[] = {"/perf", "record", "-e", "branches:u", "-c", "1024",
-                           "-o", "/tmp/perf.data", "--", "/workload", NULL};
+    char *record_args[] = {PERF_PATH, "record", "-e", "branches:u", "-c", "1024",
+                           "-o", "/tmp/perf.data", "--", WORKLOAD_PATH, NULL};
     run_perf(record_args);
     unsigned file_samples = recorded_samples();
     printf("WALLY_PMU_SAMPLING_PASS samples=%u record_samples=%u\n", samples, file_samples);
     puts("WALLY_PMU_PASS sampling_and_filtering");
     fflush(stdout);
+#ifdef WALLY_PMU_BOARD
+    return 0;
+#endif
     for (;;) pause();
 }

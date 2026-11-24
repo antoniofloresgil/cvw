@@ -13,6 +13,11 @@
 //          sticky until dmireset, as the specification asks; dtmcs.idle tells the debugger how
 //          many Run-Test/Idle cycles to leave after each request.
 //
+//          With BSCAN the TAP is the FPGA's own (Xilinx BSCANE2, the JTAG port that configures the device):
+//          dtmcs and dmi are its USER3 and USER4 data registers (OpenOCD: riscv set_ir dtmcs 0x22, dmi 0x23),
+//          whose select, capture, shift and update outputs replace this TAP's state and instruction
+//          register; TCK and TDI are then the BSCANE2's (TMS is 0), and TDO, now DR[0] itself, goes back to both.
+//
 // A component of the CORE-V-WALLY configurable RISC-V project.
 // https://github.com/openhwfoundation/cvw
 //
@@ -21,12 +26,15 @@
 
 module dtm #(
   parameter logic [31:0] IDCODE = 32'h0000_0001,  // version, part number, manufacturer, 1
-  parameter int unsigned ABITS = 7                // DMI address bits
+  parameter int unsigned ABITS = 7,               // DMI address bits
+  parameter bit          BSCAN = 0                // 1: the FPGA's TAP drives the data registers (see above)
 )(
   // JTAG
   input  logic             TRSTn,       // asynchronous TAP reset: the power-on reset
   input  logic             TCK, TMS, TDI,
   output logic             TDO,
+  // FPGA TAP (BSCAN): the selects of USER3 (dtmcs) and USER4 (dmi) and its Capture/Shift/Update-DR
+  input  logic             BscanDTMCS, BscanDMI, BscanCapture, BscanShift, BscanUpdate,
   // DMI, in the system clock domain
   input  logic             clk,
   input  logic             reset,
@@ -56,6 +64,8 @@ module dtm #(
   logic [31:0]      ReqData, RespData, NewData, DTMCS;
   logic [1:0]       ReqOp, NewOp;
   logic             RespError, DTMCSWrite, DMIUpdate, DMICapture, PendingD;
+  logic [4:0]       DRSel;                    // the instruction whose data register is in use
+  logic             CaptureDR, ShiftDR, UpdateDR, TDOReg;
 
   ///////////////////////////////////////////////////////////////
   // TAP controller (IEEE 1149.1)
@@ -102,12 +112,26 @@ module dtm #(
   // Data registers: one shift register, LSB first; a register of n bits uses DR[n-1:0]
   ///////////////////////////////////////////////////////////////
 
+  if (BSCAN) begin : bscan
+    assign DRSel     = BscanDTMCS ? IR_DTMCS : BscanDMI ? IR_DMI : 5'h1f;
+    assign CaptureDR = BscanCapture & (BscanDTMCS | BscanDMI);
+    assign ShiftDR   = BscanShift & (BscanDTMCS | BscanDMI);
+    assign UpdateDR  = BscanUpdate & (BscanDTMCS | BscanDMI);
+    assign TDO       = DR[0];                 // the FPGA's TAP registers it on the falling edge of TCK
+  end else begin : tap
+    assign DRSel     = IR;
+    assign CaptureDR = State == CAPTURE_DR;
+    assign ShiftDR   = State == SHIFT_DR;
+    assign UpdateDR  = State == UPDATE_DR;
+    assign TDO       = TDOReg;
+  end
+
   // dtmcs: errinfo 0 (not implemented), dmihardreset, dmireset, idle 2, dmistat, abits, version 1
   assign DTMCS = {11'b0, 3'b0, 1'b0, 1'b0, 1'b0, 3'd2, Stat, 6'(ABITS), 4'd1};
   assign {NewAddr, NewData, NewOp} = DR;
 
   always_comb
-    case (IR)
+    case (DRSel)
       IR_IDCODE: Capture = DMIW'(IDCODE);
       IR_DTMCS:  Capture = DMIW'(DTMCS);
       // Address of the last request, its read data, and the status (busy while it runs)
@@ -117,9 +141,9 @@ module dtm #(
 
   always_ff @(posedge TCK, negedge TRSTn)
     if (~TRSTn) DR <= '0;
-    else if (State == CAPTURE_DR) DR <= Capture;
-    else if (State == SHIFT_DR)
-      case (IR)
+    else if (CaptureDR) DR <= Capture;
+    else if (ShiftDR)
+      case (DRSel)
         IR_IDCODE, IR_DTMCS: DR <= DMIW'({TDI, DR[31:1]});
         IR_DMI:              DR <= {TDI, DR[DMIW-1:1]};
         default:             DR <= DMIW'(TDI);
@@ -127,10 +151,10 @@ module dtm #(
 
   // TDO changes on the falling edge of TCK
   always_ff @(negedge TCK, negedge TRSTn)
-    if (~TRSTn)                 TDO <= 1'b0;
-    else if (State == SHIFT_IR) TDO <= IRShift[0];
-    else if (State == SHIFT_DR) TDO <= DR[0];
-    else                        TDO <= 1'b0;
+    if (~TRSTn)                 TDOReg <= 1'b0;
+    else if (State == SHIFT_IR) TDOReg <= IRShift[0];
+    else if (State == SHIFT_DR) TDOReg <= DR[0];
+    else                        TDOReg <= 1'b0;
 
   ///////////////////////////////////////////////////////////////
   // DMI requests in the TCK domain
@@ -138,9 +162,9 @@ module dtm #(
 
   synchronizer respsync(.clk(TCK), .d(RespToggle), .q(RespToggleSync));
   assign Pending    = ReqToggle != RespToggleSync;
-  assign DTMCSWrite = State == UPDATE_DR && IR == IR_DTMCS;
-  assign DMICapture = State == CAPTURE_DR && IR == IR_DMI;
-  assign DMIUpdate  = State == UPDATE_DR && IR == IR_DMI && (NewOp == 2'd1 || NewOp == 2'd2);
+  assign DTMCSWrite = UpdateDR && DRSel == IR_DTMCS;
+  assign DMICapture = CaptureDR && DRSel == IR_DMI;
+  assign DMIUpdate  = UpdateDR && DRSel == IR_DMI && (NewOp == 2'd1 || NewOp == 2'd2);
 
   always_ff @(posedge TCK, negedge TRSTn)
     if (~TRSTn) begin

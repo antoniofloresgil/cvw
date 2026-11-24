@@ -1,0 +1,41 @@
+/* Nexys Video with two harts and the multicore memory system (config fpganexysvideosmp, docs/fpga-multicore.md):
+ * no Svadu, Svpbmt or cache-block operations, the second hart's interrupts at the CLINT and the PLIC. */
+/include/ "wally-nexysvideo.dts"
+
+/ {
+  model = "CORE-V Wally, two harts, on Digilent Nexys Video";
+
+  cpus {
+    cpu@0 {
+      riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "sstc", "svade", "svinval", "svnapot", "zba", "zbb", "zbc", "zbs", "zca", "zcb", "zcd", "zfa", "zfh", "zkn", "zkt", "zicntr", "zicond", "zicsr", "zifencei", "zihpm";
+      /delete-property/ riscv,cboz-block-size;
+      /delete-property/ riscv,cbom-block-size;
+    };
+
+    cpu@1 {
+      device_type = "cpu";
+      reg = <0x01>;
+      status = "okay";
+      compatible = "riscv";
+      riscv,isa-base = "rv64i";
+      riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "sstc", "svade", "svinval", "svnapot", "zba", "zbb", "zbc", "zbs", "zca", "zcb", "zcd", "zfa", "zfh", "zkn", "zkt", "zicntr", "zicond", "zicsr", "zifencei", "zihpm";
+      mmu-type = "riscv,sv48";
+
+      cpu1_intc: interrupt-controller {
+        #interrupt-cells = <0x01>;
+        interrupt-controller;
+        compatible = "riscv,cpu-intc";
+      };
+    };
+  };
+
+  soc {
+    plic@c000000 {
+      interrupts-extended = <&cpu_intc 0x0b &cpu_intc 0x09 &cpu1_intc 0x0b &cpu1_intc 0x09>;
+    };
+
+    clint@2000000 {
+      interrupts-extended = <&cpu_intc 0x03 &cpu_intc 0x07 &cpu1_intc 0x03 &cpu1_intc 0x07>;
+    };
+  };
+};

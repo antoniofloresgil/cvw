@@ -151,10 +151,11 @@ def read_program(elf, xlen):
 # The packets
 ###########################################################################################
 
-def split_packets(raw):
+def split_packets(raw, full_buffer=False):
     """Split a te_inst byte stream into packet payloads: a header byte, whose low 5 bits are the
     payload length, then the payload.  Bytes 0 between packets are idle bytes (the RAM sink fills
-    its last word with them)."""
+    its last word with them).  With full_buffer (a sink that stopped when its buffer was full), a
+    last packet cut short by the end of the buffer is dropped instead of being an error."""
     packets, i = [], 0
     while i < len(raw):
         if raw[i] == 0:
@@ -162,6 +163,8 @@ def split_packets(raw):
             continue
         end = i + 1 + (raw[i] & 0x1F)
         if end > len(raw):
+            if full_buffer:
+                break
             raise DecodeError(f"the last packet, at byte {i}, is cut short")
         packets.append(raw[i:end])
         i = end
@@ -404,10 +407,10 @@ class Decoder:
         self.next_pc(self.pc)
 
 
-def decode(raw, program, xlen):
+def decode(raw, program, xlen, full_buffer=False):
     """The program counters that the packets in the byte stream raw describe."""
     decoder = Decoder(program, xlen)
-    for n, payload in enumerate(split_packets(raw)):
+    for n, payload in enumerate(split_packets(raw, full_buffer)):
         try:
             decoder.add(Packet(payload[1:], xlen))
         except DecodeError as e:
@@ -443,13 +446,17 @@ def read_packets(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--packets", required=True, help="the trace: +EtracePackets= hex file, or raw bytes")
-    parser.add_argument("--elf", required=True, help="the program that ran")
+    parser.add_argument("--elf", required=True, action="append",
+                        help="the program that ran (repeat it for a kernel and the programs it runs)")
     parser.add_argument("--xlen", type=int, choices=(32, 64), required=True)
     parser.add_argument("--csv", help="instruction trace interface CSV (+EtraceCsv=): check against it")
     parser.add_argument("--print", action="store_true", help="print the program counters")
+    parser.add_argument("--full-buffer", action="store_true",
+                        help="the sink stopped with its buffer full: drop a last packet cut short")
     args = parser.parse_args()
     try:
-        pcs = decode(read_packets(args.packets), read_program(args.elf, args.xlen), args.xlen)
+        pcs = decode(read_packets(args.packets), {pc: instr for elf in args.elf for pc, instr in read_program(elf, args.xlen).items()},
+                     args.xlen, args.full_buffer)
     except DecodeError as e:
         sys.exit(f"FAIL: {e}")
     if args.print:
