@@ -27,6 +27,7 @@ module ahbmulticore import cvw::*; #(
   // Bank probes use buffered physical addresses. Local M stores broadcast
   // their commit to the reservation monitor and every instruction bank.
   output logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr,
+  output logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddrNext,  // what CacheReadAddr holds next cycle (block-RAM reads)
   input  logic [NCORES-1:0] CacheReadHit, CacheWriteHit,
   output logic [NCORES-1:0] CacheWriteCommit,
   output logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData,
@@ -77,6 +78,10 @@ module ahbmulticore import cvw::*; #(
   logic [NCORES-1:0] LocalReply, LocalBlocked, LocalStoreConflict;
   logic [NCORES-1:0][P.AHBW-1:0] LocalData;
   assign CacheReadAddr = Addr;
+  // Addr takes a hart's address when its request is accepted (below).
+  for (genvar h = 0; h < NCORES; h++) begin : nextaddr
+    assign CacheReadAddrNext[h] = CoreHREADY[h] && CoreHTRANS[h][1] ? CoreHADDR[h] : Addr[h];
+  end
   assign IFillRequest = PRIVATE_ICACHE && !Write[NextOwner] && !Prot[NextOwner][0] &&
     cacheable(Addr[NextOwner]);
   assign IFillLast = !IFillActive || int'(IBeat) == ICACHE_LINE_WORDS-1;
@@ -113,7 +118,7 @@ module ahbmulticore import cvw::*; #(
   logic [NCORES-1:0][P.AHBW-1:0] ICacheData;
   if (PRIVATE_ICACHE) begin : icache
     multicore_icache_bank #(.P(P), .NCORES(NCORES), .WORDS(ICACHE_WORDS), .LINE_WORDS(ICACHE_LINE_WORDS)) banks(
-      .HCLK, .HRESETn, .ProbeAddr(Addr), .ProbeHit(ICacheHit), .ProbeData(ICacheData),
+      .HCLK, .HRESETn, .ProbeAddr(Addr), .ProbeAddrNext(CacheReadAddrNext), .ProbeHit(ICacheHit), .ProbeData(ICacheData),
       .LocalStoreCommit(CacheWriteCommit), .LocalStoreAddr(Addr),
       .GlobalWrite(DataPhase && HREADY && !HRESP && Write[Owner]), .GlobalAddr(Addr[Owner]),
       .FillInvalidate((!DataPhase && Found && HREADY && IFillRequest) ||

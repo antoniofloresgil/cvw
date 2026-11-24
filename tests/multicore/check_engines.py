@@ -22,7 +22,8 @@ def main():
     summary = work / 'results.json'
     summary.unlink(missing_ok=True)
     sources = [root / 'src/cvw.sv', root / 'tests/multicore/engines_tb.sv',
-               *(root / 'src/ebu' / name for name in ('multicore_reservations.sv', 'multicore_icache_bank.sv', 'multicore_dcache_data.sv'))]
+               *(root / 'src/ebu' / name for name in ('multicore_reservations.sv', 'multicore_icache_bank.sv', 'multicore_dcache_data.sv')),
+               *(root / 'src/generic' / name for name in ('mem/ram2p1r1wbe.sv', 'mem/ram2p2rwbe.sv', 'flop/flopen.sv'))]
     inputs = [*sources, Path(__file__).resolve(), *sorted((root / 'config/shared').glob('*.vh')),
               *(root / 'config' / cfg / 'config.vh' for cfg in ('rv32gc', 'rv64gc'))]
     result = {'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),

@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-// Combinational-read instruction storage. The caller owns refill sequencing.
+// Instruction storage of every hart. The caller owns refill sequencing.
 // Reset/invalidation clears validity only; tags/data are deliberately unreset.
+// Each hart's words are one block RAM with a read port and a write port
+// (ram2p1r1wbe). The read is registered: ProbeAddrNext is the address the
+// hart's request register is about to hold, ProbeAddr the one it holds, whose
+// word ProbeData returns. Tags and valid bits stay in flip-flops, read
+// combinationally as before. A probe whose word was refilled in the cycle its
+// read was issued misses for that cycle (block RAM leaves the read undefined).
 module multicore_icache_bank import cvw::*; #(
   parameter cvw_t P,
   parameter int unsigned NCORES = 2,
@@ -8,7 +14,7 @@ module multicore_icache_bank import cvw::*; #(
   parameter int unsigned LINE_WORDS = 1
 )(
   input logic HCLK, HRESETn,
-  input logic [NCORES-1:0][P.PA_BITS-1:0] ProbeAddr,
+  input logic [NCORES-1:0][P.PA_BITS-1:0] ProbeAddr, ProbeAddrNext,
   output logic [NCORES-1:0] ProbeHit,
   output logic [NCORES-1:0][P.AHBW-1:0] ProbeData,
   input logic [NCORES-1:0] LocalStoreCommit,
@@ -26,16 +32,25 @@ module multicore_icache_bank import cvw::*; #(
   localparam INDEX = $clog2(N_LINES);
   localparam WORD_INDEX = $clog2(WORDS);
   localparam TAG = P.PA_BITS - LINE_OFFSET - INDEX;
+  localparam HART_BITS = NCORES > 1 ? $clog2(NCORES) : 1;
   logic [NCORES-1:0][N_LINES-1:0] Valid;
   logic [TAG-1:0] Tags[NCORES][N_LINES];
-  logic [P.AHBW-1:0] Lines[NCORES][WORDS];
+  logic [NCORES-1:0] WriteWord, Collision;
 
   for (genvar h = 0; h < NCORES; h++) begin : probes
-    assign ProbeData[h] = Lines[h][ProbeAddr[h][OFFSET +: WORD_INDEX]];
-    assign ProbeHit[h] = multicore_cacheable(P, 64'(ProbeAddr[h])) &&
+    assign WriteWord[h] = FillBeat && !GlobalWrite && FillOwner == HART_BITS'(h);
+    ram2p1r1wbe #(.DEPTH(WORDS), .WIDTH(P.AHBW)) ram(.clk(HCLK),
+      .ce1(1'b1), .ra1(ProbeAddrNext[h][OFFSET +: WORD_INDEX]), .rd1(ProbeData[h]),
+      .ce2(1'b1), .we2(HRESETn && WriteWord[h]), .wa2(FillWordAddr[OFFSET +: WORD_INDEX]), .bwe2('1), .wd2(FillData));
+    assign ProbeHit[h] = multicore_cacheable(P, 64'(ProbeAddr[h])) && !Collision[h] &&
       Valid[h][ProbeAddr[h][LINE_OFFSET +: INDEX]] &&
       Tags[h][ProbeAddr[h][LINE_OFFSET +: INDEX]] == ProbeAddr[h][P.PA_BITS-1:LINE_OFFSET+INDEX];
   end
+  always_ff @(posedge HCLK)
+    for (int h = 0; h < NCORES; h++)
+      Collision[h] <= WriteWord[h] &&
+        FillWordAddr[OFFSET +: WORD_INDEX] == ProbeAddrNext[h][OFFSET +: WORD_INDEX];
+
   always_ff @(posedge HCLK) begin
     if (!HRESETn) Valid <= '0;
     else begin
@@ -54,7 +69,6 @@ module multicore_icache_bank import cvw::*; #(
       end else if (FillBeat) begin
         Valid[FillOwner][FillAddr[LINE_OFFSET +: INDEX]] <= FillLast;
         Tags[FillOwner][FillAddr[LINE_OFFSET +: INDEX]] <= FillAddr[P.PA_BITS-1:LINE_OFFSET+INDEX];
-        Lines[FillOwner][FillWordAddr[OFFSET +: WORD_INDEX]] <= FillData;
       end
     end
   end

@@ -30,7 +30,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
 
   localparam bit MSI_ENABLED = NCORES > 1 && PRIVATE_DCACHE;
 
-  logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr;
+  logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr, CacheReadAddrNext;
   logic [NCORES-1:0][P.AHBW-1:0] CacheReadData;
   logic [NCORES-1:0] CacheReadHit, CacheWriteHit, CacheWriteCommit;
   logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData;
@@ -56,6 +56,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
     assign CoreSCFail[0] = 1'b0;
     assign BusHOWNER = '0;
     assign CacheReadAddr = '0;
+    assign CacheReadAddrNext = '0;
     assign CacheWriteCommit = '0;
     assign CacheWriteData = '0;
     assign CacheWriteStrb = '0;
@@ -72,6 +73,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK, .HRDATA, .HREADY, .HRESP);
     assign {BusHADDR, BusHWDATA, BusHWSTRB, BusHWRITE, BusHSIZE, BusHBURST, BusHPROT, BusHTRANS, BusHMASTLOCK, BusHOWNER} = '0;
     assign CacheReadAddr = '0;
+    assign CacheReadAddrNext = '0;
     assign CacheWriteCommit = '0;
     assign CacheWriteData = '0;
     assign CacheWriteStrb = '0;
@@ -81,7 +83,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
       .ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS), .DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
       .LOCAL_DCACHE_READS(MSI_ENABLED && LOCAL_DCACHE_READS),
       .LOCAL_DCACHE_WRITES(MSI_ENABLED && LOCAL_DCACHE_WRITES)) bus(
-      .ReservationClear('0), .CacheReadAddr, .CacheReadHit, .CacheReadData,
+      .ReservationClear('0), .CacheReadAddr, .CacheReadAddrNext, .CacheReadHit, .CacheReadData,
       .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb, .InstrMiss,
       .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHSIZE,
       .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHMASTLOCK, .CoreHATOMIC, .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
@@ -95,7 +97,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
     ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(PRIVATE_DCACHE_WORDS), .LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
       .IFILL_WORDS(PRIVATE_ICACHE ? PRIVATE_ICACHE_LINE_WORDS : 1),
       .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
-      .CacheReadAddr, .CacheReadHit, .CacheReadData,
+      .CacheReadAddr, .CacheReadAddrNext, .CacheReadHit, .CacheReadData,
       .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb, .DataMiss,
       .HCLK, .HRESETn, .UpHOWNER(BusHOWNER),
       .UpHADDR(BusHADDR), .UpHWDATA(BusHWDATA), .UpHWSTRB(BusHWSTRB),

@@ -77,12 +77,15 @@ def main():
     def build_test(top, config, sources, name, parameters=()):
         sources = list(sources)
         for parent, dependencies in {
-            'ahbmulticore.sv': ('corebus_contract.sv', 'multicore_reservations.sv', 'multicore_icache_bank.sv'),
-            'ahbmsicache.sv': ('multicore_dcache_data.sv',),
-        }.items():
-            if root / 'src/ebu' / parent in sources:
+            'src/ebu/ahbmulticore.sv': ('src/ebu/corebus_contract.sv', 'src/ebu/multicore_reservations.sv',
+                                        'src/ebu/multicore_icache_bank.sv'),
+            'src/ebu/ahbmsicache.sv': ('src/ebu/multicore_dcache_data.sv',),
+            'src/ebu/multicore_icache_bank.sv': ('src/generic/mem/ram2p1r1wbe.sv', 'src/generic/flop/flopen.sv'),
+            'src/ebu/multicore_dcache_data.sv': ('src/generic/mem/ram2p2rwbe.sv',),
+        }.items():   # in dependency order: a dependency added here is itself looked up below
+            if root / parent in sources:
                 for dependency in dependencies:
-                    path = root / 'src/ebu' / dependency
+                    path = root / dependency
                     if path not in sources:
                         sources.append(path)
         if top in ('msi_tb', 'msifabric_tb'):

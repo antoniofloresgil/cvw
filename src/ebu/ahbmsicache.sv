@@ -20,6 +20,7 @@ module ahbmsicache import cvw::*; #(
 )(
   input  logic HCLK, HRESETn,
   input  logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr,
+  input  logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddrNext,  // the address CacheReadAddr holds next cycle
   output logic [NCORES-1:0] CacheReadHit, CacheWriteHit,
   input  logic [NCORES-1:0] CacheWriteCommit,
   input  logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData,
@@ -78,22 +79,28 @@ module ahbmsicache import cvw::*; #(
   logic [3:0] Prot;
   logic [NCORES-1:0] Hit;
 
-  logic [NCORES-1:0][WORD_INDEX-1:0] LocalWordIndex;
+  logic [NCORES-1:0][WORD_INDEX-1:0] LocalWordIndexNext;
   logic [NCORES-1:0][P.AHBW-1:0] LocalReadData;
+  logic [NCORES-1:0] LocalReadValid;
   logic [HART_BITS-1:0] WordReadOwner, LineReadOwner;
   logic [P.AHBW-1:0] WordReadData, LineReadData[LINE_WORDS];
+  logic [P.PA_BITS-1:0] AddrNext;
   assign WordReadOwner = State == COMPLETE ? Owner : Supplier;
   assign LineReadOwner = State == LOOKUP ? Owner : State == SNOOP ? Snooper :
     Transfer == EVICT ? Owner : FlushOwner;
   for (genvar h = 0; h < NCORES; h++) begin : dataindices
-    assign LocalWordIndex[h] = CacheReadAddr[h][OFFSET +: WORD_INDEX];
+    assign LocalWordIndexNext[h] = CacheReadAddrNext[h][OFFSET +: WORD_INDEX];
   end
+  // The block RAM reads the line of the address Addr holds next cycle; every
+  // read of the data below happens from LOOKUP on, when Addr holds it, and the
+  // owner's line is written in COMPLETE, where Addr does not change.
+  assign AddrNext = (State == IDLE || State == REPLY) && UpHTRANS[1] ? UpHADDR : Addr;
   multicore_dcache_data #(.P(P), .NCORES(NCORES), .WORDS(WORDS), .LINE_WORDS(LINE_WORDS)) data_bank(
-    .HCLK, .HRESETn, .LocalWordIndex, .LocalReadData,
-    .WordReadOwner, .WordReadIndex(WordIndex), .WordReadData, .LineReadOwner, .LineReadIndex(Index), .LineReadData,
+    .HCLK, .HRESETn, .LocalWordIndexNext, .LocalReadData, .LocalReadValid,
+    .WordIndexNext(AddrNext[OFFSET +: WORD_INDEX]),
+    .WordReadOwner, .WordReadData, .LineReadOwner, .LineReadData,
     .Install(State == COMPLETE && Prot[0] && Filled), .Store(State == COMPLETE && Prot[0] && Write),
-    .WriteOwner(Owner), .InstallIndex(Index), .InstallLine(FillLine),
-    .StoreIndex(WordIndex), .StoreData(WriteData), .StoreStrb(Strobes),
+    .WriteOwner(Owner), .InstallLine(FillLine), .StoreData(WriteData), .StoreStrb(Strobes),
     .LocalStore(CacheWriteCommit), .LocalStoreData(CacheWriteData), .LocalStoreStrb(CacheWriteStrb));
   // synopsys translate_off
   // Preserve existing passive test probes without exporting arrays as hardware
@@ -163,7 +170,7 @@ module ahbmsicache import cvw::*; #(
           multicore_cacheable(P, 64'(CacheReadAddr[h])) &&
           States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] != I &&
           Tags[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == CacheReadAddr[h][P.PA_BITS-1:LINE_OFFSET+INDEX];
-        CacheReadHit[h] = LOCAL_READS && ProbeHit[h];
+        CacheReadHit[h] = LOCAL_READS && ProbeHit[h] && LocalReadValid[h];
         CacheReadData[h] = LOCAL_READS ? LocalReadData[h] : '0;
         CacheWriteHit[h] = LOCAL_WRITES && ProbeHit[h] &&
           (States[h][CacheReadAddr[h][LINE_OFFSET +: INDEX]] == M ||
