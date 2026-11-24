@@ -32,12 +32,13 @@ SYSTEMCLOCK   ?= 20000000
 MAXSDCCLOCK   ?=  5000000
 EXT_MEM_BASE  ?= 0x80000000
 EXT_MEM_RANGE ?= 0x10000000
+NHARTS        ?= 1            # harts of the SoC: hart 0 loads the card, then wakes the others (bios.S)
 
 
 AFLAGS =$(MARCH) $(MABI) -W
 # Override directive allows us to prepend other options on the command line
 # e.g. $ make CFLAGS=-g
-override CFLAGS +=$(MARCH) $(MABI) -mcmodel=medany -O2 -g  -DSYSTEMCLOCK=${SYSTEMCLOCK} -DMAXSDCCLOCK=${MAXSDCCLOCK} -DEXT_MEM_BASE=${EXT_MEM_BASE} -DEXT_MEM_RANGE=${EXT_MEM_RANGE}
+override CFLAGS +=$(MARCH) $(MABI) -mcmodel=medany -O2 -g  -DSYSTEMCLOCK=${SYSTEMCLOCK} -DMAXSDCCLOCK=${MAXSDCCLOCK} -DEXT_MEM_BASE=${EXT_MEM_BASE} -DEXT_MEM_RANGE=${EXT_MEM_RANGE} -DNHARTS=${NHARTS}
 AS=riscv64-unknown-elf-as
 CC=riscv64-unknown-elf-gcc
 AR=riscv64-unknown-elf-ar

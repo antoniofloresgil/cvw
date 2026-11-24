@@ -1,6 +1,7 @@
 #include "system.h"
 
 PERIOD = (SYSTEMCLOCK / 2)
+CLINT_MSIP = 0x02000000          # the CLINT's software interrupt pending register of hart 0; hart h at + 4h
 
 .section .init
 .global _start
@@ -14,6 +15,10 @@ _start:
   1:auipc gp, %pcrel_hi(__global_pointer$)
   addi  gp, gp, %pcrel_lo(1b)
   .option pop
+
+  # Harts other than 0 wait in parkHart while hart 0 loads the card
+  csrr t0, mhartid
+  bnez t0, parkHart
 
   li x1, 0
   li x2, 0
@@ -87,12 +92,45 @@ delay2:
   # now that the card is copied and the led toggled we
   # jump to the copied contents of the sd card.
 
+#if NHARTS > 1
+  # wake the other harts: a software interrupt to each
+  li t1, CLINT_MSIP + 4
+  li t2, 1
+  li t3, NHARTS - 1
+wakeHarts:
+  sw t2, 0(t1)
+  addi t1, t1, 4
+  addi t3, t3, -1
+  bnez t3, wakeHarts
+#endif
+
 jumpToLinux:
   csrrs a0, 0xF14, x0   # copy hart ID to a0
   li a1, FDT_ADDRESS  # This is the device tree address
   la a2, end_of_bios
   li t0, EXT_MEM_BASE  # start of code
 
+  jalr x0, t0, 0
+
+  # A hart other than 0 sleeps until hart 0's software interrupt (wakeHarts), clears it and enters the program
+  # of the card (OpenSBI) as hart 0 does, with its hart ID in a0 and the device tree in a1
+parkHart:
+  li t1, 8              # mie.MSIE: wfi returns on the software interrupt (mstatus.MIE stays 0: no trap)
+  csrw mie, t1
+1:
+  wfi
+  csrr t1, mip
+  andi t1, t1, 8
+  beqz t1, 1b
+  li t1, CLINT_MSIP
+  slli t2, t0, 2
+  add t1, t1, t2
+  sw x0, 0(t1)
+  csrw mie, x0
+  fence.i
+  mv a0, t0
+  li a1, FDT_ADDRESS
+  li t0, EXT_MEM_BASE
   jalr x0, t0, 0
 
 end_of_bios:

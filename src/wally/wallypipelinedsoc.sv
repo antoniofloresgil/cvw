@@ -16,7 +16,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARAMS(P.AHBW))  (
+module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARAMS(P.AHBW),
+  parameter bit DEBUG_BSCAN = 0)  (  // DEBUG_BSCAN: the FPGA's TAP reaches the DTM (src/debug/dtm.sv)
   input  logic                clk,
   input  logic                reset_ext,        // external asynchronous reset pin
   output logic                reset,            // reset synchronized to clk to prevent races on release
@@ -58,7 +59,14 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   input  logic                 TCK = 1'b0,
   input  logic                 TMS = 1'b0,
   input  logic                 TDI = 1'b0,
-  output logic                 TDO
+  output logic                 TDO,
+  // With DEBUG_BSCAN: the Xilinx BSCANE2 USER3 (dtmcs) and USER4 (dmi) selects and Capture/Shift/Update-DR; TCK, TDI
+  // and TDO are then the BSCANE2's
+  input  logic                 BscanDTMCS = 1'b0,
+  input  logic                 BscanDMI = 1'b0,
+  input  logic                 BscanCapture = 1'b0,
+  input  logic                 BscanShift = 1'b0,
+  input  logic                 BscanUpdate = 1'b0
 );
 
   // Uncore signals
@@ -100,7 +108,8 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     logic       DMIReq, DMIWrite, DMIError;
     logic [6:0] DMIAddr;
     logic [31:0] DMIWData, DMIRData;
-    dtm dtm(.TRSTn(~reset_ext), .TCK, .TMS, .TDI, .TDO, .clk, .reset(PowerOnReset),
+    dtm #(.BSCAN(DEBUG_BSCAN)) dtm(.TRSTn(~reset_ext), .TCK, .TMS, .TDI, .TDO,
+      .BscanDTMCS, .BscanDMI, .BscanCapture, .BscanShift, .BscanUpdate, .clk, .reset(PowerOnReset),
       .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError);
     logic              DMHSEL;
     logic [P.AHBW-1:0] DMHRDATA;

@@ -6,6 +6,7 @@
 #   make CONFIGS=debug_rv32imc NHARTS=2   # a SoC with two harts (needs a configuration without caches)
 #   make COVERAGE=1 WORK=/tmp/dbgcov CONFIGS=debug_rv32imc   # with Verilator line coverage in <WORK>/<config>/coverage.dat
 #   make openocd                  # OpenOCD (openocd.cfg, openocd_test.tcl) on openocd_tb.sv through remote_bitbang
+#   make openocd BSCAN=1          # the same through the DTM's BSCAN mode and a model of the FPGA's TAP (openocd_bscan.cfg)
 # Needs $WALLY (source setup.sh), the derivative configurations (derivgen.pl) and, for
 # make openocd, OpenOCD 0.12 or later.
 
@@ -14,8 +15,9 @@ OPENOCD_CONFIG ?= debug_rv32imc
 RBB_PORT ?= 9823
 OPENOCD ?= openocd
 NHARTS  ?= 1
+BSCAN   ?= 0
 # Build directories of a multi-hart SoC carry the number of harts
-SUFFIX   = $(if $(filter 1,$(NHARTS)),,-$(NHARTS)harts)
+SUFFIX   = $(if $(filter 1,$(NHARTS)),,-$(NHARTS)harts)$(if $(filter 1,$(BSCAN)),-bscan)
 WORK    ?= $(WALLY)/sim/verilator/wkdir/debug
 # Parallel C++ compilations: the largest files of a SoC take 3 GB or more each, so all the cores
 # (verilator -j 0) or even 8 jobs exhaust the memory of a 32 GB desktop
@@ -42,10 +44,10 @@ $(CONFIGS):
 	@grep -q "SUCCESS! All tests ran without failures." $(WORK)/$@$(SUFFIX)/sim.log
 
 openocd:
-	$(call build,openocd_tb,$(OPENOCD_CONFIG),$(WORK)/openocd-$(OPENOCD_CONFIG)$(SUFFIX),$(CURDIR)/jtag_rbb.cpp)
+	$(call build,openocd_tb,$(OPENOCD_CONFIG),$(WORK)/openocd-$(OPENOCD_CONFIG)$(SUFFIX),$(CURDIR)/jtag_rbb.cpp $(CURDIR)/xilinx_tap.sv -GBSCAN=$(BSCAN))
 	@$(WORK)/openocd-$(OPENOCD_CONFIG)$(SUFFIX)/Vopenocd_tb +RBB_PORT=$(RBB_PORT) > $(WORK)/openocd-$(OPENOCD_CONFIG)$(SUFFIX)/sim.log 2>&1 & \
 	  sleep 2; \
-	  NHARTS=$(NHARTS) $(OPENOCD) -f $(CURDIR)/openocd.cfg -c "remote_bitbang port $(RBB_PORT)" \
+	  NHARTS=$(NHARTS) $(OPENOCD) -f $(CURDIR)/$(if $(filter 1,$(BSCAN)),openocd_bscan.cfg,openocd.cfg) -c "remote_bitbang port $(RBB_PORT)" \
 	    -f $(CURDIR)/openocd_test.tcl 2>&1 | tee $(WORK)/openocd-$(OPENOCD_CONFIG)$(SUFFIX)/openocd.log; \
 	  wait
 	@grep -q "SUCCESS! All tests ran without failures." $(WORK)/openocd-$(OPENOCD_CONFIG)$(SUFFIX)/openocd.log

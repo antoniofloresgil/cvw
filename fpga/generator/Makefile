@@ -112,7 +112,14 @@ config := $(OPENCONFIG)
 else
 # Recursive on purpose: `board` is a target-specific variable, set only when a recipe runs, so a `:=` here would read the generic config/deriv/fpga
 # (EXT_MEM_RANGE of 2 GiB) and build the ZSBL with its stack at 4 GiB, outside the DDR3.
-config = fpga$(board)
+# VIVADOCONFIG=<derivative> builds another configuration of the board (default fpga<board>), e.g. fpganexysvideopmu.
+# SOCGENERICS sets the SoC's multicore parameters (fpga/src/fpgaTopNexysA7.sv, the Nexys boards' top) and NHARTS the harts the ZSBL wakes (the
+# same as NCORES), and NO_ILA=1 leaves out the logic analyzer, e.g.
+# make nexysvideo VIVADOCONFIG=fpganexysvideosmp NHARTS=2 NO_ILA=1 SOCGENERICS="NCORES=2 PRIVATE_DCACHE=1 ..."
+export SOCGENERICS
+NHARTS ?= 1
+export NO_ILA
+config = $(if $(VIVADOCONFIG),$(VIVADOCONFIG),fpga$(board))
 endif
 EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/$(config)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')
 
@@ -209,7 +216,7 @@ PreProcessFiles:
 	cp -r ../../addins/verilog-ethernet/*/*.sv ../src/CopiedFiles_do_not_add_to_repo/rvvi
 	cp -r ../../addins/verilog-ethernet/*/*/*/*.sv ../src/CopiedFiles_do_not_add_to_repo/rvvi
 	mkdir ../src/CopiedFiles_do_not_add_to_repo/config/
-	cp ../../config/deriv/fpga$(board)/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
+	cp ../../config/deriv/$(config)/config.vh ../src/CopiedFiles_do_not_add_to_repo/config/
 	./insert_debug_comment.sh
 	# This line allows the Bootloader to be loaded in a Block RAM on the FPGA
 	sed -i "s/bit \[DATA_WIDTH-1:0\].*ROM.*/(\* rom_style=\"block\" \*) &/g" ../src/CopiedFiles_do_not_add_to_repo/generic/mem/rom1p1r.sv
@@ -268,7 +275,7 @@ litedram:
 .PHONY: zsbl
 zsbl:
 	$(MAKE) -C ../zsbl clean
-	SYSTEMCLOCK=$(SYSTEMCLOCK) MAXSDCCLOCK=$(MAXSDCCLOCK) EXT_MEM_BASE=$(EXT_MEM_BASE) EXT_MEM_RANGE=$(EXT_MEM_RANGE) $(MAKE) -C ../zsbl
+	SYSTEMCLOCK=$(SYSTEMCLOCK) MAXSDCCLOCK=$(MAXSDCCLOCK) EXT_MEM_BASE=$(EXT_MEM_BASE) EXT_MEM_RANGE=$(EXT_MEM_RANGE) NHARTS=$(NHARTS) $(MAKE) -C ../zsbl
 
 # Generate Individual IP Blocks
 $(dst)/%.log: %.tcl

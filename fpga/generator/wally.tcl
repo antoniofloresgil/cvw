@@ -71,6 +71,10 @@ set_property include_dirs {../src/CopiedFiles_do_not_add_to_repo/config ../../co
 
 # define top level
 set_property top fpgaTop [current_fileset]
+# The SoC's multicore parameters (the board's fpgaTop, e.g. fpgaTopNexysA7.sv), e.g. SOCGENERICS="NCORES=2 PRIVATE_DCACHE=1"
+if {[info exists ::env(SOCGENERICS)] && $::env(SOCGENERICS) ne ""} {
+    set_property generic $::env(SOCGENERICS) [current_fileset]
+}
 
 update_compile_order -fileset sources_1
 # This is important as the ddr3/4 IP contains the generate clock constraint which the user constraints depend on.
@@ -92,6 +96,11 @@ if {$board=="ArtyA7" || $board=="genesys2" || $board=="nexysa7" || $board=="nexy
     set_property PROCESSING_ORDER NORMAL [get_files  ../constraints/constraints-$boardSubName.xdc]
 }
 
+# The TCK of the BSCANE2 JTAG debug port, in configurations with DEBUG_SUPPORTED
+if {![catch {exec grep -q "DEBUG_SUPPORTED = 1" ../src/CopiedFiles_do_not_add_to_repo/config/config.vh}]} {
+    add_files -fileset constrs_1 -norecurse ../constraints/bscan.xdc
+    set_property PROCESSING_ORDER LATE [get_files ../constraints/bscan.xdc]
+}
 
 # Temp
 set_param messaging.defaultLimit 100000
@@ -123,7 +132,8 @@ if {$board=="ArtyA7"} {
 } elseif {$board=="nexysa7"} {
     source ../constraints/small-debug.xdc
 } elseif {$board=="nexysvideo"} {
-    source ../constraints/small-debug.xdc
+    # NO_ILA=1 leaves the logic analyzer out (its probes name single-core nets, absent with NCORES > 1)
+    if {![info exists ::env(NO_ILA)] || $::env(NO_ILA) eq ""} { source ../constraints/small-debug.xdc }
 } elseif {$board=="qmtechk7"} {
     source ../constraints/small-debug.xdc
 } else {
@@ -137,7 +147,13 @@ if {$board=="ArtyA7"} {
 #set_property "steps.place_design.args.directive" "RuntimeOptimized" [get_runs impl_1]
 #set_property "steps.route_design.args.directive" "RuntimeOptimized" [get_runs impl_1]
 if {$board=="nexysvideo"} {
-    set_property strategy Performance_Explore [get_runs impl_1]
+    # With the JTAG debug port and E-Trace (fpganexysvideodbg) Performance_Explore misses 20 MHz by 3.6 ns on the
+    # HPTW -> TLB -> D-cache -> AMO path; the post-route physical optimization closes it (+0.11 ns, 2026-11-23).
+    if {![catch {exec grep -q "DEBUG_SUPPORTED = 1" ../src/CopiedFiles_do_not_add_to_repo/config/config.vh}]} {
+        set_property strategy Performance_ExplorePostRoutePhysOpt [get_runs impl_1]
+    } else {
+        set_property strategy Performance_Explore [get_runs impl_1]
+    }
 }
 
 # Further optimization tuning
