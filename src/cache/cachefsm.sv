@@ -100,7 +100,8 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0, parameter bit CO
 
   assign AnyMiss = (CacheRW[0] | CacheRW[1]) & ~Hit & ~InvalidateCache; // exclusion-tag: cache AnyMiss
   assign CohWait = COHERENT & ~CohGranted;
-  assign SnoopTake = COHERENT & CohSnpReq & ~CohSnoopDefer & ~FlushStage &
+  // Registered inputs only: SnoopTake selects the arrays' address, so it must not wait for the trap logic
+  assign SnoopTake = COHERENT & CohSnpReq & ~CohSnoopDefer &
                      ((CurrState == STATE_ACCESS & ~CohGranted) | CurrState == STATE_ACQUIRE);
   assign CohBlock = COHERENT & (SnoopTake | CohNoPerm);
   assign AnyUpdateHit = (CacheRW[0]) & Hit & ~CohBlock;                // exclusion-tag: icache storeAMO1
@@ -120,7 +121,7 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0, parameter bit CO
   flop #(1) resetDelayReg(.clk, .d(reset), .q(resetDelay));
 
   always_ff @(posedge clk)
-    if (reset | (FlushStage & ~(COHERENT & CurrState == STATE_SNOOP))) CurrState <= STATE_ACCESS; // a snoop is never abandoned
+    if (reset | (FlushStage & ~(COHERENT & (CurrState == STATE_SNOOP | SnoopTake)))) CurrState <= STATE_ACCESS; // a snoop is never abandoned
     else CurrState <= NextState;
 
   always_comb begin
