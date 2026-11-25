@@ -192,7 +192,7 @@ module ahbmsifabric import cvw::*; #(
       .CoreHSIZE(Size), .CoreHBURST('0), .CoreHPROT(Prot), .CoreHTRANS(BTrans[b]), .CoreHATOMIC(Op),
       .CoreHRDATA(BData[b]), .CoreHREADY(BReady[b]), .CoreHRESP(BResp[b]), .CoreSCFail(BSCFail[b]),
       .CacheReadAddr, .CacheReadAddrNext, .CacheReadHit, .CacheReadData, .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
-      .InstrMiss(BInstrMiss[b]), .HOWNER(Owner), .HADDR(A), .HWDATA(WD), .HWSTRB(WS), .HWRITE(Wr), .HMASTLOCK(Lock),
+      .InstrMiss(BInstrMiss[b]), .FetchPending(), .CohHold('0), .HOWNER(Owner), .HADDR(A), .HWDATA(WD), .HWSTRB(WS), .HWRITE(Wr), .HMASTLOCK(Lock),
       .HSIZE(Sz), .HBURST(Burst), .HPROT(Pr), .HTRANS(Tr), .HRDATA(RD), .HREADY(Ready), .HRESP(Resp));
     ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(DW), .LINE_WORDS(DCACHE_LINE_WORDS),
       .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI),
@@ -220,7 +220,8 @@ module ahbmsifabric import cvw::*; #(
     .CoreHBURST(MemBurst), .CoreHPROT(MemProt), .CoreHTRANS(MemTrans), .CoreHATOMIC('0),
     .CoreHRDATA(MemRData), .CoreHREADY(MemReady), .CoreHRESP(MemResp), .CoreSCFail(),
     .CacheReadAddr(), .CacheReadAddrNext(), .CacheReadHit('0), .CacheReadData('0), .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(),
-    .InstrMiss(), .HOWNER(), .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HMASTLOCK(), .HSIZE, .HBURST, .HPROT, .HTRANS, .HRDATA, .HREADY, .HRESP);
+    .InstrMiss(), .FetchPending(), .CohHold('0),
+    .HOWNER(), .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HMASTLOCK(), .HSIZE, .HBURST, .HPROT, .HTRANS, .HRDATA, .HREADY, .HRESP);
   end
   // A request goes to one home, so the per-hart misses of all homes simply merge.
   always_comb begin

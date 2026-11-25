@@ -17,7 +17,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsigned HART_ID = 0,
-                                        parameter bit SHARED_ATOMICS = 0) (
+                                        parameter bit SHARED_ATOMICS = 0, parameter bit COHERENT_DCACHE = 0) (
    input  logic                  clk, reset,
    // Internal shared-memory atomic sideband (unused by legacy single-core SoCs).
    input  logic                  SCFail,
@@ -43,7 +43,16 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
    output logic [1:0]            HTRANS,
    output logic                  HMASTLOCK,
    input  logic                  ExternalStall,
-   output logic [2*P.XLEN+13:0]  ITrace         // instruction trace interface (TRACE_SUPPORTED)
+   output logic [2*P.XLEN+13:0]  ITrace,        // instruction trace interface (TRACE_SUPPORTED)
+   // The D-cache as a coherent L1 (COHERENT_DCACHE, ADR 0026); inputs tied to 0 and outputs unused otherwise
+   output logic                  CohAcqReq, CohAcqWrite, CohAcqFlush,
+   output logic [P.PA_BITS-1:0]  CohAcqAdr,
+   input  logic                  CohGnt, CohGntExcl,
+   output logic                  CohRel,
+   input  logic                  CohSnpReq, CohSnpInv,
+   input  logic [P.PA_BITS-1:0]  CohSnpAdr,
+   output logic                  CohSnpAck, CohSnpHit, CohSnpDirty,
+   output logic [P.DCACHE_LINELENINBITS-1:0] CohSnpData
 );
 
   logic                          StallF, StallD, StallE, StallM, StallW;
@@ -221,8 +230,10 @@ module wallypipelinedcore import cvw::*; #(parameter cvw_t P, parameter int unsi
     .StructuralStallD, .LoadStallD, .StoreStallD, .PCSrcE,
     .CSRReadM, .CSRWriteM, .PrivilegedM, .CSRWriteFenceM, .InvalidateICacheM);
 
-  lsu #(.P(P), .SHARED_ATOMICS(SHARED_ATOMICS)) lsu(
+  lsu #(.P(P), .SHARED_ATOMICS(SHARED_ATOMICS), .COHERENT_DCACHE(COHERENT_DCACHE)) lsu(
     .clk, .reset, .StallM, .FlushM, .StallW, .FlushW, .CommittedF,
+    .CohAcqReq, .CohAcqWrite, .CohAcqFlush, .CohAcqAdr, .CohGnt, .CohGntExcl, .CohRel,
+    .CohSnpReq, .CohSnpInv, .CohSnpAdr, .CohSnpAck, .CohSnpHit, .CohSnpDirty, .CohSnpData,
     // CPU interface
     .SCFail, .LSUAtomicOp,
     .MemRWE, .MemRWM, .Funct3M, .Funct7M(InstrM[31:25]), .AtomicM,

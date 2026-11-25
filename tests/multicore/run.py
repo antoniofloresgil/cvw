@@ -144,6 +144,8 @@ def main():
         config = "multicore_coherent"
     if args.private_dcache:
         config = "multicore_msi"
+    if args.coherent_l1:
+        config = "multicore_l1"
     if args.suite == "pmu":
         config = "multicore_pmu"
     assembly = tests / ("atomics.S" if args.suite == "atomic" else "uart.S" if args.suite == "uart" else "exclusive.S" if args.suite == "exclusive" else "pmu.S" if args.suite == "pmu" else "smoke.S")
@@ -158,7 +160,7 @@ def main():
                 "soc_tb",
                 f"deriv/{config}",
                 [tests / "soc_tb.sv", tests / "dpi.cpp", root / "testbench/common/bus_fault_guard.sv", *sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")],
-                f"mesi{int(args.mesi)}-burst{int(args.cache_bursts)}-b{args.coherence_banks}-c2c{int(args.cache_to_cache)}-{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else ""),
+                f"mesi{int(args.mesi)}-burst{int(args.cache_bursts)}-b{args.coherence_banks}-c2c{int(args.cache_to_cache)}-{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else "") + ("-l1" if args.coherent_l1 else ""),
                 [f"-GLATENCY={latency}", *profiles.verilator_args({**topology, 'NCORES': cores})],
             )
             run([executable, f"+image={image}", f"+suite={args.suite}"])

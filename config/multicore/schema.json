@@ -60,6 +60,10 @@
     "LOCAL_DCACHE_WRITES": {
       "type": "bit",
       "default": 0
+    },
+    "COHERENT_L1": {
+      "type": "bit",
+      "default": 0
     }
   },
   "rules": [
@@ -92,24 +96,28 @@
       "message": "Each coherence bank needs power-of-two private ICACHE capacity and at least two complete lines"
     },
     {
-      "when": "(NCORES == 1 and not SHARED_CACHE) or (P.BUS_SUPPORTED and not P.DTIM_SUPPORTED and not P.IROM_SUPPORTED and not P.DCACHE_SUPPORTED and not P.ICACHE_SUPPORTED and not P.BURST_EN and not P.ZICCLSM_SUPPORTED)",
-      "message": "Multicore requires a shared bus with no private memories/caches or bursts, and no hardware misaligned accesses (Zicclsm needs the D-cache)"
+      "when": "(NCORES == 1 and not SHARED_CACHE and not COHERENT_L1) or (COHERENT_L1 and P.BUS_SUPPORTED and not P.DTIM_SUPPORTED and not P.IROM_SUPPORTED and P.DCACHE_SUPPORTED and not P.BURST_EN) or (not COHERENT_L1 and P.BUS_SUPPORTED and not P.DTIM_SUPPORTED and not P.IROM_SUPPORTED and not P.DCACHE_SUPPORTED and not P.ICACHE_SUPPORTED and not P.BURST_EN and not P.ZICCLSM_SUPPORTED)",
+      "message": "Multicore requires a shared bus with no private memories or bursts, and either coherent L1 D-caches or no core caches and no hardware misaligned accesses (Zicclsm needs the D-cache)"
     },
     {
-      "when": "not (NCORES > 1 and PRIVATE_DCACHE) or not (P.ZICBOM_SUPPORTED or P.ZICBOZ_SUPPORTED or P.ZICBOP_SUPPORTED)",
-      "message": "MSI baseline does not implement cache-maintenance operations"
+      "when": "not (NCORES > 1 and PRIVATE_DCACHE or COHERENT_L1) or not (P.ZICBOM_SUPPORTED or P.ZICBOZ_SUPPORTED or P.ZICBOP_SUPPORTED)",
+      "message": "MSI caches (private or coherent L1) do not implement cache-maintenance operations"
     },
     {
-      "when": "not (NCORES > 1 and PRIVATE_DCACHE or SHARED_CACHE) or not P.SVADU_SUPPORTED",
+      "when": "not (NCORES > 1 and PRIVATE_DCACHE or SHARED_CACHE or COHERENT_L1) or not P.SVADU_SUPPORTED",
       "message": "Cached SMP uses software PTE A/D updates (Svade)"
     },
     {
-      "when": "not (NCORES > 1 and PRIVATE_DCACHE or SHARED_CACHE) or not P.SVPBMT_SUPPORTED",
+      "when": "not (NCORES > 1 and PRIVATE_DCACHE or SHARED_CACHE or COHERENT_L1) or not P.SVPBMT_SUPPORTED",
       "message": "Multicore caches use physical RAM attributes; Svpbmt must be disabled"
     },
     {
-      "when": "(NCORES == 1 and not SHARED_CACHE) or P.AHBW == P.XLEN",
+      "when": "(NCORES == 1 and not SHARED_CACHE and not COHERENT_L1) or P.AHBW == P.XLEN",
       "message": "Buffered memory requires AHBW == XLEN"
+    },
+    {
+      "when": "not COHERENT_L1 or not (PRIVATE_DCACHE or PRIVATE_ICACHE or SHARED_CACHE)",
+      "message": "Coherent L1 D-caches replace the fabric's private and shared caches"
     }
   ],
   "profiles": {
@@ -144,6 +152,10 @@
     "linux-msi": {
       "NCORES": 2,
       "PRIVATE_DCACHE": 1
+    },
+    "linux-l1": {
+      "NCORES": 2,
+      "COHERENT_L1": 1
     }
   },
   "linux_platform": {

@@ -14,6 +14,13 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
   input  logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC,
   output logic [NCORES-1:0] CoreSCFail, CoreHREADY, CoreHRESP,
   output logic [NCORES-1:0][P.AHBW-1:0] CoreHRDATA,
+  // Coherent L1 D-caches (COHERENT_L1, ADR 0026): each hart's acquire/snoop sideband
+  input  logic [NCORES-1:0] CohAcqReq, CohAcqWrite, CohAcqFlush, CohRel,
+  input  logic [NCORES-1:0][P.PA_BITS-1:0] CohAcqAdr,
+  output logic [NCORES-1:0] CohGnt, CohGntExcl, CohSnpReq, CohSnpInv,
+  output logic [NCORES-1:0][P.PA_BITS-1:0] CohSnpAdr,
+  input  logic [NCORES-1:0] CohSnpAck, CohSnpHit, CohSnpDirty,
+  input  logic [NCORES-1:0][P.DCACHE_LINELENINBITS-1:0] CohSnpData,
   // Per-hart PMU events of the private caches: {ICacheMiss, ICacheAccess, DCacheMiss, DCacheAccess}.
   output logic [NCORES-1:0][3:0] CoreCacheEvents,
   // Uncore-side AHB master; clock/reset ownership remains with the SoC.
@@ -44,8 +51,9 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
   logic [3:0] BusHPROT;
   logic [1:0] BusHTRANS;
   logic [NCORES-1:0] DataMiss, InstrMiss;
+  logic [NCORES-1:0] FetchPending, FetchHold;
 
-  if (NCORES == 1 && !SHARED_CACHE) begin : singlecore
+  if (NCORES == 1 && !SHARED_CACHE && !COHERENT_L1) begin : singlecore
     // Preserve the original bus latency and allow all existing configurations.
     assign {BusHADDR, BusHWDATA, BusHWSTRB, BusHWRITE, BusHSIZE, BusHBURST, BusHPROT, BusHTRANS, BusHMASTLOCK} =
       {CoreHADDR[0], CoreHWDATA[0], CoreHWSTRB[0], CoreHWRITE[0], CoreHSIZE[0],
@@ -61,6 +69,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
     assign CacheWriteData = '0;
     assign CacheWriteStrb = '0;
     assign InstrMiss = '0;
+    assign FetchPending = '0;
   end else if (MSI_ENABLED && COHERENCE_BANKS > 1) begin : banked
     ahbmsifabric #(.P(P), .NCORES(NCORES), .BANKS(COHERENCE_BANKS),
       .DCACHE_WORDS(PRIVATE_DCACHE_WORDS), .DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
@@ -77,6 +86,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
     assign CacheWriteCommit = '0;
     assign CacheWriteData = '0;
     assign CacheWriteStrb = '0;
+    assign FetchPending = '0;
   end else begin : multicore
     ahbmulticore #(.P(P), .NCORES(NCORES),
       .PRIVATE_ICACHE(MSI_ENABLED && PRIVATE_ICACHE), .ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
@@ -85,6 +95,7 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
       .LOCAL_DCACHE_WRITES(MSI_ENABLED && LOCAL_DCACHE_WRITES)) bus(
       .ReservationClear('0), .CacheReadAddr, .CacheReadAddrNext, .CacheReadHit, .CacheReadData,
       .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb, .InstrMiss,
+      .FetchPending, .CohHold(FetchHold),
       .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHSIZE,
       .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHMASTLOCK, .CoreHATOMIC, .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP,
       .HOWNER(BusHOWNER), .HADDR(BusHADDR), .HWDATA(BusHWDATA), .HWSTRB(BusHWSTRB), .HWRITE(BusHWRITE), .HSIZE(BusHSIZE), .HBURST(BusHBURST), .HPROT(BusHPROT), .HTRANS(BusHTRANS), .HMASTLOCK(BusHMASTLOCK),
@@ -114,6 +125,17 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
       .UpHRDATA(BusHRDATA), .UpHREADY(BusHREADY), .UpHRESP(BusHRESP),
       .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HSIZE, .HBURST, .HPROT, .HTRANS, .HMASTLOCK,
       .HRDATA, .HREADY, .HRESP);
+  end else if (COHERENT_L1) begin : coherence
+    // The cores' D-caches are the coherent L1; the controller snoops them and orders refills (ADR 0026)
+    ahbcoherence #(.P(P), .NCORES(NCORES)) controller(.HCLK, .HRESETn,
+      .AcqReq(CohAcqReq), .AcqWrite(CohAcqWrite), .AcqFlush(CohAcqFlush), .AcqAdr(CohAcqAdr),
+      .Gnt(CohGnt), .GntExcl(CohGntExcl), .Rel(CohRel), .SnpReq(CohSnpReq), .SnpInv(CohSnpInv), .SnpAdr(CohSnpAdr),
+      .SnpAck(CohSnpAck), .SnpHit(CohSnpHit), .SnpDirty(CohSnpDirty), .SnpData(CohSnpData),
+      .FetchPending, .FetchAddr(CacheReadAddr), .FetchHold,
+      .UpHADDR(BusHADDR), .UpHWDATA(BusHWDATA), .UpHWSTRB(BusHWSTRB), .UpHWRITE(BusHWRITE), .UpHMASTLOCK(BusHMASTLOCK),
+      .UpHSIZE(BusHSIZE), .UpHBURST(BusHBURST), .UpHPROT(BusHPROT), .UpHTRANS(BusHTRANS),
+      .UpHRDATA(BusHRDATA), .UpHREADY(BusHREADY), .UpHRESP(BusHRESP),
+      .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HMASTLOCK, .HSIZE, .HBURST, .HPROT, .HTRANS, .HRDATA, .HREADY, .HRESP);
   end else begin : nocache
     assign {HADDR, HWDATA, HWSTRB, HWRITE, HSIZE, HBURST, HPROT, HTRANS, HMASTLOCK} =
       {BusHADDR, BusHWDATA, BusHWSTRB, BusHWRITE, BusHSIZE, BusHBURST, BusHPROT, BusHTRANS, BusHMASTLOCK};
@@ -122,6 +144,10 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
 
   if (!MSI_ENABLED) begin : nodatamiss
     assign DataMiss = '0;
+  end
+  if (!COHERENT_L1) begin : nocoherence
+    assign {CohGnt, CohGntExcl, CohSnpReq, CohSnpInv, CohSnpAdr} = '0;
+    assign FetchHold = '0;
   end
 
   // The PMU counts each accepted cacheable request of a hart as one access of

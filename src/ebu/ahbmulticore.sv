@@ -34,6 +34,9 @@ module ahbmulticore import cvw::*; #(
   output logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb,
   input  logic [NCORES-1:0][P.AHBW-1:0] CacheReadData,
   output logic [NCORES-1:0] InstrMiss,           // PMU: an instruction bank starts a line fill
+  // Coherent L1 D-caches (ADR 0026): a hart's waiting instruction fetch, held until the controller lets it go
+  output logic [NCORES-1:0] FetchPending,
+  input  logic [NCORES-1:0] CohHold,
   output logic [NCORES-1:0] CoreSCFail,
   output logic [NCORES-1:0][P.AHBW-1:0] CoreHRDATA,
   output logic [NCORES-1:0] CoreHREADY, CoreHRESP,
@@ -113,6 +116,10 @@ module ahbmulticore import cvw::*; #(
   function automatic logic cacheable(input logic [P.PA_BITS-1:0] address);
     return multicore_cacheable(P, 64'(address));
   endfunction
+  for (genvar h = 0; h < NCORES; h++) begin : fetches
+    assign FetchPending[h] = State[h] == PENDING && !Write[h] && !Prot[h][0] && Op[h] == COREBUS_NORMAL &&
+      cacheable(Addr[h]);
+  end
 
   logic [NCORES-1:0] ICacheHit;
   logic [NCORES-1:0][P.AHBW-1:0] ICacheData;
@@ -148,6 +155,7 @@ module ahbmulticore import cvw::*; #(
       Candidate = int'(First) + offset;
       if (Candidate >= NCORES) Candidate = Candidate - NCORES;
       if (!Found && State[Candidate] == PENDING && !LocalReply[Candidate] && !CacheWriteCommit[Candidate] &&
+          !CohHold[Candidate] &&
           (!LockActive || OWNER_BITS'(Candidate) == LockOwner)) begin
         NextOwner = OWNER_BITS'(Candidate);
         Found = 1'b1;

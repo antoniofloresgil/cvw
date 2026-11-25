@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0) (
+module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0, parameter bit COHERENT = 0) (
   input  logic       clk,
   input  logic       reset,
   // hazard and privilege unit
@@ -56,7 +56,19 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0) (
   output logic       FlushWayCntEn,     // Enable the way counter during a flush
   output logic       FlushCntRst,       // Reset both flush counters
   output logic       SelFetchBuffer,    // Bypass the SRAM for a load hit by directly using the read data from the ahbcacheinterface's FetchBuffer
-  output logic       CacheEn            // Enable the cache memory arrays.  Disable hold read data constant
+  output logic       CacheEn,           // Enable the cache memory arrays.  Disable hold read data constant
+  // coherence (COHERENT, ADR 0026; tied to 0 otherwise)
+  input  logic       CohSnpReq,         // the coherence controller snoops this cache
+  input  logic       CohSnpInv,         // the snoop invalidates (else downgrades to S)
+  input  logic       CohGnt,            // the controller grants the slot
+  input  logic       CohGranted,        // the slot is held
+  input  logic       CohNoPerm,         // a write (or LR) hits a line that is not writable
+  input  logic       CohSnoopDefer,     // do not take a snoop yet (LR/SC forward progress)
+  output logic       CohSelSnoop,       // the arrays are addressed with the snoop address
+  output logic       CohInAccess,       // STATE_ACCESS
+  output logic       CohInAcquire,      // STATE_ACQUIRE
+  output logic       CohInSnoop,        // STATE_SNOOP
+  output logic       CohOpDone          // the M-stage access completes this cycle
 );
 
   logic              resetDelay;
@@ -66,6 +78,9 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0) (
   logic              CMOWriteback;
   logic              CMOZeroNoEviction;
   logic              StallConditions;
+  logic              CohWait;           // coherent without the slot: misses, upgrades and flushes acquire it first
+  logic              SnoopTake;         // a snoop is accepted this cycle
+  logic              CohBlock;          // the access of this cycle neither hits nor updates (snoop, or no permission)
 
   typedef enum logic [3:0] {STATE_ACCESS, // hit states
                            // miss states
@@ -75,14 +90,21 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0) (
                            STATE_ADDRESS_SETUP,  // required for back to back reads. structural hazard on writing SRAM
                            // flush cache
                            STATE_FLUSH,
-                           STATE_FLUSH_WRITEBACK
+                           STATE_FLUSH_WRITEBACK,
+                           STATE_ACQUIRE,        // coherence: waiting for the slot, answering snoops
+                           STATE_SNOOP,          // coherence: the snooped set is read; answer and update it
+                           STATE_RESTORE         // coherence: the arrays re-read the M-stage address
                            } statetype;
 
   statetype CurrState, NextState;
 
   assign AnyMiss = (CacheRW[0] | CacheRW[1]) & ~Hit & ~InvalidateCache; // exclusion-tag: cache AnyMiss
-  assign AnyUpdateHit = (CacheRW[0]) & Hit;                            // exclusion-tag: icache storeAMO1
-  assign AnyHit = AnyUpdateHit | (CacheRW[1] & Hit);                  // exclusion-tag: icache AnyUpdateHit
+  assign CohWait = COHERENT & ~CohGranted;
+  assign SnoopTake = COHERENT & CohSnpReq & ~CohSnoopDefer & ~FlushStage &
+                     ((CurrState == STATE_ACCESS & ~CohGranted) | CurrState == STATE_ACQUIRE);
+  assign CohBlock = COHERENT & (SnoopTake | CohNoPerm);
+  assign AnyUpdateHit = (CacheRW[0]) & Hit & ~CohBlock;                // exclusion-tag: icache storeAMO1
+  assign AnyHit = AnyUpdateHit | (CacheRW[1] & Hit & ~CohBlock);      // exclusion-tag: icache AnyUpdateHit
   assign CMOZeroNoEviction = CMOpM[CMO_ZERO] & (Hit | ~LineDirty);   // (hit or miss) with no writeback store zeros now
   // cbo.clean or cbo.flush of a dirty hit, or cbo.zero miss with a dirty victim, must write back first
   assign CMOWriteback = ((CMOpM[CMO_CLEAN] | CMOpM[CMO_FLUSH]) & Hit & HitLineDirty) | (CMOpM[CMO_ZERO] & ~Hit & LineDirty);
@@ -98,13 +120,15 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0) (
   flop #(1) resetDelayReg(.clk, .d(reset), .q(resetDelay));
 
   always_ff @(posedge clk)
-    if (reset | FlushStage)    CurrState <= STATE_ACCESS;
+    if (reset | (FlushStage & ~(COHERENT & CurrState == STATE_SNOOP))) CurrState <= STATE_ACCESS; // a snoop is never abandoned
     else CurrState <= NextState;
 
   always_comb begin
     NextState = STATE_ACCESS;
     case (CurrState)                                                                                        // exclusion-tag: icache state-case
-      STATE_ACCESS:          if (InvalidateCache & ~InvalidateFlushStage)          NextState = STATE_ACCESS;          // exclusion-tag: dcache InvalidateCheck
+      STATE_ACCESS:          if (SnoopTake)                                        NextState = STATE_SNOOP;
+                             else if (InvalidateCache & ~InvalidateFlushStage)     NextState = STATE_ACCESS;          // exclusion-tag: dcache InvalidateCheck
+                             else if (CohWait & (FlushCache | AnyMiss | CohNoPerm)) NextState = STATE_ACQUIRE;
                              else if (FlushCache & ~READ_ONLY_CACHE)               NextState = STATE_FLUSH;           // exclusion-tag: icache FLUSHStatement
                              else if (AnyMiss & (READ_ONLY_CACHE | ~LineDirty))    NextState = STATE_FETCH;           // exclusion-tag: icache FETCHStatement
                              else if ((AnyMiss | CMOWriteback) & ~READ_ONLY_CACHE) NextState = STATE_WRITEBACK;       // exclusion-tag: icache WRITEBACKStatement
@@ -127,24 +151,31 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0) (
                              else if (CacheBusAck)                                 NextState = STATE_ADDRESS_SETUP;
                              else                                                  NextState = STATE_FLUSH_WRITEBACK; // exclusion-tag: cachefsm-flush-writeback-wait
       // exclusion-tag-end: icache case
+      STATE_ACQUIRE:         if (SnoopTake)                                        NextState = STATE_SNOOP;
+                             else if (CohGnt)                                      NextState = STATE_RESTORE;
+                             else                                                  NextState = STATE_ACQUIRE;
+      STATE_SNOOP:                                                                 NextState = STATE_RESTORE;
+      STATE_RESTORE:                                                               NextState = STATE_ACCESS;
       default:                                                                     NextState = STATE_ACCESS;
     endcase
   end
 
   // Signals back to the CPU
   assign CacheCommitted = (CurrState != STATE_ACCESS) & ~(READ_ONLY_CACHE & (CurrState == STATE_ADDRESS_SETUP));
-  assign StallConditions = FlushCache | AnyMiss | (|CMOpM);                            // exclusion-tag: icache FlushCache
+  assign StallConditions = FlushCache | AnyMiss | (|CMOpM) | CohBlock;                 // exclusion-tag: icache FlushCache
   assign CacheStall = (CurrState == STATE_ACCESS & StallConditions) | // exclusion-tag: icache StallStates
                       (CurrState == STATE_FETCH) |
                       (CurrState == STATE_WRITEBACK) |
                       (CurrState == STATE_WRITE_LINE) |  // this cycle writes the sram, must keep stalling so the next cycle can read the next hit/miss unless it's a write.
                       (CurrState == STATE_FLUSH) |
-                      (CurrState == STATE_FLUSH_WRITEBACK);
+                      (CurrState == STATE_FLUSH_WRITEBACK) |
+                      (CurrState == STATE_ACQUIRE) | (CurrState == STATE_SNOOP) | (CurrState == STATE_RESTORE);
   // write enables internal to cache
   assign SetValid = CurrState == STATE_WRITE_LINE |
                     (CurrState == STATE_ACCESS & CMOZeroNoEviction) |
                     (CurrState == STATE_WRITEBACK & CacheBusAck & CMOpM[CMO_ZERO]);
-  assign ClearValid = (CurrState == STATE_ACCESS & (CMOpM[CMO_INVAL] | (CMOpM[CMO_FLUSH] & ~HitLineDirty))) |
+  assign ClearValid = (CurrState == STATE_SNOOP & CohSnpInv) |
+                      (CurrState == STATE_ACCESS & (CMOpM[CMO_INVAL] | (CMOpM[CMO_FLUSH] & ~HitLineDirty))) |
                       (CurrState == STATE_WRITEBACK & CMOpM[CMO_FLUSH] & CacheBusAck);
   assign LRUWriteEn = (((CurrState == STATE_ACCESS & (AnyHit | CMOZeroNoEviction)) |
                        (CurrState == STATE_WRITE_LINE)) & ~FlushStage) |
@@ -153,7 +184,8 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0) (
   assign SetDirty = (CurrState == STATE_ACCESS & (AnyUpdateHit | CMOZeroNoEviction)) |         // exclusion-tag: icache SetDirty
                     (CurrState == STATE_WRITE_LINE & (CacheRW[0])) |
                     (CurrState == STATE_WRITEBACK & (CMOpM[CMO_ZERO] & CacheBusAck));
-  assign ClearDirty = (CurrState == STATE_WRITE_LINE & ~(CacheRW[0])) |   // exclusion-tag: icache ClearDirty
+  assign ClearDirty = (CurrState == STATE_SNOOP) |
+                      (CurrState == STATE_WRITE_LINE & ~(CacheRW[0])) |   // exclusion-tag: icache ClearDirty
                       (CurrState == STATE_FLUSH & LineDirty) | // This is wrong in a multicore snoop cache protocol.  Dirty must be cleared concurrently and atomically with writeback.  For single core cannot clear after writeback on bus ack and change flushadr.  Clears the wrong set.
   // Flush and eviction controls
                       CurrState == STATE_WRITEBACK & (CMOpM[CMO_CLEAN] | CMOpM[CMO_FLUSH]) & CacheBusAck;
@@ -172,14 +204,14 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0) (
                        (CurrState == STATE_FLUSH_WRITEBACK & FlushFlag & CacheBusAck);
   // exclusion-tag-end: icache flushdirtycontrols
   // Bus interface controls
-  assign CacheBusRW[1] = (CurrState == STATE_ACCESS & AnyMiss & ~LineDirty) | // exclusion-tag: icache CacheBusRCauses
+  assign CacheBusRW[1] = (CurrState == STATE_ACCESS & AnyMiss & ~LineDirty & ~CohWait) | // exclusion-tag: icache CacheBusRCauses
                          (CurrState == STATE_FETCH & ~CacheBusAck) |
                          (CurrState == STATE_WRITEBACK & CacheBusAck & ~(|CMOpM));
 
   logic LoadMiss;
   assign LoadMiss = (CacheRW[1]) & ~Hit & ~InvalidateCache; // exclusion-tag: cache AnyMiss
 
-  assign CacheBusRW[0] = (CurrState == STATE_ACCESS & LoadMiss & LineDirty) | // exclusion-tag: icache CacheBusW
+  assign CacheBusRW[0] = (CurrState == STATE_ACCESS & LoadMiss & LineDirty & ~CohWait) | // exclusion-tag: icache CacheBusW
                          (CurrState == STATE_WRITEBACK & ~CacheBusAck) |
                          (CurrState == STATE_FLUSH_WRITEBACK & ~CacheBusAck) |
                          (CurrState == STATE_WRITEBACK & (CMOpM[CMO_CLEAN] | CMOpM[CMO_FLUSH]) & ~CacheBusAck);
@@ -188,13 +220,22 @@ module cachefsm import cvw::*; #(parameter READ_ONLY_CACHE = 0) (
                       (CurrState == STATE_FETCH) |
                       (CurrState == STATE_WRITEBACK) |
                       (CurrState == STATE_WRITE_LINE) |
+                      (COHERENT & (SnoopTake | CurrState == STATE_SNOOP | CurrState == STATE_RESTORE)) |
                       resetDelay;
   assign SelAdrTag = (CurrState == STATE_ACCESS & (AnyMiss | (|CMOpM))) | // exclusion-tag: icache SelAdrTag // changes if store delay hazard removed
                      (CurrState == STATE_FETCH) |
                      (CurrState == STATE_WRITEBACK) |
                      (CurrState == STATE_WRITE_LINE) |
+                     (COHERENT & (SnoopTake | CurrState == STATE_SNOOP | CurrState == STATE_RESTORE)) |
                      resetDelay;
   assign SelFetchBuffer = CurrState == STATE_WRITE_LINE | CurrState == STATE_ADDRESS_SETUP;
   assign CacheEn = (~Stall | StallConditions) | (CurrState != STATE_ACCESS) | reset | InvalidateCache; // exclusion-tag: dcache CacheEn
 
+
+  // Coherence (ADR 0026)
+  assign CohSelSnoop  = COHERENT & (SnoopTake | CurrState == STATE_SNOOP);
+  assign CohInAccess  = CurrState == STATE_ACCESS;
+  assign CohInAcquire = COHERENT & CurrState == STATE_ACQUIRE;
+  assign CohInSnoop   = COHERENT & CurrState == STATE_SNOOP;
+  assign CohOpDone    = (CurrState == STATE_ACCESS & ~CacheStall & ~Stall) | (CurrState == STATE_ADDRESS_SETUP & ~Stall);
 endmodule // cachefsm

@@ -298,7 +298,9 @@ module ifu import cvw::*; #(parameter cvw_t P) (
              .FlushCache('0),
              .NextSet(PCSpillNextF[OFFSETLEN+SETLEN-1:0]),
              .PAdr(PCPF),
-             .CacheCommitted(CacheCommittedF), .InvalidateCache(InvalidateICacheM), .InvalidateFlushStage(FlushW), .CMOpM('0));
+             .CacheCommitted(CacheCommittedF), .InvalidateCache(InvalidateICacheM), .InvalidateFlushStage(FlushW), .CMOpM('0),
+             .CohWritePerm(1'b0), .CohGnt(1'b0), .CohGntExcl(1'b0), .CohSnpReq(1'b0), .CohSnpInv(1'b0), .CohSnpAdr('0), // not coherent (ADR 0026)
+             .CohAcqReq(), .CohAcqWrite(), .CohAcqFlush(), .CohAcqAdr(), .CohRel(), .CohSnpAck(), .CohSnpHit(), .CohSnpDirty(), .CohSnpData(), .CohKill(), .CohKillAdr());
 
       ahbcacheinterface #(P, BEATSPERLINE, AHBWLOGBWPL, LINELEN, LLENPOVERAHBW, 1)
       ahbcacheinterface(.HCLK(clk), .HRESETn(~reset),

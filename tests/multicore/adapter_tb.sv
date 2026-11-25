@@ -59,7 +59,7 @@ module adapter_tb import cvw::*; #(
     if (BANKS == 1) begin : serial
         ahbmulticore #(.P(P), .NCORES(NCORES)) dut(
             .ReservationClear('0), .HOWNER(), .CacheReadAddr(), .CacheReadAddrNext(), .CacheReadHit('0), .CacheReadData('0),
-            .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(), .InstrMiss(), .*);
+            .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(), .InstrMiss(), .FetchPending(), .CohHold('0), .*);
     end else begin : banked
         ahbmsifabric #(.P(P), .NCORES(NCORES), .BANKS(BANKS), .DCACHE_WORDS(16), .ICACHE_WORDS(16)) dut(.DataMiss(), .InstrMiss(), .*);
     end

@@ -96,6 +96,17 @@ ZICBOM_SUPPORTED    0
 ZICBOZ_SUPPORTED    0
 ZICBOP_SUPPORTED    0
 
+# Nexys Video (Vivado) with two harts whose D-caches are the coherent L1 (COHERENT_L1, ADR 0026): the core's
+# caches on, SINGLE transfers, software PTE A/D updates, no CMOs, no Svpbmt.
+# make nexysvideo VIVADOCONFIG=fpganexysvideosmpl1 NHARTS=2 NO_ILA=1 SOCGENERICS="NCORES=2 COHERENT_L1=1'b1"
+deriv fpganexysvideosmpl1 fpganexysvideo
+BURST_EN            0
+SVADU_SUPPORTED     0
+SVPBMT_SUPPORTED    0
+ZICBOM_SUPPORTED    0
+ZICBOZ_SUPPORTED    0
+ZICBOP_SUPPORTED    0
+
 # Open-source flow, RV64 Linux, Wally initializes the DDR3: the LiteDRAM control
 # registers sit in an uncached I/O window right above the 512 MiB of DDR3.
 deriv fpganexysvideoopen fpganexysvideo
@@ -1865,6 +1876,18 @@ deriv multicore_atomic multicore
 ZAAMO_SUPPORTED 1
 ZALRSC_SUPPORTED 1
 
+# Coherent L1 D-caches (COHERENT_L1, ADR 0026): the core's caches on again, with hardware misaligned accesses,
+# SINGLE transfers, software PTE A/D updates, no CMOs, no Svpbmt
+deriv multicore_l1 multicore_atomic
+DCACHE_SUPPORTED 1
+ICACHE_SUPPORTED 1
+ZICCLSM_SUPPORTED 1
+SVADU_SUPPORTED 0
+SVPBMT_SUPPORTED 0
+ZICBOM_SUPPORTED 0
+ZICBOZ_SUPPORTED 0
+ZICBOP_SUPPORTED 0
+
 # Stage three: one coherent physical cache; no non-atomic hardware PTE updates.
 deriv multicore_coherent multicore_atomic
 SVADU_SUPPORTED 0
@@ -1879,6 +1902,12 @@ BOOTROM_SUPPORTED 1
 SV48_SUPPORTED 0
 SV57_SUPPORTED 0
 RESET_VECTOR 64'h00001000
+
+# Linux SMP with coherent L1 D-caches (COHERENT_L1, ADR 0026): the core's caches on, hardware misaligned accesses
+deriv multicore_linux_l1 multicore_linux
+DCACHE_SUPPORTED 1
+ICACHE_SUPPORTED 1
+ZICCLSM_SUPPORTED 1
 
 # Private per-hart physical data caches with serialized MSI bus snooping.
 # Legacy IFU/LSU caches stay off; enable the SoC PRIVATE_DCACHE parameter.

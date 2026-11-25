@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0) (
+module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0, parameter bit COHERENT_DCACHE = 0) (
   input  logic                     clk, reset,
   input  logic                     StallM, FlushM, StallW, FlushW,
   input  logic                     CommittedF,                           // IFU fetch in flight: the walker holds a fault until the trap
@@ -85,7 +85,16 @@ module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0)
   output logic                     ITLBWriteF,                           // Write PTE to ITLB
   output logic                     SelHPTW,                              // During a HPTW walk the effective privilege mode becomes S_MODE
   input  var logic [7:0]           PMPCFG_ARRAY_REGW[P.PMP_ENTRIES-1:0], // PMP configuration from privileged unit
-  input  var logic [P.PA_BITS-3:0] PMPADDR_ARRAY_REGW[P.PMP_ENTRIES-1:0] // PMP address from privileged unit
+  input  var logic [P.PA_BITS-3:0] PMPADDR_ARRAY_REGW[P.PMP_ENTRIES-1:0], // PMP address from privileged unit
+  // The D-cache as a coherent L1 (COHERENT_DCACHE, ADR 0026); inputs tied to 0 and outputs unused otherwise
+  output logic                     CohAcqReq, CohAcqWrite, CohAcqFlush,  // acquire the slot (for a write, for a flush)
+  output logic [P.PA_BITS-1:0]     CohAcqAdr,                            // line to acquire
+  input  logic                     CohGnt, CohGntExcl,                   // slot granted; no other cache holds the line
+  output logic                     CohRel,                               // release the slot
+  input  logic                     CohSnpReq, CohSnpInv,                 // snoop: invalidate, else downgrade to S
+  input  logic [P.PA_BITS-1:0]     CohSnpAdr,                            // snooped line
+  output logic                     CohSnpAck, CohSnpHit, CohSnpDirty,    // snoop answer
+  output logic [P.DCACHE_LINELENINBITS-1:0] CohSnpData                   // the snooped line when it was dirty
 );
   localparam logic MISALIGN_SUPPORT = P.ZICCLSM_SUPPORTED & P.DCACHE_SUPPORTED;
   localparam MLEN = MISALIGN_SUPPORT ? 2*P.LLEN : P.LLEN; // widen buffer for misaligned accesses
@@ -144,6 +153,8 @@ module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0)
   logic [P.LLEN-1:0]     ReadDataHoldM;                          // Captured read data of a performed access awaiting retirement
   logic [P.LLEN-1:0]     ReadDataSelM;                           // Read data to the W stage (live or held)
   logic                  LSUFlushW;                              // HPTW or hazard unit flushes operation
+  logic                  CohKill;                                // coherent D-cache lost the line at CohKillAdr (LR/SC)
+  logic [P.PA_BITS-1:0]  CohKillAdr;
   logic                  SelfFaultM;                             // M-stage access has its own fault; squash it
   logic                  DataFaultM;                             // M-stage access has a page or access fault; do not take the spill
   logic                  SelDTIM;                                // Select DTIM rather than bus or D$
@@ -361,7 +372,8 @@ module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0)
 
       cache #(.P(P), .PA_BITS(P.PA_BITS), .LINELEN(P.DCACHE_LINELENINBITS), .NUMSETS(P.DCACHE_WAYSIZEINBYTES*8/LINELEN),
               .OFFSETLEN(OFFSETLEN), .SETLEN(SETLEN),
-              .NUMWAYS(P.DCACHE_NUMWAYS), .LOGBWPL(LLENLOGBWPL), .WORDLEN(CACHEWORDLEN), .MUXINTERVAL(P.LLEN), .READ_ONLY_CACHE(0)) dcache(
+              .NUMWAYS(P.DCACHE_NUMWAYS), .LOGBWPL(LLENLOGBWPL), .WORDLEN(CACHEWORDLEN), .MUXINTERVAL(P.LLEN), .READ_ONLY_CACHE(0),
+              .COHERENT(COHERENT_DCACHE)) dcache(
         .clk, .reset, .Stall(GatedStallW & ~SelSpillE), .SelBusBeat, .FlushStage(LSUFlushW),
         .CacheRW(CacheRWM),
         .FlushCache(FlushDCache), .NextSet(IEUAdrExtE[OFFSETLEN+SETLEN-1:0]), .PAdr(PAdrM),
@@ -371,7 +383,9 @@ module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0)
         .CacheCommitted(DCacheCommittedM),
         .CacheBusAdr(DCacheBusAdr), .ReadDataWord(DCacheReadDataWordM),
         .FetchBuffer, .CacheBusRW(CacheBusRW),
-        .CacheBusAck(DCacheBusAck), .InvalidateCache(1'b0), .InvalidateFlushStage(LSUFlushW), .CMOpM(CacheCMOpM));
+        .CacheBusAck(DCacheBusAck), .InvalidateCache(1'b0), .InvalidateFlushStage(LSUFlushW), .CMOpM(CacheCMOpM),
+        .CohWritePerm(LSUAtomicM[0]), .CohAcqReq, .CohAcqWrite, .CohAcqFlush, .CohAcqAdr, .CohGnt, .CohGntExcl, .CohRel,
+        .CohSnpReq, .CohSnpInv, .CohSnpAdr, .CohSnpAck, .CohSnpHit, .CohSnpDirty, .CohSnpData, .CohKill, .CohKillAdr);
 
       ahbcacheinterface #(.P(P), .BEATSPERLINE(BEATSPERLINE), .AHBWLOGBWPL(AHBWLOGBWPL), .LINELEN(LINELEN), .LLENPOVERAHBW(LLENPOVERAHBW), .READ_ONLY_CACHE(0)) ahbcacheinterface(
         .HCLK(clk), .HRESETn(~reset), .Flush(LSUFlushW),
@@ -404,6 +418,7 @@ module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0)
       else assign ReadDataWordMuxM[P.XLEN-1:0] = FetchBuffer[P.XLEN-1:0];
       assign LSUHBURST = 3'b0;
       assign {DCacheStallM, DCacheCommittedM, DCacheMiss, DCacheAccess, DCacheReadDataWordM} = '0;
+      assign {CohAcqReq, CohAcqWrite, CohAcqFlush, CohAcqAdr, CohRel, CohSnpAck, CohSnpHit, CohSnpDirty, CohSnpData, CohKill, CohKillAdr} = '0;
     end
   end else begin : nobus // block: bus, only DTIM
     assign {LSUHWDATA, LSUHADDR, LSUHWRITE, LSUHSIZE, LSUHBURST, LSUHTRANS, LSUHWSTRB} = '0;
@@ -412,6 +427,7 @@ module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0)
     assign {LSUBusStallM, BusCommittedM} = '0;
     assign {DCacheMiss, DCacheAccess} = '0;
     assign {DCacheStallM, DCacheCommittedM} = '0;
+    assign {CohAcqReq, CohAcqWrite, CohAcqFlush, CohAcqAdr, CohRel, CohSnpAck, CohSnpHit, CohSnpDirty, CohSnpData, CohKill, CohKillAdr} = '0;
   end
 
   /////////////////////////////////////////////////////////////////////////////////////////////
@@ -424,7 +440,7 @@ module lsu import cvw::*; #(parameter cvw_t P, parameter bit SHARED_ATOMICS = 0)
 
   if (P.ZAAMO_SUPPORTED | P.ZALRSC_SUPPORTED) begin : atomic
     atomic #(.P(P), .SHARED_ATOMICS(SHARED_ATOMICS)) atomic(.clk, .reset, .StallW, .SCFail, .ReadDataWordM(LittleEndianReadDataWordM), .BigEndianM, .IHWriteDataM, .PAdrM,
-      .LSUFunct7M, .LSUFunct3M, .LSUAtomicM, .PreLSURWM, .LSUFlushW,
+      .LSUFunct7M, .LSUFunct3M, .LSUAtomicM, .PreLSURWM, .LSUFlushW, .ResKill(CohKill), .ResKillAdr(CohKillAdr),
       .IMAWriteDataM, .SquashSCW, .LSURWM);
   end else begin : lrsc
     assign SquashSCW = 1'b0;

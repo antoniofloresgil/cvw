@@ -37,7 +37,13 @@
         .DCACHE_WORDS(OBS_DC_WORDS), .ICACHE_WORDS(OBS_IC_WORDS),
         .LINE_WORDS(OBS_LINE_WORDS)) observer(
         .Permissions(ObservedPermissions), .Tags(ObservedTags), .Lines(ObservedLines));
+    `include "l1_observer.svh"
     function automatic logic [63:0] architectural_word(input int unsigned index);
+        if (COHERENT_L1) begin
+            logic [64:0] dirty;
+            dirty = l1view.dirty_word(index);
+            if (dirty[64]) return dirty[63:0];
+        end
         return 64'(observer.word(index, dut.uncoregen.uncore.ram.ram.memory.ram.RAM[index]));
     endfunction
     task automatic load_image(input string filename);

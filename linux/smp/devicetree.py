@@ -143,7 +143,7 @@ def main():
     args = parser.parse_args()
     try:
         values = profiles.from_args(args, linux=True)
-        effective = profiles.probe('deriv/multicore_linux', values, args.work_dir)
+        effective = profiles.probe(profiles.linux_config(values), values, args.work_dir)
         args.output.write_text(generate(**profiles.legacy_options(values), effective=effective))
     except ValueError as error:
         parser.error(str(error))

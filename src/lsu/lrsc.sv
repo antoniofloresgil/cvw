@@ -25,6 +25,8 @@ module lrsc import cvw::*; #(parameter cvw_t P) (
   output logic [1:0]           LSURWM,     // Memory operation after potential squash of SC
   input  logic [1:0]           LSUAtomicM, // Atomic memory operation
   input  logic [P.PA_BITS-1:0] PAdrM,      // Physical memory address
+  input  logic                 ResKill,    // the D-cache lost the line at ResKillAdr: a coherent L1 (ADR 0026), else 0
+  input  logic [P.PA_BITS-1:0] ResKillAdr,
   output logic                 SquashSCW   // Squash the store conditional by not allowing rf write
 );
 
@@ -37,6 +39,9 @@ module lrsc import cvw::*; #(parameter cvw_t P) (
   logic                        ReservationValidM, ReservationValidW;
   logic                        lrM, scM, WriteAdrMatchM;
   logic                        SquashSCM;
+  logic                        KillM;      // the reserved line left the D-cache: the reservation is lost, even while stalled
+  localparam LINE_ADDRESS_BITS = $clog2(P.DCACHE_LINELENINBITS/8) > RESERVATION_SET_ADDRESS_BITS ?
+                                 $clog2(P.DCACHE_LINELENINBITS/8) : RESERVATION_SET_ADDRESS_BITS;
 
   assign lrM = MemReadM & LSUAtomicM[0];
   assign scM = PreLSURWM[0] & LSUAtomicM[0];
@@ -51,6 +56,9 @@ module lrsc import cvw::*; #(parameter cvw_t P) (
   end
 
   flopenr #(P.PA_BITS-RESERVATION_SET_ADDRESS_BITS) resadrreg(clk, reset, lrM & ~StallW, PAdrM[P.PA_BITS-1:RESERVATION_SET_ADDRESS_BITS], ReservationPAdrW); // could drop clear on this one but not valid
-  flopenr #(1) resvldreg(clk, reset, ~StallW, ReservationValidM, ReservationValidW);
+  assign KillM = ResKill & (ResKillAdr[P.PA_BITS-1:LINE_ADDRESS_BITS] == ReservationPAdrW[P.PA_BITS-1:LINE_ADDRESS_BITS]);
+  always_ff @(posedge clk)
+    if (reset | KillM) ReservationValidW <= 1'b0;
+    else if (~StallW)  ReservationValidW <= ReservationValidM;
   flopenr #(1) squashreg(clk, reset, ~StallW, SquashSCM, SquashSCW);
 endmodule

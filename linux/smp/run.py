@@ -69,7 +69,7 @@ def main():
         parser.error('Another RTL build/run is using this work directory')
     if not args.reuse:
         subprocess.run(['perl', str(ROOT / 'bin/derivgen.pl')], check=True)
-    effective = profiles.probe('deriv/multicore_linux', topology, work / 'configuration')
+    effective = profiles.probe(profiles.linux_config(topology), topology, work / 'configuration')
     try:
         verify_images(work, effective, manifest)
     except ValueError as error:
@@ -134,7 +134,7 @@ def main():
     metadata_path = build / "model.json"
     sources = sorted(p for p in (ROOT / "src").rglob("*.sv") if p.name != "cvw.sv")
     inputs = [ROOT / "src/cvw.sv", *sources, HERE / "linux_tb.sv", HERE / "sim_main.cpp",
-              ROOT / "tests/multicore/dpi.cpp", ROOT / "testbench/common/bus_fault_guard.sv", ROOT / "config/deriv/multicore_linux/config.vh",
+              ROOT / "tests/multicore/dpi.cpp", ROOT / "testbench/common/bus_fault_guard.sv", ROOT / "config" / profiles.linux_config(topology) / "config.vh",
               ROOT / "config/multicore/schema.json", ROOT / "config/multicore/profiles.py",
               *sorted((ROOT / "config/shared").glob("*.vh"))]
     fingerprint = {
@@ -156,7 +156,7 @@ def main():
             "-CFLAGS", "-O3", "-MAKEFLAGS", "OPT_FAST=-O3", "-j", str(args.jobs),
             "--top-module", "linux_tb", *profiles.verilator_args(topology),
             "--Mdir", str(build), f"-I{ROOT / 'config/shared'}",
-            f"-I{ROOT / 'config/deriv/multicore_linux'}", str(ROOT / "src/cvw.sv"),
+            f"-I{ROOT / 'config' / profiles.linux_config(topology)}", str(ROOT / "src/cvw.sv"),
             str(HERE / "linux_tb.sv"), *map(str, sources), str(HERE / "sim_main.cpp"),
             str(ROOT / "tests/multicore/dpi.cpp"), str(ROOT / "testbench/common/bus_fault_guard.sv"),
         ]

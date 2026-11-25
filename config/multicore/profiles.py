@@ -175,6 +175,11 @@ def from_args(args, ahbw=64, linux=False, cores=None, base=None):
     return values
 
 
+def linux_config(values):
+    """Configuration of Linux SMP: the core's caches on with coherent L1 D-caches (ADR 0026)."""
+    return 'deriv/multicore_linux_l1' if values.get('COHERENT_L1') else 'deriv/multicore_linux'
+
+
 def legacy_options(values):
     """Compatibility fields for existing Linux image/checkpoint manifests."""
     return {'cores': values['NCORES'], 'cache_mode': 'msi' if values['PRIVATE_DCACHE'] else 'shared',

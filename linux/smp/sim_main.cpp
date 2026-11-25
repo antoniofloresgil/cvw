@@ -85,8 +85,9 @@ int main(int argc, char **argv) {
                 line.clear();
             } else if (c != '\r') line += c;
         }
-        if (cycle >= nextHeartbeat && line.empty()) {
+        if (cycle >= nextHeartbeat) {
             nextHeartbeat = (cycle / 1000000 + 1) * 1000000;
+            if (!line.empty()) std::fprintf(stderr, "[console so far: %s]\n", line.c_str());
             std::fprintf(stderr, "[RTL cycle %llu PC", (unsigned long long)cycle);
             dump(top->PCs);
             std::fprintf(stderr, " mcause");
