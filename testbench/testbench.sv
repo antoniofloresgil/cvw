@@ -74,9 +74,10 @@ module testbench;
 
   // Variables that can be overwritten with $value$plusargs at start of simulation
   string       TEST, ElfFile, ElfList, sim_log_prefix;
-  integer      INSTR_LIMIT;
+  longint      INSTR_LIMIT;  // 64 bits: a limit of 2^31 instructions or more is reached in a few hours
   string       UART_LOG_FILE;
   integer      UART_LOG;
+  string       LinuxRam, LinuxBootmem; // buildroot: other RAM and BOOTROM images, e.g. a checkpoint (linux/checkpoint)
 
   // DUT signals
   logic [P.AHBW-1:0]    HRDATAEXT;
@@ -154,6 +155,10 @@ module testbench;
       UART_LOG = (TEST == "buildroot"); // Default to true for buildroot test, false otherwise
     if (!$value$plusargs("UART_LOG_FILE=%s", UART_LOG_FILE))
       UART_LOG_FILE = {"logs/", TEST, "_uart.out"};
+    if (!$value$plusargs("LinuxRam=%s", LinuxRam))
+      LinuxRam = "";
+    if (!$value$plusargs("LinuxBootmem=%s", LinuxBootmem))
+      LinuxBootmem = "";
     //$display("TEST = %s ElfFile = %s", TEST, ElfFile);
 
     if (!$value$plusargs("ElfList=%s", ElfList))
@@ -308,9 +313,9 @@ module testbench;
       end
     if(SelectTest) begin
       if(TEST == "buildroot") begin
-        memfilename = {RISCV_DIR, "/linux-testvectors/ram.bin"};
+        memfilename = (LinuxRam != "") ? LinuxRam : {RISCV_DIR, "/linux-testvectors/ram.bin"};
         elffilename = "buildroot";
-        bootmemfilename = {RISCV_DIR, "/linux-testvectors/bootmem.bin"};
+        bootmemfilename = (LinuxBootmem != "") ? LinuxBootmem : {RISCV_DIR, "/linux-testvectors/bootmem.bin"};
         ProgramAddrMapFile = {RISCV_DIR, "/buildroot/output/images/disassembly/vmlinux.objdump.addr"};
         ProgramLabelMapFile = {RISCV_DIR, "/buildroot/output/images/disassembly/vmlinux.objdump.lab"};
       end else if(TEST == "fpga") begin
@@ -716,13 +721,60 @@ module testbench;
 
   // The privileged unit, and with it minstret, only exists when ZICSR is supported
   if (P.ZICSR_SUPPORTED) begin : instrlimit
-    logic [P.XLEN-1:0] Minstret;
+    logic [P.XLEN-1:0] Minstret, PrevMinstret;
+    longint HPM_WARMUP, HPM_PERIOD;  // extra counter reports: at the end of a warm-up, every HPM_PERIOD instructions
     assign Minstret = testbench.dut.core.priv.priv.csr.counters.HPMCOUNTER_REGW[2];
+    initial begin
+      if (!$value$plusargs("HPM_WARMUP=%d", HPM_WARMUP)) HPM_WARMUP = 0;
+      if (!$value$plusargs("HPM_PERIOD=%d", HPM_PERIOD)) HPM_PERIOD = 0;
+    end
+    // "HPM <minstret> <counter 0> ... <counter COUNTERS-1>", absolute values, for linux/checkpoint/measure.py
+    function automatic string hpmLine();
+      string s = $sformatf("HPM %0d", Minstret);
+      for (int c = 0; c < P.COUNTERS; c++) s = {s, $sformatf(" %0d", testbench.dut.core.priv.priv.csr.counters.HPMCOUNTER_REGW[c])};
+      return s;
+    endfunction
     always @(negedge clk) begin
-      if (INSTR_LIMIT > 0) begin
+      PrevMinstret <= Minstret;
+      if (INSTR_LIMIT > 0 & Minstret != PrevMinstret) begin  // once per instruction count, not on every stalled cycle
         if((Minstret != 0) & (Minstret % 'd100000 == 0)) $display("Reached %d instructions", Minstret);
-        if((Minstret == INSTR_LIMIT) & (INSTR_LIMIT!=0)) begin $finish; end
+        if ((HPM_WARMUP > 0 & Minstret == HPM_WARMUP) | (HPM_PERIOD > 0 & Minstret != 0 & Minstret % HPM_PERIOD == 0))
+          $display("%s", hpmLine());
+        if(Minstret == INSTR_LIMIT) begin $display("%s", hpmLine()); $finish; end
       end
+    end
+    // +PC_TRACE=<file>: the PC of every retired instruction (the ones minstret counts), one hex value per line, and
+    // "T I <pc>" / "T E <pc>" at each interrupt / exception (the PC of the instruction in M, which does not retire),
+    // the format of linux/checkpoint's roickpt trace, to find where Wally and QEMU part (linux/checkpoint/drift.py)
+    string PcTraceFile;
+    integer PcTrace;
+    initial if ($value$plusargs("PC_TRACE=%s", PcTraceFile)) PcTrace = $fopen(PcTraceFile, "w"); else PcTrace = 0;
+    always @(posedge clk)
+      if (PcTrace != 0 & ~reset & ~dut.core.StallW) begin
+        if (dut.core.TrapM) $fwrite(PcTrace, "T %s %h\n", dut.core.priv.priv.InterruptM ? "I" : "E", PCM);
+        else if (dut.core.priv.priv.csr.InstrValidNotFlushedM) $fwrite(PcTrace, "%h\n", PCM);
+      end
+    final if (PcTrace != 0) $fclose(PcTrace);
+    // +MTIME_INSNS=<n> +MTIME_BASE=<mtime>: time follows the instructions, as in QEMU with -icount (n = 100 for its
+    // 10 MHz timer at 1 ns per instruction), not the cycles: from the end of a checkpoint's restore program (the first
+    // retired instruction outside M-mode) the CLINT's mtime is forced to MTIME_BASE + instructions since then / n, so
+    // timer interrupts come at the same instructions as in QEMU and Wally runs the same instructions (linux/checkpoint)
+    longint MTIME_INSNS, MTIME_BASE;
+    logic [P.XLEN-1:0] MtimeStart;
+    logic MtimeFollows = 0;
+    logic [63:0] MtimeInstr;
+    initial begin
+      if (!$value$plusargs("MTIME_INSNS=%d", MTIME_INSNS)) MTIME_INSNS = 0;
+      if (!$value$plusargs("MTIME_BASE=%d", MTIME_BASE)) MTIME_BASE = 0;
+    end
+    assign MtimeInstr = MTIME_BASE + (MTIME_INSNS > 0 ? (64'(Minstret) - 64'(MtimeStart)) / MTIME_INSNS : 0);
+    always @(posedge clk)
+      if (MTIME_INSNS > 0 & ~MtimeFollows & ~reset & dut.core.PrivilegeModeW != 2'b11) begin
+        MtimeStart <= Minstret;
+        MtimeFollows <= 1;
+      end
+    if (P.CLINT_SUPPORTED) begin : mtimefollows
+      always @(posedge clk) if (MtimeFollows) force dut.uncoregen.uncore.MTIME_CLINT = MtimeInstr;  // again every cycle: Verilator samples the value once  // the time CSR and Sstc (stimecmp) in the core
     end
   end
 

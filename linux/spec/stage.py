@@ -7,7 +7,7 @@ The SPEC installation is only read, never changed.  SPEC CPU 2026 belongs to its
 so keep it outside git (stage.py refuses an output directory inside a git work tree) and do not publish it.
 
 The command lines come from each benchmark's Spec/object.pm.  Five kinds of `invoke` are understood: arguments in the lines of a `control` file,
-arguments in the file <name>.in, no arguments, gem5's `control.cmd` (the statistics are not post-processed) and femflow's <size>.prm.  Others are reported as unsupported (they need a port of their invoke by hand).  `control_fixup` corrects omnetpp (-f/-c) and cppcheck (--platform=unix64; its test-size `testrunner_r` run is not staged); fotonik3d, vpr and gem5 get their .xz inputs decompressed.
+arguments in the file <name>.in, no arguments, gem5's `control.cmd` (the statistics are not post-processed) and femflow's <size>.prm.  Others are reported as unsupported (they need a port of their invoke by hand).  `control_fixup` corrects omnetpp (-f/-c), abc (-F <name>.in), gcc and llvm (-o <file>; llvm's --sha512 hashes its output instead of writing it) and cppcheck (--platform=unix64; its test-size `testrunner_r` run is not staged); fotonik3d, vpr and gem5 get their .xz inputs decompressed.
 Standard library only:   stage.py --spec <cpu2026_install> --size test --out /datos/tmp/spec-stage [--bench 782.lbm_r ...]
 """
 
@@ -61,6 +61,11 @@ def control_fixup(benchname, args):
         return ["-f", args[0], "-c", args[1]]
     if benchname == "cppcheck":  # object.pm: the line, then --platform=unix64
         return [*args, "--platform=unix64"]
+    if benchname in ("gcc", "llvm"):  # object.pm: the line, then [--sha512] -o <safe name>.s / .ll
+        out = re.sub(r"[^a-zA-Z0-9_.-]", "_", f"{args[0]}.opts" + "_".join(args[1:]))[:200]
+        return [*args, "-o", f"{out}.s"] if benchname == "gcc" else [*args, "--sha512", "-o", f"{out}.ll"]
+    if benchname == "abc":  # object.pm: -F <line>.in; without -F abc reads commands from the console and never ends
+        return ["-F", f"{args[0]}.in"]
     return args
 
 

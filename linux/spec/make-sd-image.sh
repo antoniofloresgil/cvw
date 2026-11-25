@@ -6,13 +6,14 @@
 #   sudo dd if=<image> of=/dev/sdX bs=4M conv=fsync status=progress
 # On the board the data partition is /dev/mmcblk0p4; mount it at /mnt/d and run
 #   sh /mnt/d/stage/perf-run.sh /mnt/d/stage /mnt/d/results <benchmark>...
-# Usage: make-sd-image.sh <buildroot images dir> <device tree .dtb> <stage dir> <data partition size in MiB | card:<device or size in bytes>> <image file>
-# With card:/dev/sdX the data partition takes everything after the other three, so the image is exactly as large as the card (the card must be at
-# least that large: a bigger one keeps the rest unused; GPT is not moved) and dd has to write it all, which takes a while.
+# Usage: make-sd-image.sh <buildroot images dir> <device tree .dtb> <stage dir> <data partition size: MiB | auto | card:<device or size in bytes>> <image file>
+# auto (the quick one) makes the data partition twice the stage directory plus 2 GiB for the results, so dd writes only that much; the rest of a
+# larger card stays unused.  With card:/dev/sdX the data partition takes everything after the other three, so the image is exactly as large as the
+# card (the card must be at least that large; GPT is not moved) and dd has to write it all, zeros included: tens of minutes for a 64 GB card.
 # The stage directory holds SPEC CPU 2026 content: the image is for the licensee's own cards, never for git or publication.
 
 set -euo pipefail
-[ $# -eq 5 ] || { sed -n '2,16p' "$0" | sed 's/^# \?//'; exit 1; }
+[ $# -eq 5 ] || { sed -n '2,13p' "$0" | sed 's/^# \?//'; exit 1; }
 IMAGES=$1 DTB=$2 STAGE=$3 DATA_MIB=$4 OUT=$5
 FW_JUMP=$IMAGES/fw_jump.bin KERNEL=$IMAGES/Image
 for f in "$FW_JUMP" "$KERNEL" "$DTB"; do [ -f "$f" ] || { echo "missing $f" >&2; exit 1; }; done
@@ -25,6 +26,9 @@ KERNEL_SIZE=$(sectors "$KERNEL")
 FW_START=$((34 + DST_SIZE))
 KERNEL_START=$((FW_START + FW_SIZE))
 FS_START=$((KERNEL_START + KERNEL_SIZE))
+if [ "$DATA_MIB" = auto ]; then
+    DATA_MIB=$(( $(du -sm --apparent-size "$STAGE" | cut -f1) * 2 + 2048 ))
+fi
 if [[ $DATA_MIB == card:* ]]; then
     CARD=${DATA_MIB#card:}
     [ -b "$CARD" ] && CARD=$(lsblk -bdn -o SIZE "$CARD")
