@@ -82,9 +82,11 @@ DEBUG_TRIGGERS      32'd4
 TRACE_SUPPORTED     1
 
 # Nexys Video (Vivado) with two harts and the SoC's multicore memory system (private MSI caches, pipelined
-# cache-line bursts): the core's own caches and bursts off, software PTE A/D updates, no CMOs (multicore-config.vh).
+# cache-line bursts): the core's own caches and bursts off, so no hardware misaligned accesses (Zicclsm needs the
+# D-cache: without it they would neither trap nor split), software PTE A/D updates, no CMOs (multicore-config.vh).
 # make nexysvideo VIVADOCONFIG=fpganexysvideosmp NHARTS=2 SOCGENERICS="NCORES=2 PRIVATE_DCACHE=1 ..." (docs/fpga-multicore.md)
 deriv fpganexysvideosmp fpganexysvideo
+ZICCLSM_SUPPORTED   0
 DCACHE_SUPPORTED    0
 ICACHE_SUPPORTED    0
 BURST_EN            0
@@ -1849,6 +1851,7 @@ SMCDELEG_SUPPORTED 1
 
 # Uncached shared-memory prototype; NCORES is a SoC parameter, not an ISA field.
 deriv multicore rv64gc
+ZICCLSM_SUPPORTED 0
 DCACHE_SUPPORTED 0
 ICACHE_SUPPORTED 0
 BURST_EN 0
@@ -1921,6 +1924,7 @@ UNCORE_RAM_RANGE   64'h0000FFFF
 # cacheless memory system for a SoC with several harts (NCORES > 1): it tests the Debug Module's
 # harts in 64 bits (make NHARTS=2 in testbench/debug)
 deriv debug_rv64gc_nocache rv64gc
+ZICCLSM_SUPPORTED   0
 DEBUG_SUPPORTED    1
 DEBUG_TRIGGERS     32'd4
 TRACE_SUPPORTED    1

@@ -92,8 +92,8 @@
       "message": "Each coherence bank needs power-of-two private ICACHE capacity and at least two complete lines"
     },
     {
-      "when": "(NCORES == 1 and not SHARED_CACHE) or (P.BUS_SUPPORTED and not P.DTIM_SUPPORTED and not P.IROM_SUPPORTED and not P.DCACHE_SUPPORTED and not P.ICACHE_SUPPORTED and not P.BURST_EN)",
-      "message": "Multicore requires a shared bus with no private memories/caches or bursts"
+      "when": "(NCORES == 1 and not SHARED_CACHE) or (P.BUS_SUPPORTED and not P.DTIM_SUPPORTED and not P.IROM_SUPPORTED and not P.DCACHE_SUPPORTED and not P.ICACHE_SUPPORTED and not P.BURST_EN and not P.ZICCLSM_SUPPORTED)",
+      "message": "Multicore requires a shared bus with no private memories/caches or bursts, and no hardware misaligned accesses (Zicclsm needs the D-cache)"
     },
     {
       "when": "not (NCORES > 1 and PRIVATE_DCACHE) or not (P.ZICBOM_SUPPORTED or P.ZICBOZ_SUPPORTED or P.ZICBOP_SUPPORTED)",

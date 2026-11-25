@@ -47,6 +47,7 @@ module config_tb import cvw::*; #(`CVW_MULTICORE_PARAMS(AHBW));
     $fdisplay(fd, "\"DCACHE_SUPPORTED\": %0d,", P.DCACHE_SUPPORTED);
     $fdisplay(fd, "\"ICACHE_SUPPORTED\": %0d,", P.ICACHE_SUPPORTED);
     $fdisplay(fd, "\"BURST_EN\": %0d,", P.BURST_EN);
+    $fdisplay(fd, "\"ZICCLSM_SUPPORTED\": %0d,", P.ZICCLSM_SUPPORTED);
     $fdisplay(fd, "\"ZICBOM_SUPPORTED\": %0d,", P.ZICBOM_SUPPORTED);
     $fdisplay(fd, "\"ZICBOZ_SUPPORTED\": %0d,", P.ZICBOZ_SUPPORTED);
     $fdisplay(fd, "\"ZICBOP_SUPPORTED\": %0d,", P.ZICBOP_SUPPORTED);

@@ -22,6 +22,7 @@ module policy_tb import cvw::*; ();
           3: core.SVADU_SUPPORTED = 1;
           4: core.SVPBMT_SUPPORTED = 1;
           5: core.AHBW = 32;
+          6: core.ZICCLSM_SUPPORTED = 1;
           default: begin end
         endcase
         assert (multicore_config_error(core, topology) == expected)
