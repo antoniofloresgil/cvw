@@ -17,7 +17,10 @@ regression-wally --multicore
 python3 tests/multicore/ci.py --case mesi-banked
 ```
 
-Los casos son `single-default`, `bus`, `msi` y `mesi-banked`. La regresión
+Los casos son `single-default`, `bus`, `msi`, `mesi-banked` y `l1-burst`
+(L1 de datos coherentes, ADR 0026, con las líneas de los núcleos en ráfagas
+INCR como en la Nexys Video: atómicos, stress con interrupciones y Sv39, stress
+con latencia aleatoria y beats SEQ gratis, y token ring). La regresión
 ordinaria también los incluye y el workflow `Multicore` los ejecuta en pushes
 y PR que afectan al RTL, configuración o verificación. Incluyen lint explícito
 con dos/tres harts, periféricos, esperas/errores de bus, coherencia con una/dos

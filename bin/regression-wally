@@ -899,7 +899,7 @@ def selectTests(args, sims, coverStr):
         buildTests(deriv=True)
         # Derivatives are generated once before the worker pool starts. Each case
         # gets its own work directory and must not regenerate config/deriv in parallel.
-        for case in ("single-default", "bus", "msi", "mesi-banked"):
+        for case in ("single-default", "bus", "msi", "mesi-banked", "l1-burst"):
             configs.append(TestCase(
                 name="multicore", variant=case,
                 cmd=[sys.executable, f"{WALLY}/tests/multicore/ci.py", "--case", case, "--skip-deriv",

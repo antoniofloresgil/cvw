@@ -21,7 +21,11 @@ CASES = {
     'bus': ('deriv/multicore_atomic', 'stress', [1, 2, 3]),
     'msi': ('deriv/multicore_msi', 'ci-msi', [2, 3]),
     'mesi-banked': ('deriv/multicore_msi', 'ci-mesi-banked', [2, 3]),
+    # Coherent L1 D-caches (ADR 0026) with the cores' lines sent as INCR bursts, as on the Nexys Video
+    'l1-burst': ('deriv/multicore_l1burst', 'linux-l1', [2, 3]),
 }
+# Extra run.py options per case
+CASE_OPTIONS = {'l1-burst': ['--core-bursts']}
 
 
 def execute(command, log, cwd=None):
@@ -76,7 +80,7 @@ def main():
             casework = work / name
             casework.mkdir(exist_ok=True)
             config, profile, core_counts = CASES[name]
-            options = ['--profile', profile, '--cores', *map(str, core_counts)]
+            options = ['--profile', profile, '--cores', *map(str, core_counts), *CASE_OPTIONS.get(name, [])]
             values = profiles.resolve(profile)
             params = [arg for arg in profiles.verilator_args(values) if not arg.startswith('-GNCORES=')]
             print(f"Starting multicore CI case {name}", flush=True)
@@ -87,7 +91,7 @@ def main():
                          '--work-dir', str(casework / 'policy')], casework / 'policy.log')
             for cores in ([1] if name == "single-default" else [2, 3]):
                 lint(root, casework, config, params, cores)
-                if name != "single-default":
+                if name not in ("single-default", "l1-burst"):   # multicore_pmu has no D-cache to make coherent
                     lint(root, casework, "deriv/multicore_pmu", params, cores, "pmu-")
             if name == "single-default":
                 execute([sys.executable, str(root / "tests/multicore/check_singlecore.py"), "--upstream-ref", UPSTREAM_REF,
@@ -113,9 +117,20 @@ def main():
                              "--work-dir", str(casework / "adapter")], casework / "adapter.log")
                 execute([sys.executable, str(root / "tests/multicore/run.py"), "--skip-deriv", "--suite", "atomic",
                          "--latency", "0", "3", *options, "--work-dir", str(casework)], casework / "run.log")
-                # Per-hart counters and Sscofpmf; cache events where private caches exist.
-                execute([sys.executable, str(root / "tests/multicore/run.py"), "--skip-deriv", "--suite", "pmu", "--focus", "soc",
-                         "--latency", "0", "3", *options, "--work-dir", str(casework)], casework / "pmu.log")
+                if name == "l1-burst":
+                    # Random operations on shared lines with timer interrupts and Sv39 (A/D updates by the walker),
+                    # at a fixed latency and at a random one where only a burst's first beat waits, like DDR3;
+                    # then a token ring over more lines than the D-caches hold (writebacks and snoops of dirty lines).
+                    run = [sys.executable, str(root / "tests/multicore/run.py"), "--skip-deriv", "--focus", "soc", *options,
+                           "--work-dir", str(casework)]
+                    execute([*run, "--suite", "stress", "--latency", "3", "--irq", "--vm"], casework / "stress.log")
+                    execute([*run, "--suite", "stress", "--latency", "30", "--random-latency", "--seq-free", "--seed", "2"],
+                            casework / "stress-rlat.log")
+                    execute([*run, "--suite", "tokenring", "--latency", "0", "3"], casework / "tokenring.log")
+                else:
+                    # Per-hart counters and Sscofpmf; cache events where private caches exist.
+                    execute([sys.executable, str(root / "tests/multicore/run.py"), "--skip-deriv", "--suite", "pmu", "--focus", "soc",
+                             "--latency", "0", "3", *options, "--work-dir", str(casework)], casework / "pmu.log")
             effective = [profiles.probe(config, {**values, 'NCORES': n}, casework / f'config-{n}') for n in core_counts]
             scope = {'environment': 'verilator', 'full_core_harts': core_counts,
                      'full_core_widths': sorted({c['core']['XLEN'] for c in effective}),
@@ -125,7 +140,8 @@ def main():
                      'hart_count_qualification': 'executed_counts_only'}
             result = {"validation_scope": scope, "effective_configurations": effective, "case": name, "config": config, "options": options, "lint_parameters": params,
                       "config_sha256": hashlib.sha256((root / "config" / config / "config.vh").read_bytes()).hexdigest(),
-                      "suite": "translated AMO, cached and uncacheable" if name == "single-default" else "atomic, smoke and PMU",
+                      "suite": "translated AMO, cached and uncacheable" if name == "single-default" else
+                               "atomic, smoke, stress (irq+vm, random latency) and token ring" if name == "l1-burst" else "atomic, smoke and PMU",
                       "latencies": [] if name == "single-default" else [0, 3],
                       "verdict": "PASS", "elapsed_seconds": round(time.monotonic() - started, 2)}
             (casework / "results.json").write_text(json.dumps(result, indent=2) + "\n")

@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        case: [single-default, bus, msi, mesi-banked]
+        case: [single-default, bus, msi, mesi-banked, l1-burst]
     steps:
       - uses: actions/checkout@v7
         with:
