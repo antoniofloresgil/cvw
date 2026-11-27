@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-// Pin-level contracts of the extracted engines: priority and zero-cycle reads.
+// Pin-level contracts of the extracted engines: priority, and block-RAM reads that
+// take the next cycle's address and answer one cycle later.
 `include "config.vh"
 module engines_tb import cvw::*; ();
     `include "parameter-defs.vh"
@@ -23,7 +24,8 @@ module engines_tb import cvw::*; ();
         .CompleteOwner(completed_owner), .CompleteAddr(completed_addr), .CompleteSize(completed_size),
         .CompleteOp(completed_op), .CompleteWrite(completed_write), .CompleteError(completed_error),
         .ReservationClear(clear), .LocalStoreCommit(local_commit), .LocalStoreAddr(local_addr), .SCFail(sc_fail));
-    logic [N-1:0][P.PA_BITS-1:0] probe_addr = '0;
+    logic [N-1:0][P.PA_BITS-1:0] probe_addr = '0, probe_q;   // probe_q: the arbiter's request register
+    always_ff @(posedge clk) probe_q <= probe_addr;
     logic [N-1:0] i_hit;
     logic [N-1:0][P.AHBW-1:0] i_data;
     logic global_write = 0, invalidate = 0, fill = 0, last = 0;
@@ -31,26 +33,27 @@ module engines_tb import cvw::*; ();
     logic [P.PA_BITS-1:0] global_addr = A, fill_addr = A, fill_word = A;
     logic [P.AHBW-1:0] fill_data = '0;
     multicore_icache_bank #(.P(P), .NCORES(N), .WORDS(W), .LINE_WORDS(L)) instructions(
-        .HCLK(clk), .HRESETn(resetn), .ProbeAddr(probe_addr), .ProbeHit(i_hit), .ProbeData(i_data),
+        .HCLK(clk), .HRESETn(resetn), .ProbeAddr(probe_q), .ProbeAddrNext(probe_addr), .ProbeHit(i_hit), .ProbeData(i_data),
         .LocalStoreCommit(local_commit), .LocalStoreAddr(local_addr), .GlobalWrite(global_write), .GlobalAddr(global_addr),
         .FillInvalidate(invalidate), .FillBeat(fill), .FillLast(last), .FillOwner(fill_owner),
         .FillAddr(fill_addr), .FillWordAddr(fill_word), .FillData(fill_data));
     // A one-word I bank makes first/final fill coincide with old-tag invalidation.
     logic short_fill = 0;
-    logic [P.PA_BITS-1:0] short_addr = A;
+    logic [P.PA_BITS-1:0] short_addr = A, short_q;
+    always_ff @(posedge clk) short_q <= short_addr;
     logic [P.AHBW-1:0] short_data = 'h600;
     logic [N-1:0] short_hit;
     logic [N-1:0][P.AHBW-1:0] short_read;
     multicore_icache_bank #(.P(P), .NCORES(N), .WORDS(W), .LINE_WORDS(1)) short_instructions(
-        .HCLK(clk), .HRESETn(resetn), .ProbeAddr({N{short_addr}}), .ProbeHit(short_hit), .ProbeData(short_read),
+        .HCLK(clk), .HRESETn(resetn), .ProbeAddr({N{short_q}}), .ProbeAddrNext({N{short_addr}}), .ProbeHit(short_hit), .ProbeData(short_read),
         .LocalStoreCommit(local_commit), .LocalStoreAddr(local_addr), .GlobalWrite(global_write), .GlobalAddr(global_addr),
         .FillInvalidate(1'b0), .FillBeat(short_fill), .FillLast(1'b1), .FillOwner(2'd0),
         .FillAddr(short_addr), .FillWordAddr(short_addr), .FillData(short_data));
     logic [N-1:0][$clog2(W)-1:0] local_index = '0;
     logic [N-1:0][P.AHBW-1:0] d_local_data;
     logic [1:0] word_owner = 0, line_owner = 0, write_owner = 0;
-    logic [$clog2(W)-1:0] word_index = 0, store_index = 0;
-    logic [$clog2(W/L)-1:0] line_index = 0, install_index = 0;
+    logic [$clog2(W)-1:0] word_index = 0;
+    logic [N-1:0] d_local_valid;
     logic [P.AHBW-1:0] word_data, line_data[L], install_line[L], store_data = '0;
     logic install = 0, store = 0;
     logic [P.XLEN/8-1:0] strb = '0;
@@ -58,11 +61,11 @@ module engines_tb import cvw::*; ();
     logic [N-1:0][P.AHBW-1:0] d_store_data = '0;
     logic [N-1:0][P.XLEN/8-1:0] d_store_strb = '0;
     multicore_dcache_data #(.P(P), .NCORES(N), .WORDS(W), .LINE_WORDS(L)) data_bank(
-        .HCLK(clk), .HRESETn(resetn), .LocalWordIndex(local_index), .LocalReadData(d_local_data),
-        .WordReadOwner(word_owner), .LineReadOwner(line_owner), .WordReadIndex(word_index),
-        .LineReadIndex(line_index), .WordReadData(word_data), .LineReadData(line_data),
-        .Install(install), .Store(store), .WriteOwner(write_owner), .InstallIndex(install_index),
-        .InstallLine(install_line), .StoreIndex(store_index), .StoreData(store_data), .StoreStrb(strb),
+        .HCLK(clk), .HRESETn(resetn), .LocalWordIndexNext(local_index), .LocalReadData(d_local_data),
+        .LocalReadValid(d_local_valid), .WordIndexNext(word_index),
+        .WordReadOwner(word_owner), .LineReadOwner(line_owner), .WordReadData(word_data), .LineReadData(line_data),
+        .Install(install), .Store(store), .WriteOwner(write_owner),
+        .InstallLine(install_line), .StoreData(store_data), .StoreStrb(strb),
         .LocalStore(d_local_store), .LocalStoreData(d_store_data), .LocalStoreStrb(d_store_strb));
     task automatic tick();
         @(posedge clk); @(negedge clk);
@@ -114,12 +117,14 @@ module engines_tb import cvw::*; ();
         // I-bank refill visibility, victim alias invalidation and broadcast.
         probe_addr[0] = A; iline(A);
         assert (i_data[0] == 'h500) else $fatal(1, "I word lookup changed");
-        probe_addr[0] = A + (P.PA_BITS'(2) << OFFSET); #1;
-        assert (i_hit[0] && i_data[0] == 'h502) else $fatal(1, "I read added latency");
+        probe_addr[0] = A + (P.PA_BITS'(2) << OFFSET); tick();
+        assert (i_hit[0] && i_data[0] == 'h502) else $fatal(1, "I read took more than one cycle");
         short_fill = 1; tick(); short_fill = 0;
-        assert (short_hit[0]) else $fatal(1, "Victim fixture did not install its old tag");
+        assert (!short_hit[0]) else $fatal(1, "A probe read while its word was refilled hit");
+        tick();
+        assert (short_hit[0] && short_read[0] == 'h600) else $fatal(1, "Victim fixture did not install its old tag");
         short_addr = B; short_data = 'h700; local_addr[1] = A; local_commit[1] = 1;
-        short_fill = 1; tick(); short_fill = 0; local_commit = '0;
+        short_fill = 1; tick(); short_fill = 0; local_commit = '0; tick();
         assert (short_hit[0] && short_read[0] == 'h700) else $fatal(1, "Victim invalidation erased replacement I fill");
         global_addr = B+1; global_write = 1; tick(); global_write = 0;
         assert (!short_hit[0]) else $fatal(1, "Global partial store retained I copy");
@@ -129,20 +134,23 @@ module engines_tb import cvw::*; ();
         assert (!i_hit[0]) else $fatal(1, "Cancelled I fill exposed data");
         // Data install + byte merge, independent local writers and async ports.
         install = 1; tick(); install = 0;
-        assert (word_data == 'h100) else $fatal(1, "Data installation changed");
+        assert (!d_local_valid[0] && d_local_valid[1] && d_local_valid[2])
+            else $fatal(1, "A local read of the line the controller wrote was not marked");
+        tick();
+        assert (word_data == 'h100 && d_local_valid[0] && d_local_data[0] == 'h100) else $fatal(1, "Data installation changed");
         for (int w = 0; w < L; w++) install_line[w] = P.AHBW'(64'h89abcdef12340200+w);
-        install = 1; store = 1; store_index = 2; strb = (P.XLEN/8)'(3); store_data = 'hcafe;
+        install = 1; store = 1; strb = (P.XLEN/8)'(3); store_data = 'hcafe;
         d_local_store = 3'b110; d_store_strb = '1; d_store_data[1] = 'h1111; d_store_data[2] = 'h2222;
         word_index = 2; #1;
-        assert (word_data == 'h102) else $fatal(1, "Writes changed RAM before the edge");
-        tick(); install = 0; store = 0; d_local_store = '0;
+        assert (word_data == 'h100) else $fatal(1, "Writes changed RAM before the edge");
+        tick(); install = 0; store = 0; d_local_store = '0; tick();
         assert (word_data == P.AHBW'(64'h89abcdef1234cafe) && d_local_data[1] == 'h1111 && d_local_data[2] == 'h2222)
             else $fatal(1, "Fill/store merge or parallel local writes changed");
         for (int w = 0; w < L; w++)
             assert (line_data[w] == (w == 2 ? P.AHBW'(64'h89abcdef1234cafe) : P.AHBW'(64'h89abcdef12340200+w)))
                 else $fatal(1, "Full-line port lost a word");
-        word_index = 3; #1;
-        assert (word_data == P.AHBW'(64'h89abcdef12340203)) else $fatal(1, "Word read added a cycle");
+        word_index = 3; tick();
+        assert (word_data == P.AHBW'(64'h89abcdef12340203)) else $fatal(1, "Word read took more than one cycle");
         probe_addr[0] = B; iline(B);
         issue = 1; issue_op = 2; tick(); issue = 0;
         lr(B);

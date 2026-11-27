@@ -30,6 +30,8 @@ module atomic import cvw::*; #(parameter cvw_t P, parameter bit ZABHA_SUPPORTED 
   input  logic [1:0]           LSUAtomicM,     // 10: AMO operation, select AMOResultM as the writedata output, 01: LR/SC operation
   input  logic [1:0]           PreLSURWM,      // IEU or HPTW Read/Write signal
   input  logic                 LSUFlushW,      // On FlushM or TLB miss ignore memory operation
+  input  logic                 ResKill,        // the D-cache lost the line at ResKillAdr (coherent L1, ADR 0026)
+  input  logic [P.PA_BITS-1:0] ResKillAdr,
   output logic [P.XLEN-1:0]    IMAWriteDataM,  // IEU, HPTW, or AMO write data
   output logic                 SquashSCW,      // Store conditional failed disable write to GPR
   output logic [1:0]           LSURWM          // IEU or HPTW Read/Write signal gated by LR/SC
@@ -59,7 +61,7 @@ module atomic import cvw::*; #(parameter cvw_t P, parameter bit ZABHA_SUPPORTED 
       LSUAtomicM[0] & PreLSURWM[0] & SCFail & ~LSUFlushW, SquashSCW);
   end else if (P.ZALRSC_SUPPORTED) begin
     assign MemReadM = PreLSURWM[1] & ~LSUFlushW;
-    lrsc #(P) lrsc(.clk, .reset, .StallW, .MemReadM, .PreLSURWM, .LSUAtomicM, .PAdrM, .SquashSCW, .LSURWM);
+    lrsc #(P) lrsc(.clk, .reset, .StallW, .MemReadM, .PreLSURWM, .LSUAtomicM, .PAdrM, .ResKill, .ResKillAdr, .SquashSCW, .LSURWM);
   end else begin
     assign SquashSCW = 0;
     assign LSURWM = PreLSURWM;

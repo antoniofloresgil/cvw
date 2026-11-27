@@ -20,6 +20,16 @@ NONSEQ (`10`), SINGLE (`000`) and CoreHMASTLOCK=0 are supported. There is one
 outstanding request per hart. An edge with HREADY high can simultaneously
 retire the previous request and accept its successor.
 
+Exception, coherent L1 with `BURST_EN` (`ahbmulticore` `CORE_BURSTS`): a cache
+line may also come as a fixed-length INCR4/8/16 burst, NONSEQ then SEQ beats,
+still one beat outstanding per hart. The adapter sends the whole line to memory
+as one burst and keeps the bus for that hart until it ends. A read burst is
+issued at its first beat and each beat is answered once its data is in the
+line buffer; a write burst's beats are answered as they are collected, except
+the last, which is answered only after memory has taken the whole line. A
+hart that gives IDLE or NONSEQ instead of the next SEQ leaves its burst; the
+memory burst still completes.
+
 An available port advertises HREADY independently of HTRANS. Wally busfsm
 qualifies initial HTRANS with HREADY; gating idle HREADY by HTRANS or a prior
 grant would form a combinational dependency or deadlock. EBU also saves the

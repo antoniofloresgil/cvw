@@ -25,8 +25,10 @@ def main():
     summary.unlink(missing_ok=True)
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     rtl_names = ('ahbmulticore', 'ahbmsicache', 'ahbmsifabric', 'ahblineburst', 'ahbburstmux',
-                 'corebus_contract', 'multicore_reservations', 'multicore_icache_bank', 'multicore_dcache_data')
-    rtl = [root / f'src/ebu/{name}.sv' for name in rtl_names]
+                 'corebus_contract', 'multicore_reservations', 'multicore_icache_bank', 'multicore_dcache_data',
+                 'multicore_tag_ram')
+    rtl = [root / f'src/ebu/{name}.sv' for name in rtl_names] + \
+        [root / 'src/generic' / name for name in ('mem/ram2p1r1wbe.sv', 'mem/ram2p2rwbe.sv', 'flop/flopen.sv')]
     observers = [tests / f'{name}.sv' for name in ('observation_pkg', 'cache_observer', 'bridge_observer', 'word_observer')]
     inputs = [root / 'src/cvw.sv', *rtl, *observers, tests / 'observation_tb.sv', tests / 'msi_tb.sv',
               tests / 'msifabric_tb.sv', tests / 'fabric_observer.svh', tests / 'mesi_checks.vh', Path(__file__).resolve(),

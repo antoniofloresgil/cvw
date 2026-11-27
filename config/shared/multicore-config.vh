@@ -17,6 +17,7 @@ typedef struct packed {
   int unsigned COHERENCE_BANKS;
   bit LOCAL_DCACHE_READS;
   bit LOCAL_DCACHE_WRITES;
+  bit COHERENT_L1;
 } multicore_t;
 
 function automatic bit multicore_power2(input int unsigned value);
@@ -31,11 +32,12 @@ function automatic int multicore_config_error(input cvw_t P, input multicore_t M
   if (!((!M.SHARED_CACHE) || (multicore_power2(M.SHARED_CACHE_WORDS) && (M.SHARED_CACHE_WORDS >= 2)))) return 5;
   if (!((!((M.NCORES > 1) && M.PRIVATE_DCACHE)) || (multicore_power2(M.PRIVATE_DCACHE_WORDS) && multicore_power2(M.PRIVATE_DCACHE_LINE_WORDS) && (M.PRIVATE_DCACHE_WORDS >= ((2 * M.COHERENCE_BANKS) * M.PRIVATE_DCACHE_LINE_WORDS))))) return 6;
   if (!((!((M.NCORES > 1) && M.PRIVATE_DCACHE)) || (multicore_power2(M.PRIVATE_ICACHE_WORDS) && multicore_power2(M.PRIVATE_ICACHE_LINE_WORDS) && (M.PRIVATE_ICACHE_WORDS >= ((2 * M.COHERENCE_BANKS) * M.PRIVATE_ICACHE_LINE_WORDS))))) return 7;
-  if (!(((M.NCORES == 1) && (!M.SHARED_CACHE)) || (P.BUS_SUPPORTED && (!P.DTIM_SUPPORTED) && (!P.IROM_SUPPORTED) && (!P.DCACHE_SUPPORTED) && (!P.ICACHE_SUPPORTED) && (!P.BURST_EN)))) return 8;
-  if (!((!((M.NCORES > 1) && M.PRIVATE_DCACHE)) || (!(P.ZICBOM_SUPPORTED || P.ZICBOZ_SUPPORTED || P.ZICBOP_SUPPORTED)))) return 9;
-  if (!((!(((M.NCORES > 1) && M.PRIVATE_DCACHE) || M.SHARED_CACHE)) || (!P.SVADU_SUPPORTED))) return 10;
-  if (!((!(((M.NCORES > 1) && M.PRIVATE_DCACHE) || M.SHARED_CACHE)) || (!P.SVPBMT_SUPPORTED))) return 11;
-  if (!(((M.NCORES == 1) && (!M.SHARED_CACHE)) || (P.AHBW == P.XLEN))) return 12;
+  if (!(((M.NCORES == 1) && (!M.SHARED_CACHE) && (!M.COHERENT_L1)) || (M.COHERENT_L1 && P.BUS_SUPPORTED && (!P.DTIM_SUPPORTED) && (!P.IROM_SUPPORTED) && P.DCACHE_SUPPORTED) || ((!M.COHERENT_L1) && P.BUS_SUPPORTED && (!P.DTIM_SUPPORTED) && (!P.IROM_SUPPORTED) && (!P.DCACHE_SUPPORTED) && (!P.ICACHE_SUPPORTED) && (!P.BURST_EN) && (!P.ZICCLSM_SUPPORTED)))) return 8;
+  if (!((!(((M.NCORES > 1) && M.PRIVATE_DCACHE) || M.COHERENT_L1)) || (!(P.ZICBOM_SUPPORTED || P.ZICBOZ_SUPPORTED || P.ZICBOP_SUPPORTED)))) return 9;
+  if (!((!(((M.NCORES > 1) && M.PRIVATE_DCACHE) || M.SHARED_CACHE || M.COHERENT_L1)) || (!P.SVADU_SUPPORTED))) return 10;
+  if (!((!(((M.NCORES > 1) && M.PRIVATE_DCACHE) || M.SHARED_CACHE || M.COHERENT_L1)) || (!P.SVPBMT_SUPPORTED))) return 11;
+  if (!(((M.NCORES == 1) && (!M.SHARED_CACHE) && (!M.COHERENT_L1)) || (P.AHBW == P.XLEN))) return 12;
+  if (!((!M.COHERENT_L1) || (!(M.PRIVATE_DCACHE || M.PRIVATE_ICACHE || M.SHARED_CACHE)))) return 13;
   return 0;
 endfunction
 
@@ -48,11 +50,12 @@ function automatic string multicore_config_message(input int error);
     5: return "Shared cache requires power-of-two WORDS >= 2";
     6: return "Each coherence bank needs power-of-two private DCACHE capacity and at least two complete lines";
     7: return "Each coherence bank needs power-of-two private ICACHE capacity and at least two complete lines";
-    8: return "Multicore requires a shared bus with no private memories/caches or bursts";
-    9: return "MSI baseline does not implement cache-maintenance operations";
+    8: return "Multicore requires a shared bus with no private memories, and either coherent L1 D-caches (which may use bursts) or no core caches, no bursts and no hardware misaligned accesses (Zicclsm needs the D-cache)";
+    9: return "MSI caches (private or coherent L1) do not implement cache-maintenance operations";
     10: return "Cached SMP uses software PTE A/D updates (Svade)";
     11: return "Multicore caches use physical RAM attributes; Svpbmt must be disabled";
     12: return "Buffered memory requires AHBW == XLEN";
+    13: return "Coherent L1 D-caches replace the fabric's private and shared caches";
     default: return "Valid multicore configuration";
   endcase
 endfunction
@@ -72,7 +75,8 @@ endfunction
   parameter bit MESI = 1'b0, \
   parameter int unsigned COHERENCE_BANKS = 32'd1, \
   parameter bit LOCAL_DCACHE_READS = 1'b0, \
-  parameter bit LOCAL_DCACHE_WRITES = 1'b0
+  parameter bit LOCAL_DCACHE_WRITES = 1'b0, \
+  parameter bit COHERENT_L1 = 1'b0
 
 `define CVW_MULTICORE_CONNECT \
   .NCORES(NCORES), \
@@ -89,7 +93,8 @@ endfunction
   .MESI(MESI), \
   .COHERENCE_BANKS(COHERENCE_BANKS), \
   .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), \
-  .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)
+  .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES), \
+  .COHERENT_L1(COHERENT_L1)
 
 `define CVW_MULTICORE_VALUE '{ \
   NCORES: 32'(NCORES), \
@@ -106,4 +111,5 @@ endfunction
   MESI: 1'(MESI), \
   COHERENCE_BANKS: 32'(COHERENCE_BANKS), \
   LOCAL_DCACHE_READS: 1'(LOCAL_DCACHE_READS), \
-  LOCAL_DCACHE_WRITES: 1'(LOCAL_DCACHE_WRITES) }
+  LOCAL_DCACHE_WRITES: 1'(LOCAL_DCACHE_WRITES), \
+  COHERENT_L1: 1'(COHERENT_L1) }

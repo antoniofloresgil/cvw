@@ -100,7 +100,10 @@
       mmc@0 {
         compatible = "mmc-spi-slot";
         reg = <0>;
-        spi-max-frequency = <1000000>;
+        // Above the controller's limit on purpose: spi-sifive rounds it down to clk/2 (10 MHz at 20 MHz, the
+        // rate the ZSBL reads the card at) and polls its FIFO instead of taking an interrupt per 8 bytes when
+        // 1.6 MHz * fifo depth <= this. On the board: SD 10 -> 195 KB/s single core, 3 -> 26 KB/s with two harts.
+        spi-max-frequency = <20000000>;
         voltage-ranges = <3300 3300>;
         disable-wp;
         // gpios = <&gpio0 6 1>;

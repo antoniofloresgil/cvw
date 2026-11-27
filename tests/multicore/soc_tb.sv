@@ -13,6 +13,7 @@ module soc_tb import cvw::*; #(parameter int LATENCY = 0, `CVW_MULTICORE_PARAMS(
     logic reset_ext = 1;
     logic reset;
     string image, suite;
+    int unsigned max_cycles;
     always #5 clk = ~clk;
     wallypipelinedsoc #(.P(TEST_P), `CVW_MULTICORE_CONNECT) dut(
         .clk, .reset_ext, .reset, .ExternalStall(1'b0),
@@ -27,10 +28,11 @@ module soc_tb import cvw::*; #(parameter int LATENCY = 0, `CVW_MULTICORE_PARAMS(
     initial begin
         if (!$value$plusargs("image=%s", image)) $fatal(1, "Missing +image=...");
         if (!$value$plusargs("suite=%s", suite)) suite = "smoke";
+        if (!$value$plusargs("cycles=%d", max_cycles)) max_cycles = 100000;
         load_image(image);
         repeat (5) @(negedge clk);
         reset_ext = 0;
-        for (int cycle = 0; cycle < 100000; cycle++) begin
+        for (int cycle = 0; cycle < max_cycles; cycle++) begin
             bit complete;
             @(negedge clk);
             complete = 1;
@@ -43,11 +45,13 @@ module soc_tb import cvw::*; #(parameter int LATENCY = 0, `CVW_MULTICORE_PARAMS(
             end
             if (complete) begin
                 if (suite == "uart") assert (UARTWrites == 4) else $fatal(1, "Expected four UART writes, got %0d", UARTWrites);
-                $display("TRAFFIC: memory=%0d local=%0d", MemoryTransfers, LocalCompletions);
+                $display("TRAFFIC: memory=%0d local=%0d seq=%0d", MemoryTransfers, LocalCompletions, SeqTransfers);
                 $display("PASS: %s, %0d harts, RAM latency %0d (%0d cycles)", suite, NCORES, LATENCY, cycle);
                 $finish;
             end
         end
+        for (int h = 0; h < NCORES; h++)
+            $display("Hart %0d at timeout: phase=%0d status=%h", h, architectural_word('h1001+8*h), architectural_word('h1003+8*h));
         $fatal(1, "Multicore smoke test timed out");
     end
 endmodule

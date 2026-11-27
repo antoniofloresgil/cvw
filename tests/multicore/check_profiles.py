@@ -46,17 +46,17 @@ def main():
     effective = profiles.probe('deriv/multicore_linux', profiles.resolve('linux-msi'), work / 'linux')
     rng = random.Random(20261021)
     mutations = {1: ('DCACHE_SUPPORTED', 1), 2: ('ZICBOM_SUPPORTED', 1), 3: ('SVADU_SUPPORTED', 1),
-                 4: ('SVPBMT_SUPPORTED', 1), 5: ('AHBW', 32)}
+                 4: ('SVPBMT_SUPPORTED', 1), 5: ('AHBW', 32), 6: ('ZICCLSM_SUPPORTED', 1)}
     vectors = []
     for i in range(300):
         values = profiles.resolve('ci-msi')
-        if i >= 6:
+        if i >= 7:
             for key in profiles.FIELDS:
                 if profiles.FIELDS[key]['type'] == 'bit':
                     values[key] = rng.randrange(2)
                 else:
                     values[key] = rng.choice([0, 1, 2, 3, 4, 8, 16, 32, 64, 4096])
-        mutation = i if i < 6 else rng.randrange(6)
+        mutation = i if i < 7 else rng.randrange(7)
         core = dict(effective['core'])
         if mutation:
             key, value = mutations[mutation]

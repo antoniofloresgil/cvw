@@ -172,7 +172,7 @@ module ahbmsifabric import cvw::*; #(
   end
 
   for (genvar b = 0; b < BANKS; b++) begin : banks
-    logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr;
+    logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr, CacheReadAddrNext;
     logic [NCORES-1:0][P.AHBW-1:0] CacheReadData, CacheWriteData;
     logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb;
     logic [NCORES-1:0] CacheReadHit, CacheWriteHit, CacheWriteCommit;
@@ -191,13 +191,13 @@ module ahbmsifabric import cvw::*; #(
       .CoreHADDR(Addr), .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE(Write), .CoreHMASTLOCK('0),
       .CoreHSIZE(Size), .CoreHBURST('0), .CoreHPROT(Prot), .CoreHTRANS(BTrans[b]), .CoreHATOMIC(Op),
       .CoreHRDATA(BData[b]), .CoreHREADY(BReady[b]), .CoreHRESP(BResp[b]), .CoreSCFail(BSCFail[b]),
-      .CacheReadAddr, .CacheReadHit, .CacheReadData, .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
-      .InstrMiss(BInstrMiss[b]), .HOWNER(Owner), .HADDR(A), .HWDATA(WD), .HWSTRB(WS), .HWRITE(Wr), .HMASTLOCK(Lock),
+      .CacheReadAddr, .CacheReadAddrNext, .CacheReadHit, .CacheReadData, .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb,
+      .InstrMiss(BInstrMiss[b]), .FetchPending(), .CohHold('0), .HOWNER(Owner), .HADDR(A), .HWDATA(WD), .HWSTRB(WS), .HWRITE(Wr), .HMASTLOCK(Lock),
       .HSIZE(Sz), .HBURST(Burst), .HPROT(Pr), .HTRANS(Tr), .HRDATA(RD), .HREADY(Ready), .HRESP(Resp));
     ahbmsicache #(.P(P), .NCORES(NCORES), .WORDS(DW), .LINE_WORDS(DCACHE_LINE_WORDS),
       .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI),
       .IFILL_WORDS(PRIVATE_ICACHE ? ICACHE_LINE_WORDS : 1), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
-      .HCLK, .HRESETn, .CacheReadAddr, .CacheReadHit, .CacheReadData,
+      .HCLK, .HRESETn, .CacheReadAddr, .CacheReadAddrNext, .CacheReadHit, .CacheReadData,
       .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb, .DataMiss(BDataMiss[b]),
       .UpHOWNER(Owner), .UpHADDR(A), .UpHWDATA(WD), .UpHWSTRB(WS), .UpHWRITE(Wr), .UpHMASTLOCK(Lock),
       .UpHSIZE(Sz), .UpHBURST(Burst), .UpHPROT(Pr), .UpHTRANS(Tr), .UpHRDATA(RD), .UpHREADY(Ready), .UpHRESP(Resp),
@@ -219,8 +219,9 @@ module ahbmsifabric import cvw::*; #(
     .CoreHWSTRB(MemStrb), .CoreHWRITE(MemWrite), .CoreHMASTLOCK('0), .CoreHSIZE(MemSize),
     .CoreHBURST(MemBurst), .CoreHPROT(MemProt), .CoreHTRANS(MemTrans), .CoreHATOMIC('0),
     .CoreHRDATA(MemRData), .CoreHREADY(MemReady), .CoreHRESP(MemResp), .CoreSCFail(),
-    .CacheReadAddr(), .CacheReadHit('0), .CacheReadData('0), .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(),
-    .InstrMiss(), .HOWNER(), .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HMASTLOCK(), .HSIZE, .HBURST, .HPROT, .HTRANS, .HRDATA, .HREADY, .HRESP);
+    .CacheReadAddr(), .CacheReadAddrNext(), .CacheReadHit('0), .CacheReadData('0), .CacheWriteHit('0), .CacheWriteCommit(), .CacheWriteData(), .CacheWriteStrb(),
+    .InstrMiss(), .FetchPending(), .CohHold('0),
+    .HOWNER(), .HADDR, .HWDATA, .HWSTRB, .HWRITE, .HMASTLOCK(), .HSIZE, .HBURST, .HPROT, .HTRANS, .HRDATA, .HREADY, .HRESP);
   end
   // A request goes to one home, so the per-hart misses of all homes simply merge.
   always_comb begin

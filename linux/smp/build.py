@@ -48,7 +48,7 @@ def main():
         for key, value in options.items():
             setattr(args, key, value)
         run(['perl', ROOT / 'bin/derivgen.pl'])
-        effective = profiles.probe('deriv/multicore_linux', topology, work / 'configuration')
+        effective = profiles.probe(profiles.linux_config(topology), topology, work / 'configuration')
         dts = generate(**options, effective=effective)
         # Boot shim/image placement are intentionally a fixed platform recipe.
         core = effective['core']

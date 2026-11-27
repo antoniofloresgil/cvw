@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 `include "config.vh"
-module linux_tb import cvw::*; #(`CVW_MULTICORE_PARAMS(AHBW)
+module linux_tb import cvw::*; #(parameter int LATENCY = 0, `CVW_MULTICORE_PARAMS(AHBW)
 )(
     input logic clk, reset_ext,
     output logic ConsoleValid,
@@ -9,9 +9,16 @@ module linux_tb import cvw::*; #(`CVW_MULTICORE_PARAMS(AHBW)
     output logic [NCORES-1:0][63:0] Causes
 );
     `include "parameter-defs.vh"
+    // RAM wait states (+LATENCY), e.g. to approach the DDR3 of a board
+    function automatic cvw_t testconfig();
+        cvw_t c = P;
+        c.RAM_LATENCY = LATENCY;
+        return c;
+    endfunction
+    localparam cvw_t TEST_P = testconfig();
     string ram_image, rom_image;
     logic reset;
-    wallypipelinedsoc #(.P(P), `CVW_MULTICORE_CONNECT) dut(
+    wallypipelinedsoc #(.P(TEST_P), `CVW_MULTICORE_CONNECT) dut(
         .clk, .reset_ext, .reset, .ExternalStall(1'b0),
         .HRDATAEXT('0), .HREADYEXT(1'b1), .HRESPEXT(1'b0), .HSELEXT(),
         .HCLK(), .HRESETn(), .HADDR(), .HWDATA(), .HWSTRB(), .HWRITE(), .HSIZE(),

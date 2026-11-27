@@ -43,12 +43,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     profiles.add_arguments(parser, multiple_cores=True)
     parser.add_argument("--latency", type=int, nargs="+", default=[0, 3])
-    parser.add_argument("--suite", choices=["smoke", "atomic", "uart", "exclusive", "pmu"], default="smoke")
+    parser.add_argument("--suite", choices=["smoke", "atomic", "uart", "exclusive", "pmu", "spisnoop", "uncsnoop", "tokenring", "misalign", "stress", "plicspi", "wfiipi"], default="smoke")
     parser.add_argument("--work-dir", type=Path, help="Build/log directory; use native Linux storage on case-insensitive hosts")
     parser.add_argument("--skip-deriv", action="store_true", help="Use already generated configurations; for an enclosing regression that builds them once")
     parser.add_argument("--unit-only", action="store_true", help="Run bus/cache/peripheral tests without full-core models")
+    parser.add_argument("--seed", type=int, default=1, help="stress suite: generator seed")
+    parser.add_argument("--iterations", type=int, default=3000, help="stress suite: operations per hart")
+    parser.add_argument("--random-latency", action="store_true", help="each RAM transfer waits a random 0..latency cycles (simulation only); seeded by --seed")
+    parser.add_argument("--coherence-ila", action="store_true", help="build the FPGA debug checkers of ahbcoherence (COHERENCE_ILA), which stop the simulation when one fires")
+    parser.add_argument("--irq", action="store_true", help="stress suite: take machine timer interrupts during the random operations")
+    parser.add_argument("--vm", action="store_true", help="stress suite: random operations in S-mode under Sv39, with A/D page faults and leaf updates")
+    parser.add_argument("--core-bursts", action="store_true", help="with --coherent-l1: the cores' caches send lines as INCR bursts (multicore_l1burst, BURST_EN 1)")
+    parser.add_argument("--seq-free", action="store_true", help="the RAM latency applies only to the first beat of a burst, as with DDR3 (simulation only)")
     parser.add_argument("--focus", choices=["cache", "soc"], help="Build only the requested feature-interaction target")
     args = parser.parse_args()
+    if args.coherent_l1 and args.suite == "pmu":
+        parser.error("the pmu suite uses multicore_pmu, which has no D-cache: it cannot run with --coherent-l1")
+    if args.core_bursts and not args.coherent_l1:
+        parser.error("--core-bursts needs --coherent-l1: only the coherent L1 path takes the cores' bursts")
     args.cores = args.cores or [1, 2, 3]
     if any(not 1 <= n <= 4 for n in args.cores):
         parser.error("The smoke program reserves stacks for 1..4 harts")
@@ -77,12 +89,16 @@ def main():
     def build_test(top, config, sources, name, parameters=()):
         sources = list(sources)
         for parent, dependencies in {
-            'ahbmulticore.sv': ('corebus_contract.sv', 'multicore_reservations.sv', 'multicore_icache_bank.sv'),
-            'ahbmsicache.sv': ('multicore_dcache_data.sv',),
-        }.items():
-            if root / 'src/ebu' / parent in sources:
+            'src/ebu/ahbmulticore.sv': ('src/ebu/corebus_contract.sv', 'src/ebu/multicore_reservations.sv',
+                                        'src/ebu/multicore_icache_bank.sv'),
+            'src/ebu/ahbmsicache.sv': ('src/ebu/multicore_dcache_data.sv', 'src/ebu/multicore_tag_ram.sv'),
+            'src/ebu/multicore_icache_bank.sv': ('src/generic/mem/ram2p1r1wbe.sv', 'src/generic/flop/flopen.sv',
+                                                 'src/ebu/multicore_tag_ram.sv'),
+            'src/ebu/multicore_dcache_data.sv': ('src/generic/mem/ram2p2rwbe.sv',),
+        }.items():   # in dependency order: a dependency added here is itself looked up below
+            if root / parent in sources:
                 for dependency in dependencies:
-                    path = root / 'src/ebu' / dependency
+                    path = root / dependency
                     if path not in sources:
                         sources.append(path)
         if top in ('msi_tb', 'msifabric_tb'):
@@ -140,24 +156,30 @@ def main():
         config = "multicore_coherent"
     if args.private_dcache:
         config = "multicore_msi"
+    if args.coherent_l1:
+        config = "multicore_l1burst" if args.core_bursts else "multicore_l1"
     if args.suite == "pmu":
         config = "multicore_pmu"
-    assembly = tests / ("atomics.S" if args.suite == "atomic" else "uart.S" if args.suite == "uart" else "exclusive.S" if args.suite == "exclusive" else "pmu.S" if args.suite == "pmu" else "smoke.S")
-    march = "rv64ia_zicsr_zifencei" if args.suite == "atomic" else "rv64i_zicsr"
+    assembly = tests / ("atomics.S" if args.suite == "atomic" else "uart.S" if args.suite == "uart" else "exclusive.S" if args.suite == "exclusive" else "pmu.S" if args.suite == "pmu" else "spisnoop.S" if args.suite == "spisnoop" else "uncsnoop.S" if args.suite == "uncsnoop" else "tokenring.S" if args.suite == "tokenring" else "stress.S" if args.suite == "stress" else "plicspi.S" if args.suite == "plicspi" else "wfiipi.S" if args.suite == "wfiipi" else "misalign.S" if args.suite == "misalign" else "smoke.S")
+    march = "rv64ia_zicsr_zifencei" if args.suite in ("atomic", "stress", "plicspi") else "rv64i_zicsr"
     for cores in args.cores:
         # Cache events exist only with caches; check them where the private caches are.
         defines = ["-DCACHE_EVENTS"] if args.suite == "pmu" and args.private_dcache and cores > 1 else []
-        image = build_image(assembly, work / f"{args.suite}-{cores}.elf", march, cores, tests / "link.ld", defines)
+        if args.suite == "stress":
+            defines = [f"-DSEED={args.seed}", f"-DITERATIONS={args.iterations}"] + (["-DIRQ"] if args.irq else []) + (["-DVM"] if args.vm else [])
+        if args.suite == "plicspi":
+            defines = ["-DIRQ"] if args.irq else []
+        image = build_image(assembly, work / f"{args.suite}{'-vm' if args.vm and args.suite == 'stress' else ''}-{cores}.elf", march, cores, tests / "link.ld", defines)
         smoke_image = build_image(tests / "smoke.S", work / f"smoke-{cores}.elf", "rv64i_zicsr", cores, tests / "link.ld") if args.suite == "atomic" else None
         for latency in args.latency:
             executable = build_test(
                 "soc_tb",
                 f"deriv/{config}",
                 [tests / "soc_tb.sv", tests / "dpi.cpp", root / "testbench/common/bus_fault_guard.sv", *sorted(p for p in (root / "src").rglob("*.sv") if p.name != "cvw.sv")],
-                f"mesi{int(args.mesi)}-burst{int(args.cache_bursts)}-b{args.coherence_banks}-c2c{int(args.cache_to_cache)}-{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else ""),
-                [f"-GLATENCY={latency}", *profiles.verilator_args({**topology, 'NCORES': cores})],
+                f"mesi{int(args.mesi)}-burst{int(args.cache_bursts)}-b{args.coherence_banks}-c2c{int(args.cache_to_cache)}-{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else "") + ("-l1" if args.coherent_l1 else "") + ("-cb" if args.core_bursts else "") + ("-seqfree" if args.seq_free else "") + ("-rlat" if args.random_latency else "") + ("-ila" if args.coherence_ila else ""),
+                [f"-GLATENCY={latency}", *(["-DRAM_RANDOM_LATENCY"] if args.random_latency else []), *(["-DRAM_SEQ_FREE"] if args.seq_free else []), *(["-DCOHERENCE_ILA"] if args.coherence_ila else []), *profiles.verilator_args({**topology, 'NCORES': cores})],
             )
-            run([executable, f"+image={image}", f"+suite={args.suite}"])
+            run([executable, f"+image={image}", f"+suite={args.suite}", f"+verilator+seed+{args.seed}", "+cycles=20000000" if args.suite in ("stress", "plicspi") else "+cycles=6000000"])
             if smoke_image is not None:
                 run([executable, f"+image={smoke_image}", "+suite=smoke-on-atomic-config"])
 

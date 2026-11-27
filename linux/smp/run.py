@@ -27,6 +27,9 @@ def main():
     parser.add_argument("--timeout", type=int, default=300, help="QEMU wall time in seconds")
     parser.add_argument("--jobs", type=int, default=2)
     profiles.add_arguments(parser, default=None, linux=True)
+    parser.add_argument("--latency", type=int, default=0, help="RAM wait states of the RTL model")
+    parser.add_argument("--random-latency", type=int, metavar="SEED", help="each RAM transfer waits a random 0..--latency cycles (simulation only), with this seed")
+    parser.add_argument("--seq-free", action="store_true", help="SEQ beats of a burst take no RAM wait states, like a DDR burst (simulation only)")
     parser.add_argument("--build-only", action="store_true")
     parser.add_argument("--checkpoint", type=Path, help="Snapshot path; defaults to a mode-specific file in --work")
     parser.add_argument("--checkpoint-interval", type=int, default=5000000)
@@ -69,7 +72,7 @@ def main():
         parser.error('Another RTL build/run is using this work directory')
     if not args.reuse:
         subprocess.run(['perl', str(ROOT / 'bin/derivgen.pl')], check=True)
-    effective = profiles.probe('deriv/multicore_linux', topology, work / 'configuration')
+    effective = profiles.probe(profiles.linux_config(topology), topology, work / 'configuration')
     try:
         verify_images(work, effective, manifest)
     except ValueError as error:
@@ -115,7 +118,7 @@ def main():
         output = log.read_text(errors="replace")
         print(output)
         return 0 if "WALLY_SMP_PASS" in output and "WALLY_SMP_FAIL" not in output else 1
-    build = work / f"rtl-{cores}-{mode}-{words}"
+    build = work / (f"rtl-{cores}-{mode}-{words}" + (f"-lat{args.latency}" if args.latency else "") + ("-rlat" if args.random_latency is not None else "") + ("-seqfree" if args.seq_free else ""))
     if icache or local_reads:
         build = Path(str(build) + f"-i{int(icache)}-{iwords}-r{int(local_reads)}")
     if local_writes:
@@ -134,11 +137,11 @@ def main():
     metadata_path = build / "model.json"
     sources = sorted(p for p in (ROOT / "src").rglob("*.sv") if p.name != "cvw.sv")
     inputs = [ROOT / "src/cvw.sv", *sources, HERE / "linux_tb.sv", HERE / "sim_main.cpp",
-              ROOT / "tests/multicore/dpi.cpp", ROOT / "testbench/common/bus_fault_guard.sv", ROOT / "config/deriv/multicore_linux/config.vh",
+              ROOT / "tests/multicore/dpi.cpp", ROOT / "testbench/common/bus_fault_guard.sv", ROOT / "config" / profiles.linux_config(topology) / "config.vh",
               ROOT / "config/multicore/schema.json", ROOT / "config/multicore/profiles.py",
               *sorted((ROOT / "config/shared").glob("*.vh"))]
     fingerprint = {
-        "cores": cores, "cache_mode": mode, "cache_words": words, "savable": True, "effective_configuration": effective,
+        "cores": cores, "cache_mode": mode, "cache_words": words, "savable": True, "random_latency": args.random_latency is not None, "seq_free": args.seq_free, "effective_configuration": effective,
         "cache_line_words": dline, "icache_line_words": iline, "cache_to_cache": forwarding, "coherence_banks": banks, "cache_bursts": bursts, "mesi": mesi,
         "private_icache": icache, "icache_words": iwords, "local_dcache_reads": local_reads, "local_dcache_writes": local_writes,
         "verilator": subprocess.check_output(["verilator", "--version"], text=True).strip(),
@@ -154,9 +157,9 @@ def main():
         command = [
             "verilator", "--cc", "--exe", "--build", "--assert", "--savable",
             "-CFLAGS", "-O3", "-MAKEFLAGS", "OPT_FAST=-O3", "-j", str(args.jobs),
-            "--top-module", "linux_tb", *profiles.verilator_args(topology),
+            "--top-module", "linux_tb", *profiles.verilator_args(topology), f"-GLATENCY={args.latency}", *(["-DRAM_RANDOM_LATENCY"] if args.random_latency is not None else []), *(["-DRAM_SEQ_FREE"] if args.seq_free else []),
             "--Mdir", str(build), f"-I{ROOT / 'config/shared'}",
-            f"-I{ROOT / 'config/deriv/multicore_linux'}", str(ROOT / "src/cvw.sv"),
+            f"-I{ROOT / 'config' / profiles.linux_config(topology)}", str(ROOT / "src/cvw.sv"),
             str(HERE / "linux_tb.sv"), *map(str, sources), str(HERE / "sim_main.cpp"),
             str(ROOT / "tests/multicore/dpi.cpp"), str(ROOT / "testbench/common/bus_fault_guard.sv"),
         ]
@@ -183,6 +186,8 @@ def main():
         checkpoint_meta.write_text(json.dumps(identity, indent=2) + "\n")
     command = [str(exe), f"+ram={work / 'ram.memfile'}", f"+rom={work / 'boot.memfile'}",
                f"+cycles={args.cycles}", f"+checkpoint={checkpoint}", f"+interval={args.checkpoint_interval}"]
+    if args.random_latency is not None:
+        command.append(f"+verilator+seed+{args.random_latency}")
     if args.resume:
         command.append(f"+restore={checkpoint}")
     print(f"Running {mode}: {cores} harts, {words} words/cache. Log: {work / 'rtl.log'}", flush=True)

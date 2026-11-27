@@ -17,7 +17,8 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 module cache import cvw::*; #(parameter cvw_t P,
-                              parameter PA_BITS, LINELEN, NUMSETS, OFFSETLEN, SETLEN, NUMWAYS, LOGBWPL, WORDLEN, MUXINTERVAL, READ_ONLY_CACHE) (
+                              parameter PA_BITS, LINELEN, NUMSETS, OFFSETLEN, SETLEN, NUMWAYS, LOGBWPL, WORDLEN, MUXINTERVAL, READ_ONLY_CACHE,
+                              parameter bit COHERENT = 0) (
   input  logic                   clk,
   input  logic                   reset,
   input  logic                   Stall,             // Stall the cache, preventing new accesses. In-flight access finished but does not return to READY
@@ -46,7 +47,19 @@ module cache import cvw::*; #(parameter cvw_t P,
   input  logic [LOGBWPL-1:0]     BeatCount,         // Beat in burst
   input  logic [LINELEN-1:0]     FetchBuffer,       // Buffer long enough to hold entire cache line arriving from bus
   output logic [1:0]             CacheBusRW,        // [1] Read (cache line fetch) or [0] write bus (cache line writeback)
-  output logic [PA_BITS-1:0]     CacheBusAdr        // Address for bus access
+  output logic [PA_BITS-1:0]     CacheBusAdr,       // Address for bus access
+  // Coherence with the SoC's controller (COHERENT, ADR 0026); inputs tied to 0 and outputs unused otherwise
+  input  logic                   CohWritePerm,      // the read needs a writable line (LR)
+  output logic                   CohAcqReq, CohAcqWrite, CohAcqFlush, // acquire the slot (for a write, for a flush)
+  output logic [PA_BITS-1:0]     CohAcqAdr,         // line to acquire
+  input  logic                   CohGnt, CohGntExcl, // slot granted; no other cache holds the line
+  output logic                   CohRel,            // release the slot
+  input  logic                   CohSnpReq, CohSnpInv, // snoop: invalidate, else downgrade to S
+  input  logic [PA_BITS-1:0]     CohSnpAdr,         // snooped line
+  output logic                   CohSnpAck, CohSnpHit, CohSnpDirty, // snoop answer
+  output logic [LINELEN-1:0]     CohSnpData,        // the snooped line when it was dirty
+  output logic                   CohKill,           // this cache lost the line at CohKillAdr (LR/SC)
+  output logic [PA_BITS-1:0]     CohKillAdr
 );
 
   // Cache parameters
@@ -79,7 +92,10 @@ module cache import cvw::*; #(parameter cvw_t P,
   logic [LINELEN-1:0]            ReadDataLine, ReadDataLineCache;
   logic                          SelFetchBuffer;
   logic                          CacheEn;
+  logic [PA_BITS-1:0]            PAdrC;             // PAdr, or the snooped address while a snoop reads the arrays
+  logic                          CohSelSnoop, CohInAccess, CohInAcquire, CohInSnoop, CohOpDone, CohGranted, CohNoPerm, CohSnoopDefer;
   logic                          SelVictim;
+  logic                          FlushCacheC;
   logic [LINELEN/8-1:0]          LineByteMask;
   logic [$clog2(LINELEN/8) - $clog2(MUXINTERVAL/8) - 1:0] WordOffsetAddr;
   genvar                         index;
@@ -92,22 +108,26 @@ module cache import cvw::*; #(parameter cvw_t P,
   // and FlushAdr when handling D$ flushes
   // The icache must update to the newest PCNextF on flush as it is probably a trap.  Trap
   // sets PCNextF to XTVEC and the icache must start reading the instruction.
-  assign AdrSelMuxSelData = {FlushCache, ((SelAdrData | SelHPTW) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
-  mux3 #(SETLEN) AdrSelMuxData(NextSet[SETTOP-1:OFFSETLEN], PAdr[SETTOP-1:OFFSETLEN], FlushAdr,
+  // A snoop taken while a flush waits for the slot reads and updates the snooped line, not the flush counter's
+  assign FlushCacheC = FlushCache & ~(COHERENT & CohSelSnoop);
+  assign AdrSelMuxSelData = {FlushCacheC, ((SelAdrData | SelHPTW) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
+  assign PAdrC = (COHERENT & CohSelSnoop) ? CohSnpAdr : PAdr;
+  mux3 #(SETLEN) AdrSelMuxData(NextSet[SETTOP-1:OFFSETLEN], PAdrC[SETTOP-1:OFFSETLEN], FlushAdr,
     AdrSelMuxSelData, CacheSetData);
-  assign AdrSelMuxSelTag = {FlushCache, ((SelAdrTag | SelHPTW) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
-  mux3 #(SETLEN) AdrSelMuxTag(NextSet[SETTOP-1:OFFSETLEN], PAdr[SETTOP-1:OFFSETLEN], FlushAdr,
+  assign AdrSelMuxSelTag = {FlushCacheC, ((SelAdrTag | SelHPTW) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
+  mux3 #(SETLEN) AdrSelMuxTag(NextSet[SETTOP-1:OFFSETLEN], PAdrC[SETTOP-1:OFFSETLEN], FlushAdr,
     AdrSelMuxSelTag, CacheSetTag);
 
-  assign AdrSelMuxSelLRU = {FlushCache, ((SelAdrTag | SelHPTW | Stall) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
+  assign AdrSelMuxSelLRU = {FlushCacheC, ((SelAdrTag | SelHPTW | Stall) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
   mux3 #(SETLEN) AdrSelMuxLRU(NextSet[SETTOP-1:OFFSETLEN], PAdr[SETTOP-1:OFFSETLEN], FlushAdr,
     AdrSelMuxSelLRU, CacheSetLRU);
 
   // Array of cache ways, along with victim, hit, dirty, and read merging logic
   cacheway #(P, PA_BITS, NUMSETS, LINELEN, TAGLEN, OFFSETLEN, SETLEN, READ_ONLY_CACHE) CacheWays[NUMWAYS-1:0](
-    .clk, .reset, .CacheEn, .CacheSetData, .CacheSetTag, .PAdr, .LineWriteData, .LineByteMask, .SelVictim,
+    .clk, .reset, .CacheEn, .CacheSetData, .CacheSetTag, .PAdr(PAdrC), .LineWriteData, .LineByteMask, .SelVictim,
     .SetValid, .ClearValid, .SetDirty, .ClearDirty, .VictimWay,
-    .FlushWay, .FlushCache, .ReadDataLineWay, .HitWay, .ValidWay, .DirtyWay, .HitDirtyWay, .TagWay, .FlushStage, .InvalidateCache, .InvalidateFlushStage);
+    .FlushWay, .FlushCache(FlushCacheC), .ReadDataLineWay, .HitWay, .ValidWay, .DirtyWay, .HitDirtyWay, .TagWay, .FlushStage(FlushStage & ~CohInSnoop), // a snoop's update is never cancelled
+    .InvalidateCache, .InvalidateFlushStage);
 
   // Select victim way for associative caches
   if (NUMWAYS > 1) begin : vict
@@ -207,12 +227,30 @@ module cache import cvw::*; #(parameter cvw_t P,
   // Cache FSM
   /////////////////////////////////////////////////////////////////////////////////////////////
 
-  cachefsm #(READ_ONLY_CACHE) cachefsm(.clk, .reset, .CacheBusRW, .CacheBusAck,
+  cachefsm #(READ_ONLY_CACHE, COHERENT) cachefsm(.clk, .reset, .CacheBusRW, .CacheBusAck,
     .FlushStage, .InvalidateFlushStage, .CacheRW, .Stall,
     .Hit, .LineDirty, .HitLineDirty, .CacheStall, .CacheCommitted,
     .CacheMiss, .CacheAccess, .SelAdrData, .SelAdrTag, .SelVictim,
     .ClearDirty, .SetDirty, .SetValid, .ClearValid, .SelWriteback,
     .FlushAdrCntEn, .FlushWayCntEn, .FlushCntRst,
     .FlushAdrFlag, .FlushWayFlag, .FlushCache, .SelFetchBuffer,
-    .InvalidateCache, .CMOpM, .CacheEn, .LRUWriteEn);
+    .InvalidateCache, .CMOpM, .CacheEn, .LRUWriteEn,
+    .CohSnpReq, .CohSnpInv, .CohGnt, .CohGranted, .CohNoPerm, .CohSnoopDefer,
+    .CohSelSnoop, .CohInAccess, .CohInAcquire, .CohInSnoop, .CohOpDone);
+
+  /////////////////////////////////////////////////////////////////////////////////////////////
+  // Coherence (ADR 0026)
+  /////////////////////////////////////////////////////////////////////////////////////////////
+
+  if (COHERENT & !READ_ONLY_CACHE) begin : coherence
+    cachecoherence #(PA_BITS, LINELEN, NUMWAYS, NUMSETS, SETLEN, OFFSETLEN) cachecoherence(.clk, .reset, .FlushStage,
+      .CacheEn, .CacheSetData, .CacheSetTag, .HitWay, .VictimWay, .ValidWay, .Hit, .HitLineDirty, .SetValid,
+      .PAdr, .Tag, .ReadDataLine(ReadDataLineCache), .CacheRW, .CohWritePerm, .FlushCache,
+      .CohInAccess, .CohInAcquire, .CohInSnoop, .CohOpDone, .CohGranted, .CohNoPerm, .CohSnoopDefer,
+      .CohAcqReq, .CohAcqWrite, .CohAcqFlush, .CohAcqAdr, .CohGnt, .CohGntExcl, .CohRel,
+      .CohSnpInv, .CohSnpAdr, .CohSnpAck, .CohSnpHit, .CohSnpDirty, .CohSnpData, .CohKill, .CohKillAdr);
+  end else begin : coherence
+    assign {CohGranted, CohNoPerm, CohSnoopDefer, CohAcqReq, CohAcqWrite, CohAcqFlush, CohAcqAdr, CohRel} = '0;
+    assign {CohSnpAck, CohSnpHit, CohSnpDirty, CohSnpData, CohKill, CohKillAdr} = '0;
+  end
 endmodule

@@ -37,16 +37,24 @@
         .DCACHE_WORDS(OBS_DC_WORDS), .ICACHE_WORDS(OBS_IC_WORDS),
         .LINE_WORDS(OBS_LINE_WORDS)) observer(
         .Permissions(ObservedPermissions), .Tags(ObservedTags), .Lines(ObservedLines));
+    `include "l1_observer.svh"
     function automatic logic [63:0] architectural_word(input int unsigned index);
+        if (P.DCACHE_SUPPORTED) begin
+            logic [64:0] dirty;
+            dirty = l1view.dirty_word(index);
+            if (dirty[64]) return dirty[63:0];
+        end
         return 64'(observer.word(index, dut.uncoregen.uncore.ram.ram.memory.ram.RAM[index]));
     endfunction
     task automatic load_image(input string filename);
         $readmemh(filename, dut.uncoregen.uncore.ram.ram.memory.ram.RAM);
     endtask
     integer UARTWrites = 0;
-    int unsigned MemoryTransfers = 0, LocalCompletions = 0;
-    always @(posedge clk) if (!reset && dut.HTRANS[1] && dut.HREADY)
+    int unsigned MemoryTransfers = 0, LocalCompletions = 0, SeqTransfers = 0;
+    always @(posedge clk) if (!reset && dut.HTRANS[1] && dut.HREADY) begin
         MemoryTransfers <= MemoryTransfers + 1;
+        if (dut.HTRANS == 2'b11) SeqTransfers <= SeqTransfers + 1;   // beats after the first of a burst
+    end
     if (NCORES > 1 && PRIVATE_DCACHE && COHERENCE_BANKS > 1) begin : counters
         logic [COHERENCE_BANKS-1:0][31:0] Counts;
         for (genvar b = 0; b < COHERENCE_BANKS; b++) begin : banks

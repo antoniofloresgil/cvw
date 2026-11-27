@@ -16,7 +16,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARAMS(P.AHBW))  (
+module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARAMS(P.AHBW),
+  parameter bit DEBUG_BSCAN = 0)  (  // DEBUG_BSCAN: the FPGA's TAP reaches the DTM (src/debug/dtm.sv)
   input  logic                clk,
   input  logic                reset_ext,        // external asynchronous reset pin
   output logic                reset,            // reset synchronized to clk to prevent races on release
@@ -58,7 +59,14 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   input  logic                 TCK = 1'b0,
   input  logic                 TMS = 1'b0,
   input  logic                 TDI = 1'b0,
-  output logic                 TDO
+  output logic                 TDO,
+  // With DEBUG_BSCAN: the Xilinx BSCANE2 USER3 (dtmcs) and USER4 (dmi) selects and Capture/Shift/Update-DR; TCK, TDI
+  // and TDO are then the BSCANE2's
+  input  logic                 BscanDTMCS = 1'b0,
+  input  logic                 BscanDMI = 1'b0,
+  input  logic                 BscanCapture = 1'b0,
+  input  logic                 BscanShift = 1'b0,
+  input  logic                 BscanUpdate = 1'b0
 );
 
   // Uncore signals
@@ -100,7 +108,8 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     logic       DMIReq, DMIWrite, DMIError;
     logic [6:0] DMIAddr;
     logic [31:0] DMIWData, DMIRData;
-    dtm dtm(.TRSTn(~reset_ext), .TCK, .TMS, .TDI, .TDO, .clk, .reset(PowerOnReset),
+    dtm #(.BSCAN(DEBUG_BSCAN)) dtm(.TRSTn(~reset_ext), .TCK, .TMS, .TDI, .TDO,
+      .BscanDTMCS, .BscanDMI, .BscanCapture, .BscanShift, .BscanUpdate, .clk, .reset(PowerOnReset),
       .DMIReq, .DMIAddr, .DMIWData, .DMIWrite, .DMIRData, .DMIError);
     logic              DMHSEL;
     logic [P.AHBW-1:0] DMHRDATA;
@@ -135,28 +144,43 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
   logic [NCORES-1:0][1:0] CoreHTRANS, CoreHTRANSOut, CoreHATOMIC;
   logic [NCORES-1:0][3:0] CoreCacheEvents;
   logic [NCORES-1:0][2*P.XLEN+13:0] CoreITrace;   // instruction trace of each hart (TRACE_SUPPORTED)
+  // Coherent L1 D-caches (COHERENT_L1, ADR 0026): each hart's acquire/snoop sideband to the coherence controller
+  logic [NCORES-1:0] CohAcqReq, CohAcqWrite, CohAcqFlush, CohGnt, CohGntExcl, CohRel;
+  logic [NCORES-1:0] CohSnpReq, CohSnpInv, CohSnpAck, CohSnpHit, CohSnpDirty;
+  logic [NCORES-1:0][P.PA_BITS-1:0] CohAcqAdr, CohSnpAdr;
+  logic [NCORES-1:0][P.DCACHE_LINELENINBITS-1:0] CohSnpData;
 
   // Preserve the upstream no-bus outputs; bus-enabled harts share clock/reset.
   assign HCLK = P.BUS_SUPPORTED ? clk : 1'b0;
   assign HRESETn = P.BUS_SUPPORTED ? ~reset : 1'b0;
-  wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(NCORES > 1 || SHARED_CACHE)) core(.clk, .reset(CoreReset[0]),
+  // With coherent L1 D-caches (COHERENT_L1, ADR 0026) each hart keeps its own LR/SC reservation and does AMOs in its cache
+  wallypipelinedcore #(.P(P), .HART_ID(0), .SHARED_ATOMICS(!COHERENT_L1 && (NCORES > 1 || SHARED_CACHE)),
+                       .COHERENT_DCACHE(COHERENT_L1)) core(.clk, .reset(CoreReset[0]),
     .SCFail(CoreSCFail[0]), .HATOMIC(CoreHATOMIC[0]),
     .MTimerInt(MTimerInt[0]), .MExtInt(MExtInt[0]), .SExtInt(SExtInt[0]), .MSwInt(MSwInt[0]), .MTIME_CLINT,
     .ExtCacheEvents(CoreCacheEvents[0]), .DebugHaltReq(DebugHaltReq[0]), .DebugResetHaltReq(DebugResetHaltReq[0]),
     .HRDATA(CoreHRDATA[0]), .HREADY(CoreHREADY[0]), .HRESP(CoreHRESP[0]), .HCLK(), .HRESETn(),
     .HADDR(CoreHADDR[0]), .HWDATA(CoreHWDATA[0]), .HWSTRB(CoreHWSTRB[0]),
     .HWRITE(CoreHWRITE[0]), .HSIZE(CoreHSIZE[0]), .HBURST(CoreHBURST[0]), .HPROT(CoreHPROT[0]),
-    .HTRANS(CoreHTRANSOut[0]), .HMASTLOCK(CoreHMASTLOCK[0]), .ExternalStall, .ITrace(CoreITrace[0]));
+    .HTRANS(CoreHTRANSOut[0]), .HMASTLOCK(CoreHMASTLOCK[0]), .ExternalStall, .ITrace(CoreITrace[0]),
+    .CohAcqReq(CohAcqReq[0]), .CohAcqWrite(CohAcqWrite[0]), .CohAcqFlush(CohAcqFlush[0]), .CohAcqAdr(CohAcqAdr[0]),
+    .CohGnt(CohGnt[0]), .CohGntExcl(CohGntExcl[0]), .CohRel(CohRel[0]), .CohSnpReq(CohSnpReq[0]), .CohSnpInv(CohSnpInv[0]),
+    .CohSnpAdr(CohSnpAdr[0]), .CohSnpAck(CohSnpAck[0]), .CohSnpHit(CohSnpHit[0]), .CohSnpDirty(CohSnpDirty[0]),
+    .CohSnpData(CohSnpData[0]));
 
   for (genvar h = 1; h < NCORES; h++) begin : harts
-    wallypipelinedcore #(.P(P), .HART_ID(h), .SHARED_ATOMICS(1)) core(.clk, .reset(CoreReset[h]),
+    wallypipelinedcore #(.P(P), .HART_ID(h), .SHARED_ATOMICS(!COHERENT_L1), .COHERENT_DCACHE(COHERENT_L1)) core(.clk, .reset(CoreReset[h]),
       .SCFail(CoreSCFail[h]), .HATOMIC(CoreHATOMIC[h]),
       .MTimerInt(MTimerInt[h]), .MExtInt(MExtInt[h]), .SExtInt(SExtInt[h]), .MSwInt(MSwInt[h]), .MTIME_CLINT,
       .ExtCacheEvents(CoreCacheEvents[h]), .DebugHaltReq(DebugHaltReq[h]), .DebugResetHaltReq(DebugResetHaltReq[h]),
       .HRDATA(CoreHRDATA[h]), .HREADY(CoreHREADY[h]), .HRESP(CoreHRESP[h]), .HCLK(), .HRESETn(),
       .HADDR(CoreHADDR[h]), .HWDATA(CoreHWDATA[h]), .HWSTRB(CoreHWSTRB[h]),
       .HWRITE(CoreHWRITE[h]), .HSIZE(CoreHSIZE[h]), .HBURST(CoreHBURST[h]), .HPROT(CoreHPROT[h]),
-      .HTRANS(CoreHTRANSOut[h]), .HMASTLOCK(CoreHMASTLOCK[h]), .ExternalStall, .ITrace(CoreITrace[h]));
+      .HTRANS(CoreHTRANSOut[h]), .HMASTLOCK(CoreHMASTLOCK[h]), .ExternalStall, .ITrace(CoreITrace[h]),
+      .CohAcqReq(CohAcqReq[h]), .CohAcqWrite(CohAcqWrite[h]), .CohAcqFlush(CohAcqFlush[h]), .CohAcqAdr(CohAcqAdr[h]),
+      .CohGnt(CohGnt[h]), .CohGntExcl(CohGntExcl[h]), .CohRel(CohRel[h]), .CohSnpReq(CohSnpReq[h]), .CohSnpInv(CohSnpInv[h]),
+      .CohSnpAdr(CohSnpAdr[h]), .CohSnpAck(CohSnpAck[h]), .CohSnpHit(CohSnpHit[h]), .CohSnpDirty(CohSnpDirty[h]),
+      .CohSnpData(CohSnpData[h]));
   end
 
   // A hart held in reset by the Debug Module still presents its first fetch: silence it, so
@@ -170,6 +194,8 @@ module wallypipelinedsoc import cvw::*; #(parameter cvw_t P, `CVW_MULTICORE_PARA
     .HCLK, .HRESETn, .CoreHADDR, .CoreHWDATA, .CoreHWSTRB, .CoreHWRITE, .CoreHMASTLOCK,
     .CoreHSIZE, .CoreHBURST, .CoreHPROT, .CoreHTRANS, .CoreHATOMIC,
     .CoreSCFail, .CoreHRDATA, .CoreHREADY, .CoreHRESP, .CoreCacheEvents,
+    .CohAcqReq, .CohAcqWrite, .CohAcqFlush, .CohRel, .CohAcqAdr, .CohGnt, .CohGntExcl, .CohSnpReq, .CohSnpInv, .CohSnpAdr,
+    .CohSnpAck, .CohSnpHit, .CohSnpDirty, .CohSnpData,
     .HADDR(MemHADDR), .HWDATA(MemHWDATA), .HWSTRB(MemHWSTRB), .HWRITE(MemHWRITE), .HSIZE(MemHSIZE),
     .HBURST(MemHBURST), .HPROT(MemHPROT), .HTRANS(MemHTRANS), .HMASTLOCK(MemHMASTLOCK),
     .HRDATA(MemHRDATA), .HREADY(MemHREADY), .HRESP);

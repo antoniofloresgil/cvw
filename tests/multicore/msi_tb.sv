@@ -38,16 +38,16 @@ module msi_tb import cvw::*; import multicore_observation::*; #(
     logic [2:0] HSIZE, HBURST, downsize, downburst;
     logic [3:0] HPROT, downprot;
     logic [1:0] HTRANS, downtrans;
-    logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr;
+    logic [NCORES-1:0][P.PA_BITS-1:0] CacheReadAddr, CacheReadAddrNext;
     logic [NCORES-1:0][P.AHBW-1:0] CacheReadData;
     logic [NCORES-1:0] CacheReadHit, CacheWriteHit, CacheWriteCommit;
     logic [NCORES-1:0][P.AHBW-1:0] CacheWriteData;
     logic [NCORES-1:0][P.XLEN/8-1:0] CacheWriteStrb;
     ahbmulticore #(.P(P), .NCORES(NCORES), .PRIVATE_ICACHE(PRIVATE_ICACHE),
-        .ICACHE_WORDS(ICACHE_WORDS), .ICACHE_LINE_WORDS(ICACHE_LINE_WORDS), .DCACHE_LINE_WORDS(LINE_WORDS), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) bus(.ReservationClear('0), .InstrMiss(), .*);
+        .ICACHE_WORDS(ICACHE_WORDS), .ICACHE_LINE_WORDS(ICACHE_LINE_WORDS), .DCACHE_LINE_WORDS(LINE_WORDS), .LOCAL_DCACHE_READS(LOCAL_DCACHE_READS), .LOCAL_DCACHE_WRITES(LOCAL_DCACHE_WRITES)) bus(.ReservationClear('0), .InstrMiss(), .FetchPending(), .CohHold('0), .*);
     ahbmsicache #(.P(P), .NCORES(NCORES), .CACHE_TO_CACHE(CACHE_TO_CACHE), .CACHE_BURSTS(CACHE_BURSTS), .MESI(MESI),
         .IFILL_WORDS(PRIVATE_ICACHE ? ICACHE_LINE_WORDS : 1), .WORDS(WORDS), .LINE_WORDS(LINE_WORDS), .LOCAL_READS(LOCAL_DCACHE_READS), .LOCAL_WRITES(LOCAL_DCACHE_WRITES)) cache(
-        .CacheReadAddr, .CacheReadHit, .CacheReadData,
+        .CacheReadAddr, .CacheReadAddrNext, .CacheReadHit, .CacheReadData,
         .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb, .DataMiss(),
         .HCLK, .HRESETn, .UpHOWNER(HOWNER), .UpHADDR(HADDR), .UpHWDATA(HWDATA), .UpHWSTRB(HWSTRB),
         .UpHWRITE(HWRITE), .UpHMASTLOCK(HMASTLOCK), .UpHSIZE(HSIZE), .UpHBURST(HBURST),
