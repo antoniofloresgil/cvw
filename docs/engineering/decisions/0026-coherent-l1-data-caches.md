@@ -132,6 +132,11 @@ cycle the stall ends, so replaying it after a snoop writes once, on the current 
 - With the core's D-cache back, misaligned loads and stores are again split in hardware (Zicclsm), CMOs could be
   supported later, and bursts (`BURST_EN`) are used. The multicore policy allows the core's caches with
   `COHERENT_L1` and keeps forbidding them otherwise.
+- Bursts (2026-11-27): until then the coherent path took only SINGLE transfers, so a line miss was eight DDR3
+  accesses (on the Nexys Video 300 to 600 cycles against 33 to 45 in the single-core bitstream, which made each
+  Linux wake-up cost 10 to 25 ms). `ahbmulticore` (`CORE_BURSTS`) now passes the caches' INCR bursts to memory as
+  one burst through a line buffer (`docs/engineering/interfaces/core-bus.md`), and the controller writes a snooped
+  dirty line as one burst.
 - One slot limits throughput when many harts miss at once; a snoop filter or per-line serialization can come later.
 - Second phase, an improvement that changes only the controller: cache-to-cache transfer. The controller already
   holds the line a snoop returned; it can answer the requester's refill from that buffer instead of writing the line

@@ -32,7 +32,7 @@ function automatic int multicore_config_error(input cvw_t P, input multicore_t M
   if (!((!M.SHARED_CACHE) || (multicore_power2(M.SHARED_CACHE_WORDS) && (M.SHARED_CACHE_WORDS >= 2)))) return 5;
   if (!((!((M.NCORES > 1) && M.PRIVATE_DCACHE)) || (multicore_power2(M.PRIVATE_DCACHE_WORDS) && multicore_power2(M.PRIVATE_DCACHE_LINE_WORDS) && (M.PRIVATE_DCACHE_WORDS >= ((2 * M.COHERENCE_BANKS) * M.PRIVATE_DCACHE_LINE_WORDS))))) return 6;
   if (!((!((M.NCORES > 1) && M.PRIVATE_DCACHE)) || (multicore_power2(M.PRIVATE_ICACHE_WORDS) && multicore_power2(M.PRIVATE_ICACHE_LINE_WORDS) && (M.PRIVATE_ICACHE_WORDS >= ((2 * M.COHERENCE_BANKS) * M.PRIVATE_ICACHE_LINE_WORDS))))) return 7;
-  if (!(((M.NCORES == 1) && (!M.SHARED_CACHE) && (!M.COHERENT_L1)) || (M.COHERENT_L1 && P.BUS_SUPPORTED && (!P.DTIM_SUPPORTED) && (!P.IROM_SUPPORTED) && P.DCACHE_SUPPORTED && (!P.BURST_EN)) || ((!M.COHERENT_L1) && P.BUS_SUPPORTED && (!P.DTIM_SUPPORTED) && (!P.IROM_SUPPORTED) && (!P.DCACHE_SUPPORTED) && (!P.ICACHE_SUPPORTED) && (!P.BURST_EN) && (!P.ZICCLSM_SUPPORTED)))) return 8;
+  if (!(((M.NCORES == 1) && (!M.SHARED_CACHE) && (!M.COHERENT_L1)) || (M.COHERENT_L1 && P.BUS_SUPPORTED && (!P.DTIM_SUPPORTED) && (!P.IROM_SUPPORTED) && P.DCACHE_SUPPORTED) || ((!M.COHERENT_L1) && P.BUS_SUPPORTED && (!P.DTIM_SUPPORTED) && (!P.IROM_SUPPORTED) && (!P.DCACHE_SUPPORTED) && (!P.ICACHE_SUPPORTED) && (!P.BURST_EN) && (!P.ZICCLSM_SUPPORTED)))) return 8;
   if (!((!(((M.NCORES > 1) && M.PRIVATE_DCACHE) || M.COHERENT_L1)) || (!(P.ZICBOM_SUPPORTED || P.ZICBOZ_SUPPORTED || P.ZICBOP_SUPPORTED)))) return 9;
   if (!((!(((M.NCORES > 1) && M.PRIVATE_DCACHE) || M.SHARED_CACHE || M.COHERENT_L1)) || (!P.SVADU_SUPPORTED))) return 10;
   if (!((!(((M.NCORES > 1) && M.PRIVATE_DCACHE) || M.SHARED_CACHE || M.COHERENT_L1)) || (!P.SVPBMT_SUPPORTED))) return 11;
@@ -50,7 +50,7 @@ function automatic string multicore_config_message(input int error);
     5: return "Shared cache requires power-of-two WORDS >= 2";
     6: return "Each coherence bank needs power-of-two private DCACHE capacity and at least two complete lines";
     7: return "Each coherence bank needs power-of-two private ICACHE capacity and at least two complete lines";
-    8: return "Multicore requires a shared bus with no private memories or bursts, and either coherent L1 D-caches or no core caches and no hardware misaligned accesses (Zicclsm needs the D-cache)";
+    8: return "Multicore requires a shared bus with no private memories, and either coherent L1 D-caches (which may use bursts) or no core caches, no bursts and no hardware misaligned accesses (Zicclsm needs the D-cache)";
     9: return "MSI caches (private or coherent L1) do not implement cache-maintenance operations";
     10: return "Cached SMP uses software PTE A/D updates (Svade)";
     11: return "Multicore caches use physical RAM attributes; Svpbmt must be disabled";

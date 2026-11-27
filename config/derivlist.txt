@@ -97,10 +97,10 @@ ZICBOZ_SUPPORTED    0
 ZICBOP_SUPPORTED    0
 
 # Nexys Video (Vivado) with two harts whose D-caches are the coherent L1 (COHERENT_L1, ADR 0026): the core's
-# caches on, SINGLE transfers, software PTE A/D updates, no CMOs, no Svpbmt.
+# caches on, cache lines as INCR8 bursts (ahbmulticore CORE_BURSTS: a line miss costs one DDR3 access, not
+# eight), software PTE A/D updates, no CMOs, no Svpbmt.
 # make nexysvideo VIVADOCONFIG=fpganexysvideosmpl1 NHARTS=2 NO_ILA=1 SOCGENERICS="NCORES=2 COHERENT_L1=1'b1"
 deriv fpganexysvideosmpl1 fpganexysvideo
-BURST_EN            0
 SVADU_SUPPORTED     0
 SVPBMT_SUPPORTED    0
 ZICBOM_SUPPORTED    0
@@ -1888,6 +1888,10 @@ ZICBOM_SUPPORTED 0
 ZICBOZ_SUPPORTED 0
 ZICBOP_SUPPORTED 0
 
+# The same with the caches sending their lines as INCR bursts through the coherent path (ahbmulticore CORE_BURSTS).
+deriv multicore_l1burst multicore_l1
+BURST_EN 1
+
 # Stage three: one coherent physical cache; no non-atomic hardware PTE updates.
 deriv multicore_coherent multicore_atomic
 SVADU_SUPPORTED 0
@@ -1907,6 +1911,7 @@ RESET_VECTOR 64'h00001000
 deriv multicore_linux_l1 multicore_linux
 DCACHE_SUPPORTED 1
 ICACHE_SUPPORTED 1
+BURST_EN 1
 ZICCLSM_SUPPORTED 1
 
 # Private per-hart physical data caches with serialized MSI bus snooping.

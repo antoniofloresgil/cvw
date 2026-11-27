@@ -92,7 +92,9 @@ module multicore_memory_system import cvw::*; #(parameter cvw_t P, `CVW_MULTICOR
       .PRIVATE_ICACHE(MSI_ENABLED && PRIVATE_ICACHE), .ICACHE_WORDS(PRIVATE_ICACHE_WORDS),
       .ICACHE_LINE_WORDS(PRIVATE_ICACHE_LINE_WORDS), .DCACHE_LINE_WORDS(PRIVATE_DCACHE_LINE_WORDS),
       .LOCAL_DCACHE_READS(MSI_ENABLED && LOCAL_DCACHE_READS),
-      .LOCAL_DCACHE_WRITES(MSI_ENABLED && LOCAL_DCACHE_WRITES)) bus(
+      .LOCAL_DCACHE_WRITES(MSI_ENABLED && LOCAL_DCACHE_WRITES),
+      // the coherent L1 D-caches (and the I-caches) send their lines as bursts when the core has BURST_EN
+      .CORE_BURSTS(!MSI_ENABLED && !SHARED_CACHE && COHERENT_L1 && P.BURST_EN)) bus(
       .ReservationClear('0), .CacheReadAddr, .CacheReadAddrNext, .CacheReadHit, .CacheReadData,
       .CacheWriteHit, .CacheWriteCommit, .CacheWriteData, .CacheWriteStrb, .InstrMiss,
       .FetchPending, .CohHold(FetchHold),

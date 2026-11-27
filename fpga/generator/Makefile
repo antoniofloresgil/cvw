@@ -119,6 +119,8 @@ else
 export SOCGENERICS
 NHARTS ?= 1
 export NO_ILA
+# COH_ILA=1 (with NO_ILA=1): checkers and ILA on the coherent L1 controller, fpga/constraints/coherence-ila.tcl
+export COH_ILA
 config = $(if $(VIVADOCONFIG),$(VIVADOCONFIG),fpga$(board))
 endif
 EXT_MEM_BASE = $(shell grep 'EXT_MEM_BASE' ../../config/deriv/$(config)/config.vh | sed 's/.*=.*h\([[:alnum:]]*\);/0x\1/g')

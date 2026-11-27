@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 // Simulation contract for Wally's buffered SINGLE hart port, not a generic AHB VIP.
 // See docs/engineering/interfaces/core-bus.md. No synthesis state or data-path changes.
-module corebus_contract import cvw::*; #(parameter cvw_t P, parameter int NCORES = 2) (
+module corebus_contract import cvw::*; #(parameter cvw_t P, parameter int NCORES = 2, parameter bit BURSTS = 0) (
   input logic HCLK, HRESETn,
   input logic [NCORES-1:0][1:0] CoreHTRANS, CoreHATOMIC,
   input logic [NCORES-1:0][2:0] CoreHBURST,
@@ -54,7 +54,10 @@ module corebus_contract import cvw::*; #(parameter cvw_t P, parameter int NCORES
           DataSeen <= 0;
           if (CoreHTRANS[h][1]) begin
             Write <= CoreHWRITE[h]; Op <= CoreHATOMIC[h];
-            assert (CoreHTRANS[h] == 2'b10 && CoreHBURST[h] == 0 && !CoreHMASTLOCK[h])
+            // With BURSTS a cache line may come as a fixed-length INCR burst (NONSEQ, then SEQ beats)
+            assert (BURSTS ? (!CoreHMASTLOCK[h] && (CoreHTRANS[h] == 2'b11 ||
+                              CoreHBURST[h] inside {3'b000, 3'b011, 3'b101, 3'b111})) :
+                    (CoreHTRANS[h] == 2'b10 && CoreHBURST[h] == 0 && !CoreHMASTLOCK[h]))
               else $fatal(1, "corebus contract: unsupported address phase, hart %0d", h);
             assert ((CoreHATOMIC[h] != COREBUS_LR || !CoreHWRITE[h]) &&
                     (CoreHATOMIC[h] != COREBUS_SC || CoreHWRITE[h]))

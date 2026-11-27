@@ -38,7 +38,12 @@ if {$board=="ArtyA7"} {
     add_files  {../src/fpgaTopNexysA7.sv}
 } elseif {$board=="nexysvideo"} {
     add_files  {../src/fpgaTopNexysA7.sv}
-    set_property verilog_define {NEXYS_VIDEO} [current_fileset]
+    # COH_ILA=1: the coherence controller's checkers and ILA (src/ebu/ahbcoherence.sv, ../constraints/coherence-ila.tcl)
+    if {[info exists ::env(COH_ILA)] && $::env(COH_ILA) ne ""} {
+        set_property verilog_define {NEXYS_VIDEO COHERENCE_ILA} [current_fileset]
+    } else {
+        set_property verilog_define {NEXYS_VIDEO} [current_fileset]
+    }
 } elseif {$board=="qmtechk7"} {
     add_files  {../src/fpgaTopQmtechk7.sv}
 } else {
@@ -133,7 +138,9 @@ if {$board=="ArtyA7"} {
     source ../constraints/small-debug.xdc
 } elseif {$board=="nexysvideo"} {
     # NO_ILA=1 leaves the logic analyzer out (its probes name single-core nets, absent with NCORES > 1)
-    if {![info exists ::env(NO_ILA)] || $::env(NO_ILA) eq ""} { source ../constraints/small-debug.xdc }
+    if {[info exists ::env(COH_ILA)] && $::env(COH_ILA) ne ""} {
+        source ../constraints/coherence-ila.tcl
+    } elseif {![info exists ::env(NO_ILA)] || $::env(NO_ILA) eq ""} { source ../constraints/small-debug.xdc }
 } elseif {$board=="qmtechk7"} {
     source ../constraints/small-debug.xdc
 } else {

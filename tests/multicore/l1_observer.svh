@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 // Coherent L1 D-caches (COHERENT_L1, ADR 0026): a passive copy of every hart's D-cache, so that the
 // architectural value of a word is the dirty copy in a D-cache when there is one, else RAM.
-    if (COHERENT_L1) begin : l1view
+    if (P.DCACHE_SUPPORTED) begin : l1view
         localparam L1_LINE = P.DCACHE_LINELENINBITS;
         localparam L1_WAYS = P.DCACHE_NUMWAYS;
         localparam L1_SETS = P.DCACHE_WAYSIZEINBYTES*8/L1_LINE;

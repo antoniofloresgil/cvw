@@ -95,6 +95,7 @@ module cache import cvw::*; #(parameter cvw_t P,
   logic [PA_BITS-1:0]            PAdrC;             // PAdr, or the snooped address while a snoop reads the arrays
   logic                          CohSelSnoop, CohInAccess, CohInAcquire, CohInSnoop, CohOpDone, CohGranted, CohNoPerm, CohSnoopDefer;
   logic                          SelVictim;
+  logic                          FlushCacheC;
   logic [LINELEN/8-1:0]          LineByteMask;
   logic [$clog2(LINELEN/8) - $clog2(MUXINTERVAL/8) - 1:0] WordOffsetAddr;
   genvar                         index;
@@ -107,15 +108,17 @@ module cache import cvw::*; #(parameter cvw_t P,
   // and FlushAdr when handling D$ flushes
   // The icache must update to the newest PCNextF on flush as it is probably a trap.  Trap
   // sets PCNextF to XTVEC and the icache must start reading the instruction.
-  assign AdrSelMuxSelData = {FlushCache, ((SelAdrData | SelHPTW) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
+  // A snoop taken while a flush waits for the slot reads and updates the snooped line, not the flush counter's
+  assign FlushCacheC = FlushCache & ~(COHERENT & CohSelSnoop);
+  assign AdrSelMuxSelData = {FlushCacheC, ((SelAdrData | SelHPTW) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
   assign PAdrC = (COHERENT & CohSelSnoop) ? CohSnpAdr : PAdr;
   mux3 #(SETLEN) AdrSelMuxData(NextSet[SETTOP-1:OFFSETLEN], PAdrC[SETTOP-1:OFFSETLEN], FlushAdr,
     AdrSelMuxSelData, CacheSetData);
-  assign AdrSelMuxSelTag = {FlushCache, ((SelAdrTag | SelHPTW) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
+  assign AdrSelMuxSelTag = {FlushCacheC, ((SelAdrTag | SelHPTW) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
   mux3 #(SETLEN) AdrSelMuxTag(NextSet[SETTOP-1:OFFSETLEN], PAdrC[SETTOP-1:OFFSETLEN], FlushAdr,
     AdrSelMuxSelTag, CacheSetTag);
 
-  assign AdrSelMuxSelLRU = {FlushCache, ((SelAdrTag | SelHPTW | Stall) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
+  assign AdrSelMuxSelLRU = {FlushCacheC, ((SelAdrTag | SelHPTW | Stall) & ~((READ_ONLY_CACHE == 1) & FlushStage))};
   mux3 #(SETLEN) AdrSelMuxLRU(NextSet[SETTOP-1:OFFSETLEN], PAdr[SETTOP-1:OFFSETLEN], FlushAdr,
     AdrSelMuxSelLRU, CacheSetLRU);
 
@@ -123,7 +126,7 @@ module cache import cvw::*; #(parameter cvw_t P,
   cacheway #(P, PA_BITS, NUMSETS, LINELEN, TAGLEN, OFFSETLEN, SETLEN, READ_ONLY_CACHE) CacheWays[NUMWAYS-1:0](
     .clk, .reset, .CacheEn, .CacheSetData, .CacheSetTag, .PAdr(PAdrC), .LineWriteData, .LineByteMask, .SelVictim,
     .SetValid, .ClearValid, .SetDirty, .ClearDirty, .VictimWay,
-    .FlushWay, .FlushCache, .ReadDataLineWay, .HitWay, .ValidWay, .DirtyWay, .HitDirtyWay, .TagWay, .FlushStage(FlushStage & ~CohInSnoop), // a snoop's update is never cancelled
+    .FlushWay, .FlushCache(FlushCacheC), .ReadDataLineWay, .HitWay, .ValidWay, .DirtyWay, .HitDirtyWay, .TagWay, .FlushStage(FlushStage & ~CohInSnoop), // a snoop's update is never cancelled
     .InvalidateCache, .InvalidateFlushStage);
 
   // Select victim way for associative caches

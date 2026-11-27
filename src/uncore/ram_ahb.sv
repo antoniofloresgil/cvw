@@ -153,7 +153,12 @@ module ram_ahb import cvw::*; #(parameter cvw_t P,
 
     always_comb begin
       case (CurrState)
+`ifdef RAM_SEQ_FREE
+        // Simulation only: the SEQ beats of a burst have no latency, as with a DDR3 controller
+        READY:   if (initTrans & ~CycleFlag & HTRANS != 2'b11) NextState = DELAY;
+`else
         READY:   if (initTrans & ~CycleFlag) NextState = DELAY;
+`endif
                  else                        NextState = READY;
         DELAY:   if (CycleFlag)              NextState = READY;
                  else                        NextState = DELAY;
@@ -161,7 +166,16 @@ module ram_ahb import cvw::*; #(parameter cvw_t P,
       endcase
     end
 
+`ifdef RAM_RANDOM_LATENCY
+    // Simulation only: each transfer waits a random 0..RAM_LATENCY cycles, like a DDR3 controller's
+    // refreshes and row misses (seeded by +verilator+seed+N)
+    logic [7:0]       Latency;
+    always_ff @(posedge HCLK)
+      if (CurrState == READY) Latency <= 8'($urandom_range(P.RAM_LATENCY, 0));
+    assign CycleFlag = Cycle == Latency;
+`else
     assign CycleFlag = Cycle == P.RAM_LATENCY[7:0];
+`endif
     assign CntEn = NextState == DELAY;
     assign DelayReady = NextState == DELAY;
     assign CntRst = NextState == READY;
