@@ -57,10 +57,6 @@ def main():
     parser.add_argument("--seq-free", action="store_true", help="the RAM latency applies only to the first beat of a burst, as with DDR3 (simulation only)")
     parser.add_argument("--focus", choices=["cache", "soc"], help="Build only the requested feature-interaction target")
     args = parser.parse_args()
-    if args.coherent_l1 and args.suite == "pmu":
-        parser.error("the pmu suite uses multicore_pmu, which has no D-cache: it cannot run with --coherent-l1")
-    if args.core_bursts and not args.coherent_l1:
-        parser.error("--core-bursts needs --coherent-l1: only the coherent L1 path takes the cores' bursts")
     args.cores = args.cores or [1, 2, 3]
     if any(not 1 <= n <= 4 for n in args.cores):
         parser.error("The smoke program reserves stacks for 1..4 harts")
@@ -76,6 +72,11 @@ def main():
         alias = next((a for a, k in profiles.ALIASES.items() if k == key), key.lower())
         if key != 'NCORES':
             setattr(args, alias, value)
+    # after the profile, which may be what selects the coherent L1
+    if args.coherent_l1 and args.suite == "pmu":
+        parser.error("the pmu suite uses multicore_pmu, which has no D-cache: it cannot run with --coherent-l1")
+    if args.core_bursts and not args.coherent_l1:
+        parser.error("--core-bursts needs --coherent-l1: only the coherent L1 path takes the cores' bursts")
     if "WALLY" not in os.environ:
         parser.error("Source ./setup.sh from the repository root first")
     root = Path(os.environ["WALLY"])
