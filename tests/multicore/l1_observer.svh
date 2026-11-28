@@ -35,6 +35,65 @@
                 end
             end
         end
+        // Single-writer/multiple-reader invariant of the coherent L1 (ADR 0026), checked every cycle on the copies
+        // above, which are all taken on the same clock edge, plus each line's writable bit from cachecoherence.sv:
+        //   - a line writable in one hart (E or M) is valid in no other hart;
+        //   - a dirty line is writable (M implies write permission);
+        //   - a line is in at most one way of a hart's D-cache;
+        //   - every valid copy of a line holds the same data (they can only be S copies).
+        // +swmr_inject treats the first line found valid in two harts as writable in one of them, so that a
+        // run shows the check fires (tests/multicore/run.py --swmr-inject).
+        if (COHERENT_L1 && NCORES > 1) begin : swmr
+            logic [L1_SETS-1:0] Wr[NCORES][L1_WAYS];
+            for (genvar h = 0; h < NCORES; h++) begin : harts
+                for (genvar w = 0; w < L1_WAYS; w++) begin : ways
+                    if (h == 0) begin : first
+                        always @(posedge clk) Wr[h][w] <= dut.core.lsu.bus.dcache.dcache.coherence.cachecoherence.WritableBits[w];
+                    end else begin : other
+                        always @(posedge clk) Wr[h][w] <= dut.harts[h].core.lsu.bus.dcache.dcache.coherence.cachecoherence.WritableBits[w];
+                    end
+                end
+            end
+            bit Inject;
+            int unsigned Checked = 0, Shared = 0;   // cycles checked; cycles with a line valid in two harts
+            int unsigned SinceReset = 0;
+            initial Inject = $test$plusargs("swmr_inject");
+            function automatic logic [P.PA_BITS-1:0] line_address(input logic [L1_TAGB-1:0] tag, input int set);
+                return {tag, L1_SETB'(set), L1_OFF'(0)};
+            endfunction
+            always @(posedge clk) begin
+                SinceReset <= reset ? 0 : SinceReset + 32'(SinceReset < 2);
+                if (SinceReset >= 2) begin   // the copies are one edge behind
+                    bit shared;
+                    shared = 0;
+                    for (int s = 0; s < L1_SETS; s++)
+                        for (int h = 0; h < NCORES; h++)
+                            for (int w = 0; w < L1_WAYS; w++) if (V[h][w][s]) begin
+                                if (Dy[h][w][s] && !Wr[h][w][s])
+                                    $fatal(1, "Coherent L1: hart %0d holds line %h dirty but not writable", h, line_address(T[h][w][s], s));
+                                for (int g = h; g < NCORES; g++)
+                                    for (int u = (g == h ? w + 1 : 0); u < L1_WAYS; u++)
+                                        if (V[g][u][s] && T[g][u][s] == T[h][w][s]) begin
+                                            if (g == h)
+                                                $fatal(1, "Coherent L1: hart %0d holds line %h in ways %0d and %0d", h, line_address(T[h][w][s], s), w, u);
+                                            shared = 1;
+                                            if (Wr[h][w][s] || Wr[g][u][s])
+                                                $fatal(1, "SWMR violation: line %h valid in harts %0d and %0d, writable in hart %0d", line_address(T[h][w][s], s), h, g,
+                                                    Wr[h][w][s] ? h : g);
+                                            if (Inject)
+                                                $fatal(1, "SWMR violation: line %h valid in harts %0d and %0d (injected by +swmr_inject)", line_address(T[h][w][s], s), h, g);
+                                            for (int i = 0; i < L1_SRAMS; i++)
+                                                if (Dt[h][w][i][s] != Dt[g][u][i][s])
+                                                    $fatal(1, "Coherent L1: line %h differs between harts %0d and %0d (bits %0d..%0d)", line_address(T[h][w][s], s), h, g,
+                                                        i*P.CACHE_SRAMLEN, (i+1)*P.CACHE_SRAMLEN-1);
+                                        end
+                            end
+                    Checked <= Checked + 1;
+                    Shared <= Shared + 32'(shared);
+                end
+            end
+            final $display("SWMR: %0d cycles checked, %0d with a line shared by two harts", Checked, Shared);
+        end
         // The dirty copy of the 64-bit word at RAM index `index`, if a D-cache has one
         function automatic logic [64:0] dirty_word(input int unsigned index);
             logic [P.PA_BITS-1:0] a;

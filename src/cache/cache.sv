@@ -249,7 +249,7 @@ module cache import cvw::*; #(parameter cvw_t P,
       .CohInAccess, .CohInAcquire, .CohInSnoop, .CohOpDone, .CohGranted, .CohNoPerm, .CohSnoopDefer,
       .CohAcqReq, .CohAcqWrite, .CohAcqFlush, .CohAcqAdr, .CohGnt, .CohGntExcl, .CohRel,
       .CohSnpInv, .CohSnpAdr, .CohSnpAck, .CohSnpHit, .CohSnpDirty, .CohSnpData, .CohKill, .CohKillAdr);
-  end else begin : coherence
+  end else begin : nocoherence
     assign {CohGranted, CohNoPerm, CohSnoopDefer, CohAcqReq, CohAcqWrite, CohAcqFlush, CohAcqAdr, CohRel} = '0;
     assign {CohSnpAck, CohSnpHit, CohSnpDirty, CohSnpData, CohKill, CohKillAdr} = '0;
   end

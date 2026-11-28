@@ -127,6 +127,9 @@ def main():
                     execute([*run, "--suite", "stress", "--latency", "30", "--random-latency", "--seq-free", "--seed", "2"],
                             casework / "stress-rlat.log")
                     execute([*run, "--suite", "tokenring", "--latency", "0", "3"], casework / "tokenring.log")
+                    # Every run above checks the single-writer invariant each cycle (l1_observer.svh); this one must stop
+                    # on a violation the checker is told to inject, so that a checker that never fires is noticed.
+                    execute([*run, "--suite", "tokenring", "--latency", "0", "--swmr-inject"], casework / "swmr-inject.log")
                 else:
                     # Per-hart counters and Sscofpmf; cache events where private caches exist.
                     execute([sys.executable, str(root / "tests/multicore/run.py"), "--skip-deriv", "--suite", "pmu", "--focus", "soc",
@@ -141,7 +144,7 @@ def main():
             result = {"validation_scope": scope, "effective_configurations": effective, "case": name, "config": config, "options": options, "lint_parameters": params,
                       "config_sha256": hashlib.sha256((root / "config" / config / "config.vh").read_bytes()).hexdigest(),
                       "suite": "translated AMO, cached and uncacheable" if name == "single-default" else
-                               "atomic, smoke, stress (irq+vm, random latency) and token ring" if name == "l1-burst" else "atomic, smoke and PMU",
+                               "atomic, smoke, stress (irq+vm, random latency), token ring; SWMR checked every cycle, injected violation detected" if name == "l1-burst" else "atomic, smoke and PMU",
                       "latencies": [] if name == "single-default" else [0, 3],
                       "verdict": "PASS", "elapsed_seconds": round(time.monotonic() - started, 2)}
             (casework / "results.json").write_text(json.dumps(result, indent=2) + "\n")

@@ -137,6 +137,13 @@ cycle the stall ends, so replaying it after a snoop writes once, on the current 
   Linux wake-up cost 10 to 25 ms). `ahbmulticore` (`CORE_BURSTS`) now passes the caches' INCR bursts to memory as
   one burst through a line buffer (`docs/engineering/interfaces/core-bus.md`), and the controller writes a snooped
   dirty line as one burst.
+- Single-writer checker (2026-11-28): every SoC simulation of `COHERENT_L1` (`tests/multicore/l1_observer.svh`)
+  checks each cycle, on copies of every hart's D-cache taken on the same edge and the writable bits of
+  `cachecoherence.sv`, that a line writable in one hart is valid in no other, that a dirty line is writable, that a
+  line is in at most one way of a hart, and that all valid copies of a line hold the same data. The CI case
+  `l1-burst` also runs it with `--swmr-inject`, which must stop the run, so that a checker that never fires is
+  noticed. It does not compare clean copies with memory: while the controller writes a snooped dirty line back, a
+  clean copy legitimately differs from RAM.
 - One slot limits throughput when many harts miss at once; a snoop filter or per-line serialization can come later.
 - Second phase, an improvement that changes only the controller: cache-to-cache transfer. The controller already
   holds the line a snoop returned; it can answer the requester's refill from that buffer instead of writing the line
