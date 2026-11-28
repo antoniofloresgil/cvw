@@ -22,7 +22,10 @@ Los casos son `single-default`, `bus`, `msi`, `mesi-banked` y `l1-burst`
 INCR como en la Nexys Video: atómicos, stress con interrupciones y Sv39, stress
 con latencia aleatoria y beats SEQ gratis, y token ring; en cada ciclo se
 comprueba el invariante de un solo escritor de `l1_observer.svh`, y una
-ejecución con `--swmr-inject` debe detener la simulación). La regresión
+ejecución con `--swmr-inject` debe detener la simulación). `run.py` da a
+`stress` y `plicspi` 40 M ciclos (el resto, 6 M): `stress` con interrupciones,
+Sv39, cuatro harts, sin ráfagas y latencia aleatoria 0–60 necesita unos 22 M.
+La regresión
 ordinaria también los incluye y el workflow `Multicore` los ejecuta en pushes
 y PR que afectan al RTL, configuración o verificación. Incluyen lint explícito
 con dos/tres harts, periféricos, esperas/errores de bus, coherencia con una/dos
