@@ -183,7 +183,7 @@ def main():
                 f"mesi{int(args.mesi)}-burst{int(args.cache_bursts)}-b{args.coherence_banks}-c2c{int(args.cache_to_cache)}-{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else "") + ("-l1" if args.coherent_l1 else "") + ("-cb" if args.core_bursts else "") + ("-seqfree" if args.seq_free else "") + ("-rlat" if args.random_latency else "") + ("-ila" if args.coherence_ila else ""),
                 [f"-GLATENCY={latency}", *(["-DRAM_RANDOM_LATENCY"] if args.random_latency else []), *(["-DRAM_SEQ_FREE"] if args.seq_free else []), *(["-DCOHERENCE_ILA"] if args.coherence_ila else []), *profiles.verilator_args({**topology, 'NCORES': cores})],
             )
-            command = [executable, f"+image={image}", f"+suite={args.suite}", f"+verilator+seed+{args.seed}", "+cycles=20000000" if args.suite in ("stress", "plicspi") else "+cycles=6000000"]
+            command = [executable, f"+image={image}", f"+suite={args.suite}", f"+verilator+seed+{args.seed}", "+cycles=40000000" if args.suite in ("stress", "plicspi") else "+cycles=6000000"]
             if args.swmr_inject:
                 # Negative check: the run must stop on the injected violation, not pass or fail otherwise
                 log = work / f"swmr-inject-{args.suite}-{cores}-{latency}.log"

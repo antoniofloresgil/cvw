@@ -20,6 +20,11 @@
 # page the test uses (code, slots, counters, pool, stacks) with an amoand and flushes this hart's TLB,
 # so leaf lines move between the harts' caches while their walkers read them. Pool accesses pick one
 # of the two aliases at random.
+# With both, each hart switches interrupts off before it sets MPP = S for the mret into phase 2: a timer
+# trap taken between the two (on the mret itself, say) returns with its own mret, which leaves MPP = U,
+# and phase 2 would then run in U-mode, where every access to the (supervisor) pages faults again after
+# the handler sets A and D. Seed 2 of 4 harts with random latency 0..60 hit that window; the handler
+# now fails a fault taken in U-mode instead of looping.
 # Slots and stacks match smoke.S; the shared line at 0x80009000 holds the barrier (32, 40) and the
 # counters (256, 320, 384); the page tables are at 0x80005000 (root), 0x80006000 and 0x80007000 (leaves).
 .section .text.init
@@ -110,6 +115,8 @@ clear:
     csrw satp, t0
     sfence.vma zero, zero
     li a5, 1
+    csrci mstatus, 8           # no interrupt between MPP and mret: a trap's own mret would leave MPP = U;
+                               # in S-mode the machine timer interrupt is taken anyway
     li t0, 0x1800
     csrc mstatus, t0
     li t0, 0x800               # MPP = S
@@ -355,6 +362,10 @@ trap_ecall:
     j trap_ret
 trap_pf:
     # Svade: set A, and D for a store, in the leaf of the faulting page (either alias)
+    csrr t1, mstatus
+    srli t1, t1, 11
+    andi t1, t1, 3
+    beqz t1, trap_fail         # from U-mode: the pages are not user pages, so the fault would repeat forever
     csrr t1, mtval
     srli t2, t1, 21
     addi t2, t2, -0x400        # 0x80000000 >> 21
