@@ -55,6 +55,7 @@ def main():
     parser.add_argument("--vm", action="store_true", help="stress suite: random operations in S-mode under Sv39, with A/D page faults and leaf updates")
     parser.add_argument("--core-bursts", action="store_true", help="with --coherent-l1: the cores' caches send lines as INCR bursts (multicore_l1burst, BURST_EN 1)")
     parser.add_argument("--seq-free", action="store_true", help="the RAM latency applies only to the first beat of a burst, as with DDR3 (simulation only)")
+    parser.add_argument("--swmr-inject", action="store_true", help="with --coherent-l1: expect the single-writer checker to stop a run in which it is told to treat a shared line as writable")
     parser.add_argument("--focus", choices=["cache", "soc"], help="Build only the requested feature-interaction target")
     args = parser.parse_args()
     args.cores = args.cores or [1, 2, 3]
@@ -77,6 +78,8 @@ def main():
         parser.error("the pmu suite uses multicore_pmu, which has no D-cache: it cannot run with --coherent-l1")
     if args.core_bursts and not args.coherent_l1:
         parser.error("--core-bursts needs --coherent-l1: only the coherent L1 path takes the cores' bursts")
+    if args.swmr_inject and not args.coherent_l1:
+        parser.error("--swmr-inject needs --coherent-l1: the single-writer checker watches the coherent D-caches")
     if "WALLY" not in os.environ:
         parser.error("Source ./setup.sh from the repository root first")
     root = Path(os.environ["WALLY"])
@@ -180,7 +183,17 @@ def main():
                 f"mesi{int(args.mesi)}-burst{int(args.cache_bursts)}-b{args.coherence_banks}-c2c{int(args.cache_to_cache)}-{args.suite}-soc-{cores}-{latency}-d{args.cache_words}x{args.cache_line_words}-i{args.icache_words}x{args.icache_line_words}" + ("-shared" if args.shared_cache else "-msi" if args.private_dcache else "") + ("-icache" if args.private_icache else "") + ("-localreads" if args.local_dcache_reads else "") + ("-localwrites" if args.local_dcache_writes else "") + ("-l1" if args.coherent_l1 else "") + ("-cb" if args.core_bursts else "") + ("-seqfree" if args.seq_free else "") + ("-rlat" if args.random_latency else "") + ("-ila" if args.coherence_ila else ""),
                 [f"-GLATENCY={latency}", *(["-DRAM_RANDOM_LATENCY"] if args.random_latency else []), *(["-DRAM_SEQ_FREE"] if args.seq_free else []), *(["-DCOHERENCE_ILA"] if args.coherence_ila else []), *profiles.verilator_args({**topology, 'NCORES': cores})],
             )
-            run([executable, f"+image={image}", f"+suite={args.suite}", f"+verilator+seed+{args.seed}", "+cycles=20000000" if args.suite in ("stress", "plicspi") else "+cycles=6000000"])
+            command = [executable, f"+image={image}", f"+suite={args.suite}", f"+verilator+seed+{args.seed}", "+cycles=20000000" if args.suite in ("stress", "plicspi") else "+cycles=6000000"]
+            if args.swmr_inject:
+                # Negative check: the run must stop on the injected violation, not pass or fail otherwise
+                log = work / f"swmr-inject-{args.suite}-{cores}-{latency}.log"
+                with log.open("w") as stream:
+                    code = subprocess.run([*command, "+swmr_inject"], stdout=stream, stderr=subprocess.STDOUT).returncode
+                if code == 0 or "(injected by +swmr_inject)" not in log.read_text(errors="replace"):
+                    raise SystemExit(f"The single-writer checker did not stop the run on the injected violation. See {log}")
+                print(f"PASS: injected single-writer violation detected, {cores} harts, RAM latency {latency}", flush=True)
+                continue
+            run(command)
             if smoke_image is not None:
                 run([executable, f"+image={smoke_image}", "+suite=smoke-on-atomic-config"])
 
